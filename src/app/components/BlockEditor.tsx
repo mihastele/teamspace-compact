@@ -12,6 +12,13 @@ import {
 } from "react";
 import type { NoteContent } from "@/lib/model";
 import { markdownShortcut } from "@/lib/markdown-shortcuts";
+import {
+  createHistory,
+  recordHistory,
+  undoHistory,
+  redoHistory,
+  sameContent,
+} from "@/lib/note-history";
 import MarkdownText from "./MarkdownText";
 import styles from "./BlockEditor.module.css";
 
@@ -116,6 +123,11 @@ export default function BlockEditor({
   renderBoard,
 }: BlockEditorProps) {
   const blocks = value.blocks.length ? value.blocks : [emptyBlock()];
+  const [storedHistory, setHistory] = useState(() => createHistory(value));
+  // A remote reload replaces content rather than letting local undo cross that boundary.
+  const history = sameContent(storedHistory.present, value) ? storedHistory : createHistory(value);
+  if (history !== storedHistory) setHistory(history);
+  const lastBlockRef = useRef(0);
   const container = useRef<HTMLDivElement>(null);
   const refs = useRef(new Map<number, HTMLTextAreaElement>());
   const pendingFocus = useRef<{ index: number; offset: number } | null>(null);
@@ -181,7 +193,11 @@ export default function BlockEditor({
     return () => observer.disconnect();
   }, []);
 
-  function commit(next: Block[], focus?: { index: number; offset: number }) {
+  function commit(
+    next: Block[],
+    focus?: { index: number; offset: number },
+    group?: string,
+  ) {
     if (disabled) return false;
     if (next.length > 1000) {
       setFeedback(
@@ -204,8 +220,28 @@ export default function BlockEditor({
         ?.querySelectorAll("details[open]")
         .forEach((element) => element.removeAttribute("open"));
     setFeedback("");
-    onChange({ blocks: next.length ? next : [emptyBlock()] });
+    const content = { blocks: next.length ? next : [emptyBlock()] };
+    setHistory(recordHistory(history, content, group));
+    onChange(content);
     return true;
+  }
+  function travelHistory(direction: "undo" | "redo") {
+    if (disabled) return;
+    const next =
+      direction === "undo" ? undoHistory(history) : redoHistory(history);
+    if (next === history) return;
+    const index = Math.min(
+      lastBlockRef.current,
+      Math.max(0, next.present.blocks.length - 1),
+    );
+    pendingFocus.current = {
+      index,
+      offset: next.present.blocks[index]?.text.length || 0,
+    };
+    setMenu(null);
+    setFeedback("");
+    setHistory(next);
+    onChange(next.present);
   }
   function restoreFocus(
     index: number,
@@ -272,6 +308,7 @@ export default function BlockEditor({
               offset: 0,
             }
           : undefined,
+        shortcut ? undefined : `typing:${index}`,
       )
     )
       return;
@@ -425,6 +462,23 @@ export default function BlockEditor({
       ref={container}
       className={styles.editor}
       aria-label="Inline note blocks"
+      onKeyDownCapture={(event) => {
+        if (
+          disabled ||
+          event.nativeEvent.isComposing ||
+          event.altKey ||
+          (!event.ctrlKey && !event.metaKey)
+        )
+          return;
+        if ((event.target as HTMLElement).closest(`.${styles.embeddedBoard}`))
+          return;
+        const key = event.key.toLowerCase();
+        if (key === "z" || (key === "y" && !event.metaKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          travelHistory(key === "y" || event.shiftKey ? "redo" : "undo");
+        }
+      }}
       onBlur={(event) => {
         if (
           menu &&
@@ -433,6 +487,31 @@ export default function BlockEditor({
           setMenu(null);
       }}
     >
+      <div
+        className={styles.historyToolbar}
+        role="group"
+        aria-label="Note editing history"
+      >
+        <button
+          type="button"
+          disabled={disabled || !history.past.length}
+          title="Undo (Ctrl/Cmd+Z)"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => travelHistory("undo")}
+        >
+          ↶ Undo
+        </button>
+        <button
+          type="button"
+          disabled={disabled || !history.future.length}
+          title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => travelHistory("redo")}
+        >
+          ↷ Redo
+        </button>
+        <span>Recent changes · this open note</span>
+      </div>
       <p className={styles.hint}>
         Type / for blocks, or # + space for a heading. Enter adds a block; Shift
         + Enter adds a line.
@@ -634,6 +713,7 @@ export default function BlockEditor({
                   : undefined
               }
               onFocus={() => {
+                lastBlockRef.current = index;
                 setFocusedIndex(index);
                 if (menu && menu.index !== index) setMenu(null);
               }}

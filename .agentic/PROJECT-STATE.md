@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks and local Undo/Redo implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 57 validation/tree/renderer/rules/trusted-API tests, lint, typecheck and production build. Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
+- PASSED: 34 unit/validation/tree/renderer/history tests and latest lint/typecheck/build; 29 unchanged rules/trusted-API cases passed in the previous increment (63 total cases). Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -108,3 +108,13 @@
 
 - Importing maintained note types expanded the compiler's inferred root, which could leave old test entry paths pointing at stale generated output. Fixed explicit server compilation root and test imports; all suites now read the freshly emitted server files. Added actual renderer/security tests.
 - Automatic approval review rejected a proposed generated .test-build cleanup command as "blocked by policy". Did not delete or use alternate deletion methods; corrected compiler paths instead. Repository source/build remains valid and no partial migration remains.
+
+
+### 2026-10-03 — Small increment: recoverable block edits
+
+- User asked for a small/medium spec increment with limited remaining account usage. Added one focused editor improvement with no subagents, dependency, schema change, migration or backend changes.
+- Undo/Redo buttons and scoped Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y restore content, block type/metadata, deletion and ordering. Same-block typing within 750ms coalesces; structural actions create distinct checkpoints. Twenty checkpoints bound memory; new edits after undo discard redo.
+- History belongs to the mounted open note; different note/workspace keys remount it, and external content replacement permanently clears history. Undo remains an unsaved draft operation subject to existing Save/revision checks, disables during Save, and does not change title/location or reverse shared Kanban task mutations. Keyboard capture excludes the embedded board; restores focus to an editable block when available.
+- Updated SPEC and README. No TODO, exotic technology deviation, secret, live data change or new release gate.
+- PASSED: 34 unit/tree/validation/renderer/history cases, including six new regressions for metadata recovery, typing grouping/pauses, separate blocks, redo branching, bounded history and external replacement. Final lint and optimized build (including TypeScript) pass. Unchanged 8 rule + 21 trusted API cases passed in the previous increment; skipped their rerun because no server/schema/access code changed.
+- OPEN TEST GAP: keyboard/caret and toolbar interactions remain unverified in browser, alongside earlier rich-editor/mobile/embedded-board acceptance. Prior browser policy restriction remains recorded; no new browser check or screenshot claimed. Firebase provisioning/license/dependency/deployed two-user gates unchanged.

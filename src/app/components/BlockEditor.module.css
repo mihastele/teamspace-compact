@@ -471,3 +471,31 @@
   max-height: min(360px, 60vh);
   overflow-y: auto;
 }
+
+.historyToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px 35px;
+}
+.historyToolbar button {
+  background: #f3f6fc;
+  color: #637592;
+  border-radius: 5px;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.historyToolbar button:not(:disabled):hover {
+  background: #e8efff;
+  color: #4263e9;
+}
+.historyToolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.historyToolbar span {
+  font-size: 10px;
+  color: #9aa5b8;
+  margin-left: 5px;
+}

@@ -117,3 +117,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Typing a heading prefix followed by Space converts it to the matching H1–H6 block; distinguish heading levels after save/reload. Add standard list, task-list, quote, divider and code shortcuts.
 - Offer safe CommonMark/GFM rendering, including emphasis, inline/fenced code, links, images, tables, footnotes, strikethrough and task lists, in a live Markdown block. Raw HTML is not interpreted. Structured blocks remain directly editable; complex Markdown source retains a live rendered view.
 - User chose embedding the existing shared workspace board, not independent page boards. Insert it anywhere in the block sequence via slash/+ menu. Reuse board task controls and trusted mutations; removing the embed preserves all tasks.
+
+
+### Small increment: recoverable block edits — 2026-10-03
+
+- Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y recover block content, conversion, deletion and reordering. Group continuous typing in the same block and retain up to 20 checkpoints.
+- History is local to the currently open note and clears when navigating to another note or accepting different remote content. Undo does not save automatically, revert note title/location, or reverse shared Kanban task mutations. Disabled while saving.
