@@ -30,6 +30,8 @@ beforeEach(async () => {
       setDoc(doc(db, `${workspace}/members/member`), { role: "member" }),
       setDoc(doc(db, `${workspace}/tasks/task`), { title: "Task", status: "todo" }),
       setDoc(doc(db, `${workspace}/notes/note`), { title: "Note", revision: 1 }),
+      setDoc(doc(db, `${workspace}/notes/child-note`), { title: "Child note", parentId: "note", revision: 1 }),
+      setDoc(doc(db, `${workspace}/notes/grandchild-note`), { title: "Grandchild note", parentId: "child-note", revision: 1 }),
       setDoc(doc(db, `${workspace}/attachments/file`), { parentType: "task", parentId: "task" }),
       setDoc(doc(db, "users/member"), { displayName: "Member" }),
       setDoc(doc(db, "users/outsider"), { displayName: "Outsider" }),
@@ -111,6 +113,20 @@ test("revoking membership immediately denies subsequent content reads", async ()
   });
   await assertFails(getDoc(doc(db, `${workspace}/tasks/task`)));
   await assertFails(getDocs(collection(db, `${workspace}/notes`)));
+});
+
+test("nested note documents inherit workspace membership at every tree depth", async () => {
+  for (const uid of ["owner", "member"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    for (const id of ["note", "child-note", "grandchild-note"]) await assertSucceeds(getDoc(doc(db, `${workspace}/notes/${id}`)));
+  }
+  for (const context of [environment.unauthenticatedContext(), environment.authenticatedContext("outsider")]) {
+    const db = context.firestore();
+    for (const id of ["child-note", "grandchild-note"]) {
+      await assertFails(getDoc(doc(db, `${workspace}/notes/${id}`)));
+      await assertFails(updateDoc(doc(db, `${workspace}/notes/${id}`), { parentId: null }));
+    }
+  }
 });
 
 test("private Storage objects cannot be read or written by any browser", async () => {

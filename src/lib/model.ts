@@ -13,6 +13,7 @@ export type NoteContent = {
 };
 export type Note = {
   id: string;
+  parentId: string | null;
   title: string;
   content: NoteContent;
   revision: number;

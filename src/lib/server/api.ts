@@ -326,8 +326,15 @@ async function mutateNote(
 ) {
   const data = object(
     input,
-    id ? ["title", "content", "expectedRevision"] : ["title", "content"],
+    id
+      ? ["title", "content", "expectedRevision", "parentId"]
+      : ["title", "content", "parentId"],
   );
+  const requestedParent = Object.hasOwn(data, "parentId")
+    ? data.parentId === null
+      ? null
+      : identifier(data.parentId)
+    : undefined;
   const title = text(data.title, "Note title", 200);
   const content = noteContent(data.content);
   const expected = id
@@ -336,7 +343,7 @@ async function mutateNote(
   const ref = id
     ? workspace.collection("notes").doc(id)
     : workspace.collection("notes").doc();
-  const revision = await db.runTransaction(async (tx) => {
+  const saved = await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
     const previous = id ? await tx.get(ref) : null;
     if (id && !previous?.exists)
@@ -349,20 +356,51 @@ async function mutateNote(
         "revision_conflict",
         "Someone saved a newer version. Your draft has been kept; copy it or reload the saved note.",
       );
+    const previousParent = previous?.data()?.parentId ?? null;
+    const parentId =
+      requestedParent === undefined ? previousParent : requestedParent;
+    // Read the complete chain in the same transaction as the structural lock.
+    // This also validates legacy data without imposing a product depth limit.
+    const visited = new Set([ref.id]);
+    let ancestorId = parentId;
+    while (ancestorId !== null) {
+      if (visited.has(ancestorId))
+        throw new ApiError(
+          409,
+          "note_cycle",
+          "A note cannot be moved inside itself or one of its descendants.",
+        );
+      visited.add(ancestorId);
+      const ancestor = await tx.get(
+        workspace.collection("notes").doc(identifier(ancestorId)),
+      );
+      if (!ancestor.exists || ancestor.data()?.deleting)
+        throw new ApiError(
+          400,
+          "invalid_parent",
+          "The parent note must exist in this workspace and must not be deleting.",
+        );
+      ancestorId = ancestor.data()?.parentId ?? null;
+    }
     const next = expected + 1;
     const value = {
       title,
       content,
       revision: next,
+      parentId,
       updatedBy: user.uid,
       updatedAt: now(),
     };
+    // All structural mutations touch this document. Transaction retries therefore
+    // revalidate ancestry against concurrent creates, moves and deletions.
+    if (!id || parentId !== previousParent)
+      tx.update(workspace, { noteTreeRevision: FieldValue.increment(1) });
     if (id) tx.update(ref, value);
     else tx.create(ref, { ...value, createdBy: user.uid, createdAt: now() });
-    return next;
+    return { revision: next, parentId };
   });
   return json(
-    { note: { id: ref.id, title, content, revision } },
+    { note: { id: ref.id, title, content, ...saved } },
     id ? 200 : 201,
   );
 }
@@ -651,19 +689,17 @@ async function attachmentOperation(
         "x-goog-content-length-range": `${bytes},${bytes}`,
         "x-goog-if-generation-match": "0",
       };
-      const [uploadUrl] = await files
-        .file(stagingPath)
-        .getSignedUrl({
-          version: "v4",
-          action: "write",
-          contentType,
-          extensionHeaders: {
-            "x-goog-content-length-range":
-              uploadHeaders["x-goog-content-length-range"],
-            "x-goog-if-generation-match": "0",
-          },
-          expires: Date.now() + 15 * 60000,
-        });
+      const [uploadUrl] = await files.file(stagingPath).getSignedUrl({
+        version: "v4",
+        action: "write",
+        contentType,
+        extensionHeaders: {
+          "x-goog-content-length-range":
+            uploadHeaders["x-goog-content-length-range"],
+          "x-goog-if-generation-match": "0",
+        },
+        expires: Date.now() + 15 * 60000,
+      });
       return json({ attachmentId: ref.id, uploadUrl, uploadHeaders }, 201);
     } catch (error) {
       await ref.delete();
@@ -795,28 +831,24 @@ async function attachmentOperation(
   }
   if (thumbnail && thumbnailPath) {
     try {
-      await files
-        .file(thumbnailPath)
-        .save(thumbnail, {
-          resumable: false,
-          contentType: thumbnailType,
-          preconditionOpts: { ifGenerationMatch: 0 },
-          metadata: { cacheControl: "private, no-store" },
-        });
+      await files.file(thumbnailPath).save(thumbnail, {
+        resumable: false,
+        contentType: thumbnailType,
+        preconditionOpts: { ifGenerationMatch: 0 },
+        metadata: { cacheControl: "private, no-store" },
+      });
     } catch (error) {
       if ((error as { code?: number }).code !== 412) throw error;
     }
   }
   // A create-only destination also makes concurrent completion safe.
   try {
-    await files
-      .file(value.storagePath)
-      .save(bytes, {
-        resumable: false,
-        contentType: value.contentType,
-        preconditionOpts: { ifGenerationMatch: 0 },
-        metadata: { cacheControl: "private, no-store" },
-      });
+    await files.file(value.storagePath).save(bytes, {
+      resumable: false,
+      contentType: value.contentType,
+      preconditionOpts: { ifGenerationMatch: 0 },
+      metadata: { cacheControl: "private, no-store" },
+    });
   } catch (error) {
     if ((error as { code?: number }).code !== 412) {
       await Promise.all([
@@ -890,6 +922,18 @@ async function deleteParent(
     ]);
     if (!snapshot.exists)
       throw new ApiError(404, "not_found", "This item no longer exists.");
+    if (resource === "notes") {
+      const children = await tx.get(
+        workspace.collection("notes").where("parentId", "==", id).limit(1),
+      );
+      if (!children.empty)
+        throw new ApiError(
+          409,
+          "note_has_children",
+          "Move or delete this note's children before deleting it.",
+        );
+      tx.update(workspace, { noteTreeRevision: FieldValue.increment(1) });
+    }
     tx.update(ref, { deleting: true });
     items.docs.forEach((item) => tx.update(item.ref, { status: "deleting" }));
     return items.docs;
@@ -911,6 +955,8 @@ async function deleteParent(
   }
   await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
+    if (resource === "notes")
+      tx.update(workspace, { noteTreeRevision: FieldValue.increment(1) });
     attachments.forEach((item) => tx.delete(item.ref));
     tx.delete(ref);
   });

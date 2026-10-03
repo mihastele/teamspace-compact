@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 implemented/validated; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 28 validation/rules/trusted-API tests, lint, typecheck, production build, desktop/mobile browser checks.
+- PASSED: 47 validation/tree/rules/trusted-API tests, lint, typecheck, production build, desktop/mobile browser checks.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -58,3 +58,20 @@
 - PASSED browser checks: local task creation/status selection, refresh persistence, note save/unsafe-link plain-text rendering, navigation preserving unsaved draft, 390px viewport with no horizontal overflow, dialog sizing/title focus/Escape focus restoration. Screenshot saved locally at .agentic/verification/board.jpg (gitignored). Automated browser suite gap remains above.
 - PASSED lint, typecheck and optimized production build. Added least-privilege, SHA-pinned GitHub CI repeating checks with isolated emulators; remote workflow execution remains unverified until pushed.
 - BLOCKED release: no Firebase project/service credentials or Vercel deployment supplied. Do not call the local preview shared/authenticated or claim production readiness. Next: provision Firebase, set environment locally/Vercel, deploy rules/indexes/TTL, configure bucket CORS/staging lifecycle and authorized auth domains, then complete deployed two-user acceptance and dependency review.
+
+
+### 2026-10-03 — Nested notes and shared workspace extension
+
+- User requested Notion-style root notes, subnotes and deeper descendants, with multiple workspace users collaborating on notes and Kanban. Extended the existing member-authorized, live saved-update model; explicit Save and revision conflict protection remain. Simultaneous typing is not implemented and would require a separate editor/data-model decision.
+- Added expandable alphabetical note hierarchy, root/subnote creation, ancestor breadcrumbs, search retaining ancestor context, and parent moves committed together with content on Save. Moving a note carries its subtree without rewriting descendants. No application nesting depth cap.
+- Preserved separate drafts for new roots/subnotes and existing notes across navigation; clean drafts follow remote saved revisions, while dirty/conflicting/deleted-note drafts remain recoverable. All levels inherit workspace membership.
+- Added migration 002: nullable parentId on notes, legacy missing values interpreted as roots, and workspace noteTreeRevision to serialize structural mutations. Updated maintained TypeScript models; no generated Firestore schema types exist. No live database changed or destructive backfill required. Export/deletion policy documented and README/SPEC updated.
+- Server validates same-workspace live parents and complete ancestry inside transactions. Rejects self/descendant/corrupt cycles; concurrent reciprocal moves cannot form cycles. Parent deletion refuses children before modifying flags or attachments; create/move/delete races cannot orphan children.
+- Access control verified on every affected collection: member-only note/workspace reads, browser writes denied, trusted mutations reauthorize membership transactionally; Storage remains default-deny. Clean emulator fixtures verify additive schema and legacy behavior from scratch.
+- PASSED: 19 validation/tree tests, 8 authorization/Storage rule suites, 20 trusted API cases (47 total), lint, typecheck and optimized production build. Covers member shared saves, outsider denial, cycle rejection, concurrent structural races, stale saves, and child-preserving deletion with attachment bytes untouched.
+- PASSED manual browser checks: root/child/grandchild creation, persisted hierarchy after refresh, breadcrumbs, search with ancestors, parent move with subtree retention, blocked parent deletion, descendant-free parent choices, navigation preserving unsaved content, and 390px/1280px layouts without horizontal overflow. Screenshot at .agentic/verification/nested-notes.jpg (gitignored). Existing automated-browser and deployed two-user verification gaps remain open above.
+- No new dependency, exotic technology deviation, code TODO, credential, live migration or deployment. Release remains BLOCKED on Firebase provisioning; license and dependency review remain open.
+
+### FAILED — 2026-10-03: rate-limit verification stabilized
+
+- First combined emulator run passed hierarchy/authorization cases but an existing invitation rate-limit test crossed the real minute boundary and unexpectedly received a legitimate new-window allowance. Scoped the test clock to a fixed window and explicitly tested allowance after advancing one minute. Reran the entire clean emulator suite successfully; application rate-limit behavior unchanged.

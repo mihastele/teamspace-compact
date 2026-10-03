@@ -9,7 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import { useTeamspace } from "@/lib/client";
-import type { Task, Note, NoteContent, Attachment } from "@/lib/model";
+import type { Task, NoteContent, Attachment } from "@/lib/model";
+import {
+  flattenNoteTree,
+  noteAncestors,
+  noteDescendants,
+  assertNoteParent,
+} from "@/lib/note-tree";
 import s from "./page.module.css";
 
 type Api = ReturnType<typeof useTeamspace>;
@@ -456,6 +462,7 @@ function TaskDialog({
 }
 
 type Draft = {
+  parentId: string | null;
   title: string;
   text: string;
   revision: number;
@@ -463,6 +470,7 @@ type Draft = {
   state: "Unsaved" | "Saved" | "Saving" | "Failed";
   error?: string;
 };
+type NoteSelection = { id: string | null; newParentId: string | null };
 function Notes({
   api,
   search,
@@ -473,38 +481,75 @@ function Notes({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const workspaceId = api.workspace!.id;
-  const [selections, setSelections] = useState<Record<string, string | null>>(
+  const [selections, setSelections] = useState<Record<string, NoteSelection>>(
     {},
   );
-  const selected = selections[workspaceId] || null;
-  function setSelected(id: string | null) {
-    setSelections((prev) => ({ ...prev, [workspaceId]: id }));
+  const selection = selections[workspaceId] || { id: null, newParentId: null };
+  const selected = selection.id;
+  function selectNote(id: string | null, newParentId: string | null = null) {
+    setSelections((prev) => ({ ...prev, [workspaceId]: { id, newParentId } }));
+    const reveal = id
+      ? noteAncestors(api.notes, id)
+      : newParentId
+        ? [
+            ...noteAncestors(api.notes, newParentId),
+            ...api.notes.filter((n) => n.id === newParentId),
+          ]
+        : [];
+    setExpanded((prev) => {
+      const next = { ...prev };
+      reveal.forEach((n) => {
+        next[`${workspaceId}:${n.id}`] = true;
+      });
+      return next;
+    });
   }
+  const selectionKey = (value: NoteSelection) =>
+    value.id || `new:${value.newParentId || "root"}`;
+  const key = `${workspaceId}:${selectionKey(selection)}`;
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const key = `${workspaceId}:${selected || "new"}`;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const remote = api.notes.find((n) => n.id === selected);
-  const baseline = (n: Note) =>
-    JSON.stringify([n.title, contentText(n.content)]);
-  const draft =
-    drafts[key] ||
+  const baseline = (title: string, text: string, parentId: string | null) =>
+    JSON.stringify([title, text, parentId]);
+  const cached = drafts[key];
+  const cacheIsDirty =
+    cached &&
+    baseline(cached.title, cached.text, cached.parentId) !== cached.baseline;
+  const keepCached =
+    cached &&
+    (cacheIsDirty ||
+      cached.state === "Saving" ||
+      cached.error ||
+      !remote ||
+      remote.revision <= cached.revision);
+  const draft: Draft =
+    (keepCached ? cached : undefined) ||
     (remote
       ? {
           title: remote.title,
           text: contentText(remote.content),
+          parentId: remote.parentId,
           revision: remote.revision,
-          baseline: baseline(remote),
-          state: "Saved" as const,
+          baseline: baseline(
+            remote.title,
+            contentText(remote.content),
+            remote.parentId,
+          ),
+          state: "Saved",
         }
       : {
           title: "",
           text: "",
+          parentId: selection.newParentId,
           revision: 0,
-          baseline: JSON.stringify(["", ""]),
-          state: "Unsaved" as const,
+          baseline: baseline("", "", selection.newParentId),
+          state: "Unsaved",
         });
-  const dirty = JSON.stringify([draft.title, draft.text]) !== draft.baseline;
+  const dirty =
+    baseline(draft.title, draft.text, draft.parentId) !== draft.baseline;
   const anyDirty = Object.values(drafts).some(
-    (d) => JSON.stringify([d.title, d.text]) !== d.baseline,
+    (d) => baseline(d.title, d.text, d.parentId) !== d.baseline,
   );
   useEffect(() => {
     onDirtyChange(anyDirty);
@@ -518,7 +563,44 @@ function Notes({
     !api.loading &&
     selected &&
     drafts[key] &&
-    (!remote || remote.revision !== draft.revision),
+    (!remote || (remote && remote.revision !== draft.revision)),
+  );
+  const children = api.notes.filter(
+    (n) => n.parentId === selected && selected !== null,
+  );
+  const descendants = selected
+    ? noteDescendants(api.notes, selected)
+    : new Set<string>();
+  const currentAncestors = selected ? noteAncestors(api.notes, selected) : [];
+  const parent = api.notes.find((n) => n.id === draft.parentId);
+  const breadcrumbs = parent
+    ? [...noteAncestors(api.notes, parent.id), parent]
+    : [];
+  const flattened = flattenNoteTree(api.notes);
+  const query = search.trim().toLowerCase();
+  const matching = new Set<string>();
+  if (query)
+    for (const note of api.notes)
+      if (note.title.toLowerCase().includes(query)) {
+        matching.add(note.id);
+        noteAncestors(api.notes, note.id).forEach((n) => matching.add(n.id));
+      }
+  const forcedOpen = new Set(currentAncestors.map((n) => n.id));
+  if (!selected && parent)
+    [...noteAncestors(api.notes, parent.id), parent].forEach((n) =>
+      forcedOpen.add(n.id),
+    );
+  const isExpanded = (id: string) =>
+    Boolean(query || (expanded[`${workspaceId}:${id}`] ?? forcedOpen.has(id)));
+  const visibleTree = flattened.filter(({ note }) =>
+    query
+      ? matching.has(note.id)
+      : noteAncestors(api.notes, note.id).every((n) => isExpanded(n.id)),
+  );
+  const newDrafts = Object.entries(drafts).filter(
+    ([draftKey, value]) =>
+      draftKey.startsWith(`${workspaceId}:new:`) &&
+      baseline(value.title, value.text, value.parentId) !== value.baseline,
   );
   function update(patch: Partial<Draft>) {
     setDrafts((prev) => ({
@@ -533,10 +615,16 @@ function Notes({
       [capturedKey]: { ...draft, state: "Saving", error: undefined },
     }));
     try {
+      if (draft.parentId && !api.notes.some((n) => n.id === draft.parentId))
+        throw new Error(
+          "The parent note is no longer available. Choose another location before saving.",
+        );
+      assertNoteParent(api.notes, selected, draft.parentId);
       const saved = await api.saveNote({
         id: selected || undefined,
         title: draft.title.trim(),
         content: parseContent(draft.text),
+        parentId: draft.parentId,
         expectedRevision: selected ? draft.revision : undefined,
       });
       setDrafts((prev) => {
@@ -545,15 +633,17 @@ function Notes({
         next[`${workspaceId}:${saved.id}`] = {
           ...draft,
           title: saved.title,
+          parentId: saved.parentId,
           revision: saved.revision,
-          baseline: JSON.stringify([saved.title, draft.text]),
+          baseline: baseline(saved.title, draft.text, saved.parentId),
           state: "Saved",
         };
         return next;
       });
       setSelections((prev) =>
-        (prev[workspaceId] || null) === selected
-          ? { ...prev, [workspaceId]: saved.id }
+        selectionKey(prev[workspaceId] || { id: null, newParentId: null }) ===
+        selectionKey(selection)
+          ? { ...prev, [workspaceId]: { id: saved.id, newParentId: null } }
           : prev,
       );
     } catch (e) {
@@ -571,7 +661,16 @@ function Notes({
     }
   }
   async function remove() {
-    if (!selected || !confirm("Delete this note and its attachments?")) return;
+    if (
+      !selected ||
+      children.length ||
+      !confirm("Delete this note and its attachments?")
+    )
+      return;
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: { ...draft, state: "Saving", error: undefined },
+    }));
     try {
       await api.deleteNote(selected);
       setDrafts((prev) => {
@@ -579,38 +678,147 @@ function Notes({
         delete next[key];
         return next;
       });
-      setSelected(null);
+      setSelections((prev) =>
+        prev[workspaceId]?.id === selected
+          ? {
+              ...prev,
+              [workspaceId]: {
+                id: remote?.parentId || null,
+                newParentId: null,
+              },
+            }
+          : prev,
+      );
     } catch (e) {
-      update({ error: e instanceof Error ? e.message : "Delete failed." });
+      setDrafts((prev) => ({
+        ...prev,
+        [key]: {
+          ...draft,
+          state: "Failed",
+          error:
+            e instanceof Error
+              ? e.message
+              : "Delete failed. Your draft is preserved.",
+        },
+      }));
     }
   }
   return (
     <div className={s.notes}>
-      <aside className={s.noteList} aria-label="Notes">
-        <button className={s.secondary} onClick={() => setSelected(null)}>
+      <aside className={s.noteList} aria-label="Nested notes navigation">
+        <button
+          className={s.secondary}
+          disabled={api.loading}
+          onClick={() => selectNote(null)}
+        >
           <Icon name="plus" />
-          New note
+          New root note
         </button>
-        {api.notes
-          .filter((n) => n.title.toLowerCase().includes(search.toLowerCase()))
-          .map((n) => (
-            <button
-              className={`${s.noteItem} ${selected === n.id ? s.selected : ""}`}
-              key={n.id}
-              onClick={() => setSelected(n.id)}
-            >
-              ▤ &nbsp;{n.title}
-              {drafts[`${workspaceId}:${n.id}`] &&
-              drafts[`${workspaceId}:${n.id}`].state !== "Saved"
-                ? " •"
-                : ""}
-            </button>
-          ))}
+        <p className={s.hint}>Organize ideas into notes and subnotes.</p>
+        <ul className={s.noteTree} aria-label="Notes hierarchy">
+          {visibleTree.map(({ note, depth }) => {
+            const hasChildren = api.notes.some((n) => n.parentId === note.id);
+            const localDraft = drafts[`${workspaceId}:${note.id}`];
+            const unsaved =
+              localDraft &&
+              baseline(
+                localDraft.title,
+                localDraft.text,
+                localDraft.parentId,
+              ) !== localDraft.baseline;
+            return (
+              <li
+                key={note.id}
+                className={`${s.treeRow} ${selected === note.id ? s.treeSelected : ""}`}
+                style={{ paddingLeft: depth * 14 + 4 }}
+              >
+                {hasChildren ? (
+                  <button
+                    className={s.treeExpand}
+                    aria-label={`${isExpanded(note.id) ? "Collapse" : "Expand"} ${note.title}`}
+                    aria-expanded={isExpanded(note.id)}
+                    onClick={() =>
+                      setExpanded((prev) => ({
+                        ...prev,
+                        [`${workspaceId}:${note.id}`]: !isExpanded(note.id),
+                      }))
+                    }
+                  >
+                    {isExpanded(note.id) ? "⌄" : "›"}
+                  </button>
+                ) : (
+                  <span className={s.treeLeaf} aria-hidden="true">
+                    ▤
+                  </span>
+                )}
+                <button
+                  className={s.treeTitle}
+                  title={note.title}
+                  aria-current={selected === note.id ? "page" : undefined}
+                  onClick={() => selectNote(note.id)}
+                >
+                  {note.title}
+                  {unsaved && (
+                    <span className={s.draftDot} aria-label="Unsaved changes">
+                      {" "}
+                      •
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
         {!api.notes.length && (
           <p className={s.hint}>Your shared knowledge starts here.</p>
         )}
+        {query && !visibleTree.length && (
+          <p className={s.hint}>No matching notes.</p>
+        )}
+        {newDrafts.length > 0 && (
+          <div className={s.draftList}>
+            <p className={s.sideDraftLabel}>UNSAVED DRAFTS</p>
+            {newDrafts.map(([draftKey, value]) => {
+              const creationParent = draftKey.slice(
+                `${workspaceId}:new:`.length,
+              );
+              return (
+                <button
+                  key={draftKey}
+                  className={`${s.noteItem} ${key === draftKey ? s.selected : ""}`}
+                  onClick={() =>
+                    selectNote(
+                      null,
+                      creationParent === "root" ? null : creationParent,
+                    )
+                  }
+                >
+                  {value.title || "Untitled draft"}
+                  <small>
+                    {value.parentId
+                      ? `Under ${api.notes.find((n) => n.id === value.parentId)?.title || "unavailable parent"}`
+                      : "Root note"}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </aside>
       <section className={s.editor} aria-label="Note editor">
+        <nav className={s.noteBreadcrumbs} aria-label="Note breadcrumbs">
+          <button onClick={() => selectNote(null)}>Notes</button>
+          {breadcrumbs.map((n) => (
+            <span key={n.id}>
+              <span aria-hidden="true">/</span>
+              <button title={n.title} onClick={() => selectNote(n.id)}>
+                {n.title}
+              </button>
+            </span>
+          ))}
+          <span aria-hidden="true">/</span>
+          <strong>{draft.title || "Untitled note"}</strong>
+        </nav>
         <div className={s.editorToolbar}>
           <span aria-live="polite">
             {conflict
@@ -620,11 +828,28 @@ function Notes({
                 : draft.state}{" "}
             · Explicit save
           </span>
+          {selected && remote && (
+            <button
+              className={s.secondary}
+              disabled={api.loading || draft.state === "Saving"}
+              onClick={() => selectNote(null, selected)}
+            >
+              <Icon name="plus" size={13} />
+              Add subnote
+            </button>
+          )}
           {selected && (
             <button
               className={s.secondary}
               onClick={() => void remove()}
-              disabled={api.loading || draft.state === "Saving"}
+              disabled={
+                api.loading || draft.state === "Saving" || children.length > 0
+              }
+              title={
+                children.length
+                  ? "Move or delete this note’s subnotes first"
+                  : "Delete this note"
+              }
             >
               Delete
             </button>
@@ -643,13 +868,20 @@ function Notes({
             {draft.state === "Saving" ? "Saving…" : "Save note"}
           </button>
         </div>
+        {children.length > 0 && (
+          <p className={s.hint} style={{ marginBottom: 14 }}>
+            This note has {children.length}{" "}
+            {children.length === 1 ? "subnote" : "subnotes"}. Move or delete
+            them before deleting this note.
+          </p>
+        )}
         {conflict && (
           <div className={s.banner}>
             <div>
               <strong>This note changed while you were editing.</strong>
               <p>
-                Your draft is preserved. Copy it before reloading if you want to
-                keep your version.
+                Your draft and its location are preserved. Copy your draft
+                before reloading to keep your version.
               </p>
               <button
                 className={s.secondary}
@@ -672,7 +904,7 @@ function Notes({
                   onClick={() => {
                     if (
                       confirm(
-                        "Replace your local draft with the latest saved version?",
+                        "Replace your local draft and location with the latest saved version?",
                       )
                     )
                       setDrafts((prev) => {
@@ -689,6 +921,36 @@ function Notes({
           </div>
         )}
         {draft.error && <ErrorMessage message={draft.error} />}
+        <label className={s.noteLocation}>
+          Move to parent
+          <select
+            aria-label="Move note to parent"
+            value={draft.parentId || ""}
+            disabled={api.loading || draft.state === "Saving"}
+            onChange={(e) => update({ parentId: e.target.value || null })}
+          >
+            <option value="">Workspace root</option>
+            {draft.parentId && !parent && (
+              <option value={draft.parentId}>
+                Parent unavailable — choose another
+              </option>
+            )}
+            {flattened
+              .filter(
+                ({ note }) => note.id !== selected && !descendants.has(note.id),
+              )
+              .map(({ note, depth }) => (
+                <option value={note.id} key={note.id}>
+                  {"\u00a0".repeat(depth * 2)}
+                  {note.title}
+                </option>
+              ))}
+          </select>
+          <small>
+            Location changes are applied when you save. Shared with workspace —
+            all subnotes inherit membership.
+          </small>
+        </label>
         <input
           className={s.noteTitle}
           aria-label="Note title"

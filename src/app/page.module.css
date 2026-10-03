@@ -1020,3 +1020,157 @@
 .card h3 {
   overflow-wrap: anywhere;
 }
+.noteTree {
+  list-style: none;
+  padding: 0;
+  margin: 5px 0;
+  max-height: 65vh;
+  overflow: auto;
+  grid-column: 1/-1;
+}
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 6px;
+  min-width: max-content;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  min-height: 37px;
+}
+.treeRow:hover {
+  background: #eef1f8;
+}
+.treeSelected {
+  background: #eaf0ff;
+  color: #3755ca;
+}
+.treeExpand {
+  flex-shrink: 0;
+  width: 22px;
+  height: 28px;
+  border-radius: 4px;
+  color: #8896b0;
+  background: transparent;
+  font-size: 19px;
+}
+.treeExpand:hover {
+  background: #dbe4fa;
+  color: #4263e9;
+}
+.treeLeaf {
+  width: 22px;
+  flex-shrink: 0;
+  text-align: center;
+  color: #8b9ab4;
+  font-size: 12px;
+}
+.treeTitle {
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 6px 8px 6px 0;
+  font-size: 12px;
+  max-width: 175px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.draftDot {
+  color: #c08a3e;
+}
+.draftList {
+  margin-top: 12px;
+  border-top: 1px solid #e2e6ef;
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  grid-column: 1/-1;
+}
+.sideDraftLabel {
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: #a2aab9;
+  margin-bottom: 3px;
+}
+.draftList small {
+  display: block;
+  font-size: 10px;
+  color: #8a95aa;
+  margin-top: 6px;
+}
+.noteBreadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: #99a3b5;
+  padding-bottom: 20px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.noteBreadcrumbs > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.noteBreadcrumbs button {
+  background: transparent;
+  padding: 0;
+  color: #6780b7;
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noteBreadcrumbs button:hover {
+  color: #345ade;
+  text-decoration: underline;
+}
+.noteBreadcrumbs strong {
+  font-weight: 500;
+  color: #69778e;
+}
+.noteLocation {
+  display: block;
+  font-size: 11px;
+  color: #77859c;
+  margin-bottom: 19px;
+}
+.noteLocation select {
+  display: block;
+  max-width: 100%;
+  width: 260px;
+  padding: 8px 10px;
+  border: 1px solid #e1e6f0;
+  border-radius: 6px;
+  background: #fafbfe;
+  color: #4f6183;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.noteLocation small {
+  display: block;
+  font-size: 10px;
+  margin-top: 7px;
+  color: #9aa4b6;
+  line-height: 1.7;
+}
+@media (max-width: 760px) {
+  .noteList {
+    display: flex;
+  }
+  .noteTree {
+    max-height: 280px;
+    width: 100%;
+  }
+  .editorToolbar {
+    gap: 7px;
+  }
+  .noteBreadcrumbs {
+    padding-bottom: 16px;
+  }
+}

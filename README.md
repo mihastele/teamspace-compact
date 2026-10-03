@@ -1,6 +1,6 @@
 # Teamspace
 
-A college team workspace with a live Kanban board, explicit note saving and private attachments. Next.js + Google sign-in + Firestore + Firebase Storage; Vercel hosting.
+A college team workspace with a live Kanban board, nested shared notes, explicit conflict-safe note saving and private attachments. Next.js + Google sign-in + Firestore + Firebase Storage; Vercel hosting.
 
 ## Run locally
 
@@ -56,4 +56,6 @@ No project/deployment credentials are included. Production release is gated on c
 
 ## Scope
 
-One board per workspace; tasks with assignees and due dates; notes with headings, bold, bullets and safe links; owner-managed invitations, member removal and ownership transfer. No simultaneous text editing or public publishing. SPEC.md records the agreed scope. A repository license must be selected before public distribution.
+One board per workspace; tasks with assignees and due dates; nested notes with headings, bold, bullets and safe links; owner-managed invitations, member removal and ownership transfer. Notes inherit workspace permissions at every depth. Teammates see saved changes live; unsaved drafts remain protected by revision checks. No simultaneous text editing or public publishing. SPEC.md records the agreed scope. A repository license must be selected before public distribution.
+
+Create a root note, then use Add subnote to grow its tree. Breadcrumbs navigate back to ancestors. Change the parent and explicitly save to move a note together with its descendants; server transactions reject cycles and cross-workspace parents. Move or delete children before deleting a parent. Existing notes remain roots without a destructive data backfill; see `migrations/002-note-hierarchy.md`.

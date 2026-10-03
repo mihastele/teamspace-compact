@@ -13,6 +13,7 @@ import {
 import { collection, getFirestore, onSnapshot } from "firebase/firestore";
 import type { Attachment, Member, Note, Task, Workspace } from "./model";
 import { prepareImage } from "./images";
+import { assertNoteParent } from "./note-tree";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -130,6 +131,10 @@ export function useTeamspace() {
           if (raw) {
             const data = JSON.parse(raw);
             if (Array.isArray(data.tasks) && Array.isArray(data.notes)) {
+              data.notes = data.notes.map((note: Note) => ({
+                ...note,
+                parentId: note.parentId ?? null,
+              }));
               preview.current = data;
               setTasks(data.tasks);
               setNotes(data.notes);
@@ -183,7 +188,16 @@ export function useTeamspace() {
                   name !== "attachments" ||
                   ["ready", "deleting"].includes(doc.data().status),
               )
-              .map((doc) => ({ ...doc.data(), id: doc.id }) as T),
+              .map(
+                (doc) =>
+                  ({
+                    ...doc.data(),
+                    ...(name === "notes"
+                      ? { parentId: doc.data().parentId ?? null }
+                      : {}),
+                    id: doc.id,
+                  }) as T,
+              ),
           );
           loaded.add(name);
           if (loaded.size >= 4) setLoading(false);
@@ -331,20 +345,34 @@ export function useTeamspace() {
       title: string;
       content: Note["content"];
       expectedRevision?: number;
+      parentId?: string | null;
     }) =>
       action(async () => {
         if (!configured) {
           const existing = preview.current.notes.find((n) => n.id === note.id);
+          if (note.id && !existing)
+            throw new Error(
+              "This note was removed. Copy your draft into a new note.",
+            );
           if (existing && existing.revision !== note.expectedRevision)
             throw new Error(
               "This note changed. Copy your draft before reloading.",
             );
           const item = {
             id: note.id ?? crypto.randomUUID(),
+            parentId:
+              "parentId" in note
+                ? (note.parentId ?? null)
+                : (existing?.parentId ?? null),
             title: note.title,
             content: note.content,
             revision: (existing?.revision ?? 0) + 1,
           };
+          assertNoteParent(
+            preview.current.notes,
+            existing?.id ?? null,
+            item.parentId,
+          );
           persist({
             ...preview.current,
             notes: [
@@ -365,6 +393,10 @@ export function useTeamspace() {
     deleteNote: (id: string) =>
       action(async () => {
         if (!configured) {
+          if (preview.current.notes.some((note) => note.parentId === id))
+            throw new Error(
+              "Move or delete this note’s subnotes before deleting it.",
+            );
           persist({
             ...preview.current,
             notes: preview.current.notes.filter((n) => n.id !== id),
