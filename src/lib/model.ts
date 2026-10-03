@@ -8,9 +8,23 @@ export type Task = {
   dueDate: string | null;
   position: number;
 };
-export type NoteContent = {
-  blocks: { type: "paragraph" | "heading" | "bullet"; text: string }[];
+export type NoteBlock = {
+  type:
+    | "paragraph"
+    | "heading"
+    | "bullet"
+    | "ordered"
+    | "quote"
+    | "todo"
+    | "code"
+    | "divider"
+    | "markdown"
+    | "board";
+  text: string;
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
+  checked?: boolean;
 };
+export type NoteContent = { blocks: NoteBlock[] };
 export type Note = {
   id: string;
   parentId: string | null;

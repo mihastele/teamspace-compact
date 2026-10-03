@@ -10,7 +10,7 @@ const originalLoad = Module._load;
 Module._load = function (id, ...args) {
   return id === "server-only" ? {} : originalLoad.call(this, id, ...args);
 };
-const { handleTrustedApi } = require("../.test-build/api.js");
+const { handleTrustedApi } = require("../.test-build/server/api.js");
 Module._load = originalLoad;
 
 let app, db, storage;
@@ -39,16 +39,14 @@ beforeEach(async () => {
       .set({ role: "member", displayName: "Member" }),
     db.doc("users/owner/workspaces/alpha").set({}),
     db.doc("users/member/workspaces/alpha").set({}),
-    db
-      .doc("workspaces/alpha/tasks/task")
-      .set({
-        title: "Original",
-        description: "",
-        status: "todo",
-        assigneeId: "member",
-        dueDate: null,
-        position: 0,
-      }),
+    db.doc("workspaces/alpha/tasks/task").set({
+      title: "Original",
+      description: "",
+      status: "todo",
+      assigneeId: "member",
+      dueDate: null,
+      position: 0,
+    }),
     db
       .doc("workspaces/alpha/notes/note")
       .set({ title: "Original", content: { blocks: [] }, revision: 1 }),
@@ -857,4 +855,36 @@ test("concurrent moves of the same note preserve one winner and reject the stale
   assert.equal(saved.parentId, winner.parentId);
   assert.equal(saved.title, winner.title);
   assert.equal(saved.revision, 2);
+});
+
+test("extended Markdown and board blocks persist through trusted saves without changing workspace tasks", async () => {
+  const content = {
+    blocks: [
+      { type: "heading", text: "Second level", level: 2 },
+      { type: "todo", text: "Done", checked: true },
+      { type: "markdown", text: "| A | B |\n| - | - |\n| 1 | 2 |" },
+      { type: "board", text: "" },
+    ],
+  };
+  const saved = await api("member", "PATCH", `${prefix}/notes/note`, {
+    title: "Rich note",
+    content,
+    expectedRevision: 1,
+  });
+  assert.equal(saved.status, 200);
+  const stored = await db.doc(`${prefix}/notes/note`).get();
+  assert.deepEqual(stored.data().content, content);
+  const removedEmbed = await api("owner", "PATCH", `${prefix}/notes/note`, {
+    title: "Rich note",
+    content: { blocks: [{ type: "paragraph", text: "Board removed" }] },
+    expectedRevision: 2,
+  });
+  assert.equal(removedEmbed.status, 200);
+  assert.equal((await db.doc(`${prefix}/tasks/task`).get()).exists, true);
+  const outsider = await api("stranger", "PATCH", `${prefix}/notes/note`, {
+    title: "Bad",
+    content,
+    expectedRevision: 3,
+  });
+  assert.equal(outsider.status, 403);
 });

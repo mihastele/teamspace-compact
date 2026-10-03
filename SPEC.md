@@ -111,3 +111,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Every saved tree row offers Add subnote via a visible + button, ellipsis menu and right-click menu; keyboard context-menu activation is supported. Creating a child selects its parent location and focuses the new title; saving reveals it under that parent.
 - Edit paragraph, heading and bullet blocks directly with their visual formatting. A +/slash menu adds or converts blocks, keyboard editing creates/removes blocks, and controls reorder blocks. Keep the existing validated content schema and explicit-save/revision-conflict semantics.
 - Preserve existing block type/text without a Markdown serialization round-trip; no schema migration or new editor dependency in this refinement.
+
+### Markdown and board embedding — 2026-10-03
+
+- Typing a heading prefix followed by Space converts it to the matching H1–H6 block; distinguish heading levels after save/reload. Add standard list, task-list, quote, divider and code shortcuts.
+- Offer safe CommonMark/GFM rendering, including emphasis, inline/fenced code, links, images, tables, footnotes, strikethrough and task lists, in a live Markdown block. Raw HTML is not interpreted. Structured blocks remain directly editable; complex Markdown source retains a live rendered view.
+- User chose embedding the existing shared workspace board, not independent page boards. Insert it anywhere in the block sequence via slash/+ menu. Reuse board task controls and trusted mutations; removing the embed preserves all tasks.

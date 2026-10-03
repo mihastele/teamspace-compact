@@ -8,9 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc src/lib/server/api.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && tsc src/lib/note-tree.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck && node --test tests/validation.test.mjs tests/note-tree.test.cjs",
-    "test:rules": "tsc src/lib/server/api.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && firebase emulators:exec --project demo-teamspace --only firestore,storage \"node --test tests/firestore-rules.test.mjs && node --test tests/api.test.cjs\"",
-    "test:api": "tsc src/lib/server/api.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && firebase emulators:exec --project demo-teamspace --only firestore \"node --test tests/api.test.cjs\""
+    "test": "tsc src/lib/server/api.ts --rootDir src/lib --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && tsc src/lib/note-tree.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck && tsc src/app/components/MarkdownText.tsx --outDir .test-build --module commonjs --target es2022 --jsx react-jsx --skipLibCheck --esModuleInterop && node --test tests/validation.test.mjs tests/note-tree.test.cjs tests/markdown.test.cjs",
+    "test:rules": "tsc src/lib/server/api.ts --rootDir src/lib --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && firebase emulators:exec --project demo-teamspace --only firestore,storage \"node --test tests/firestore-rules.test.mjs && node --test tests/api.test.cjs\"",
+    "test:api": "tsc src/lib/server/api.ts --rootDir src/lib --outDir .test-build --module commonjs --target es2022 --skipLibCheck --esModuleInterop && firebase emulators:exec --project demo-teamspace --only firestore \"node --test tests/api.test.cjs\""
   },
   "dependencies": {
     "firebase": "12.19.0",
@@ -18,6 +18,8 @@
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "sharp": "0.35.5"
   },
   "devDependencies": {

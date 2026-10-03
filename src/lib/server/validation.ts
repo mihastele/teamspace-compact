@@ -1,3 +1,4 @@
+import type { NoteBlock } from "../model";
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -108,15 +109,58 @@ export function noteContent(value: unknown) {
     throw new ApiError(400, "invalid_input", "Invalid note blocks.");
   let length = 0;
   const blocks = data.blocks.map((value) => {
-    const block = object(value, ["type", "text"]);
-    if (!["paragraph", "heading", "bullet"].includes(block.type as string))
+    const block = object(value, ["type", "text", "level", "checked"]);
+    if (
+      ![
+        "paragraph",
+        "heading",
+        "bullet",
+        "ordered",
+        "quote",
+        "todo",
+        "code",
+        "divider",
+        "markdown",
+        "board",
+      ].includes(block.type as string)
+    )
       throw new ApiError(400, "invalid_input", "Invalid block type.");
     const content = text(block.text, "Block text", 20000, true);
     length += content.length;
-    return {
-      type: block.type as "paragraph" | "heading" | "bullet",
+    const result: NoteBlock = {
+      type: block.type as NoteBlock["type"],
       text: content,
     };
+    if (block.level !== undefined) {
+      if (
+        block.type !== "heading" ||
+        !Number.isInteger(block.level) ||
+        Number(block.level) < 1 ||
+        Number(block.level) > 6
+      )
+        throw new ApiError(
+          400,
+          "invalid_input",
+          "Heading level must be 1–6 and belong to a heading.",
+        );
+      result.level = block.level as NoteBlock["level"];
+    }
+    if (block.checked !== undefined) {
+      if (block.type !== "todo" || typeof block.checked !== "boolean")
+        throw new ApiError(
+          400,
+          "invalid_input",
+          "Checked must be a boolean on a task-list block.",
+        );
+      result.checked = block.checked;
+    }
+    if (["board", "divider"].includes(result.type) && content)
+      throw new ApiError(
+        400,
+        "invalid_input",
+        "Board and divider blocks do not contain text.",
+      );
+    return result;
   });
   if (length > 100000)
     throw new ApiError(

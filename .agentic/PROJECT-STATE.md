@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 and nested-note extension validated; block/tree UX implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 50 validation/tree/rules/trusted-API tests, lint, typecheck, production build, desktop/mobile browser checks.
+- PASSED: 57 validation/tree/renderer/rules/trusted-API tests, lint, typecheck and production build. Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -91,3 +91,20 @@
 ### FAILED — 2026-10-03: preview launch argument forwarding resolved
 
 - PowerShell/npm forwarded `npm run dev -- --port 3000` as `next dev 3000`, treating the port as a directory. Launched the installed Next executable directly with the port option; server became ready and HTTP smoke check passed. No application build failure or machine setting change.
+
+
+### 2026-10-03 — Markdown shortcuts and embedded shared board
+
+- User requested hash-plus-space heading conversion, distinct H2 and broader Markdown support, Kanban inside notes, and lower agent usage. Worked with one agent and no delegation. Explained account-wide usage snapshot and official usage factors without inventing per-chat token attribution or claiming a pricing/model change.
+- Asked the data-model decision required by AGENTS.md; user explicitly chose embedding the existing workspace board over independent boards. Extracted one reusable WorkspaceBoard component for Board view and note blocks; cards, drag status changes, creation and task dialogs use the same live task data/trusted APIs. Removing a block/note leaves tasks intact.
+- Added exact typed shortcuts for H1–H6, bullets, ordered lists, task lists, quotes, code fences and dividers. Heading levels and task checked state persist directly; legacy heading blocks default to H1. Added slash commands/type controls and scrollable keyboard menu. Multiline Markdown paste retains source in a live rendered Markdown block.
+- Added CommonMark/GFM renderer for emphasis, strikethrough, inline/fenced code, lists, task lists, images, links, tables and footnotes. Raw HTML is not interpreted; unsafe URL protocols are rejected, safe external links isolate their opener, invalid image URLs render alt text. Structured headings/lists edit directly; complex Markdown retains editable source plus live preview.
+- Migration 003 documents additive block types and optional level/checked fields, compatible legacy reads, export/deletion and deploy/rollback expectations. Updated maintained TypeScript models and strict server field/type validation. No new table/index/rule, no live DB mutation or backfill. Clean emulator schemas/authorization verified: workspace/member/note/task/attachment access remains member-read/server-write, Storage default-deny. Embedded boards cannot name a foreign workspace.
+- Added exact dependencies react-markdown 10.1.0 and remark-gfm 4.0.1, both MIT, over extending ad-hoc regular expressions or enabling raw HTML. Registry license/version and upstream activity checked: react-markdown commit 2026-10-03; stable remark-gfm latest commit/release 2025-02-10 with issues updated 2026-04-23. Project license remains undecided; permissive dependency licenses recorded for its eventual license review. Lockfile updated; no major upgrade to existing dependencies. Runtime audit remains 2 moderate/0 high findings; full install audit remains 16 (unchanged release gate).
+- PASSED: 28 unit/tree/validation/actual-renderer cases, 8 rules suites, 21 trusted API cases (57 total), final lint/typecheck/optimized build and preview HTTP 200. New tests verify heading persistence, shortcut semantics, schema/legacy compatibility, real GFM rendering, unsafe HTML/URL handling, rich-block trusted persistence, outsider denial and preservation of tasks when removing an embed.
+- OPEN TEST GAP: live typing/caret/checkbox/drag/menu layout and embedded task dialog interactions are not browser-verified; previous browser policy rejection remains an unresolved verification limitation. Server rendering/security tests are not a substitute for that acceptance. Firebase provisioning, live two-user deployment, license, dependency review and browser automation remain open. No screenshot claimed for this new interface.
+
+### FAILED — 2026-10-03: verification output and cleanup rejection
+
+- Importing maintained note types expanded the compiler's inferred root, which could leave old test entry paths pointing at stale generated output. Fixed explicit server compilation root and test imports; all suites now read the freshly emitted server files. Added actual renderer/security tests.
+- Automatic approval review rejected a proposed generated .test-build cleanup command as "blocked by policy". Did not delete or use alternate deletion methods; corrected compiler paths instead. Repository source/build remains valid and no partial migration remains.

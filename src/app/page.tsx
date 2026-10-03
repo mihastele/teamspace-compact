@@ -19,6 +19,7 @@ import {
 } from "@/lib/note-tree";
 import s from "./page.module.css";
 import BlockEditor from "./components/BlockEditor";
+import { blockMarkdown } from "@/lib/markdown-shortcuts";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -110,12 +111,7 @@ function ErrorMessage({ message }: { message: string }) {
   );
 }
 function contentText(content: NoteContent) {
-  return content.blocks
-    .map(
-      (b) =>
-        `${b.type === "heading" ? "# " : b.type === "bullet" ? "- " : ""}${b.text}`,
-    )
-    .join("\n");
+  return content.blocks.map(blockMarkdown).join("\n\n");
 }
 function Attachments({
   api,
@@ -423,6 +419,121 @@ function TaskDialog({
   );
 }
 
+function WorkspaceBoard({
+  api,
+  shown,
+  onTask,
+  onStatus,
+  filtered = false,
+}: {
+  api: Api;
+  shown: Task[];
+  onTask: (task: Partial<Task>) => void;
+  onStatus: (task: Task, status: Status) => void;
+  filtered?: boolean;
+}) {
+  return (
+    <div className={s.board}>
+      {columns.map((c) => (
+        <section
+          key={c.id}
+          className={`${s.column} ${s[c.id] || ""}`}
+          aria-label={c.label}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const id = e.dataTransfer.getData("application/x-teamspace-task");
+            const current = api.tasks.find((t) => t.id === id);
+            if (current && current.status !== c.id) onStatus(current, c.id);
+          }}
+        >
+          <h2 className={s.columnHeader}>
+            <span className={s.dot} />
+            {c.label}
+            <span className={s.count}>
+              {shown.filter((t) => t.status === c.id).length}
+            </span>
+            <button
+              aria-label={`Add task to ${c.label}`}
+              onClick={() => onTask({ status: c.id })}
+            >
+              +
+            </button>
+          </h2>
+          {shown
+            .filter((t) => t.status === c.id)
+            .sort((a, b) => a.position - b.position)
+            .map((t) => {
+              const assignee = api.members.find((m) => m.id === t.assigneeId);
+              const date = t.dueDate ? new Date(`${t.dueDate}T12:00:00`) : null;
+              const overdue =
+                date &&
+                t.status !== "done" &&
+                t.dueDate! < new Date().toLocaleDateString("en-CA");
+              return (
+                <button
+                  key={t.id}
+                  className={s.card}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(
+                      "application/x-teamspace-task",
+                      t.id,
+                    );
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => onTask(t)}
+                  aria-label={`Edit task: ${t.title}`}
+                >
+                  <span className={s.cardTag}>
+                    {t.status === "done" ? "COMPLETED" : "TASK"}
+                  </span>
+                  <h3>{t.title}</h3>
+                  {t.description && <p>{t.description}</p>}
+                  <div className={s.cardFooter}>
+                    <span className={`${s.due} ${overdue ? s.overdue : ""}`}>
+                      {date ? (
+                        <>
+                          <Icon name="calendar" size={12} />
+                          {date.toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </>
+                      ) : (
+                        "No due date"
+                      )}
+                    </span>
+                    {assignee ? (
+                      <Avatar name={assignee.displayName} />
+                    ) : (
+                      <span>Unassigned</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          {!shown.some((t) => t.status === c.id) && (
+            <p className={s.emptyColumn}>
+              {filtered
+                ? "No matching tasks."
+                : c.id === "done"
+                  ? "Small wins go here.\nYou’ve got this."
+                  : "A little room for what’s next."}
+            </p>
+          )}
+          <button
+            className={s.addCard}
+            onClick={() => onTask({ status: c.id })}
+          >
+            + &nbsp; Add a task
+          </button>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 type Draft = {
   parentId: string | null;
   title: string;
@@ -437,7 +548,11 @@ function Notes({
   api,
   search,
   onDirtyChange,
+  onTask,
+  onStatus,
 }: {
+  onTask: (task: Partial<Task>) => void;
+  onStatus: (task: Task, status: Status) => void;
   api: Api;
   search: string;
   onDirtyChange: (dirty: boolean) => void;
@@ -1102,6 +1217,14 @@ function Notes({
         />
         <BlockEditor
           key={key}
+          renderBoard={() => (
+            <WorkspaceBoard
+              api={api}
+              shown={api.tasks}
+              onTask={onTask}
+              onStatus={onStatus}
+            />
+          )}
           value={draft.content}
           onChange={(content) => update({ content })}
           disabled={api.loading || draft.state === "Saving"}
@@ -1794,118 +1917,26 @@ export default function Home() {
             </p>
           )}
           <div hidden={view !== "board"}>
-            <div className={s.board}>
-              {columns.map((c) => (
-                <section
-                  key={c.id}
-                  className={`${s.column} ${s[c.id] || ""}`}
-                  aria-label={c.label}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const id = e.dataTransfer.getData(
-                      "application/x-teamspace-task",
-                    );
-                    const current = api.tasks.find((t) => t.id === id);
-                    if (current && current.status !== c.id)
-                      void run(() =>
-                        api.saveTask({ ...current, status: c.id }),
-                      );
-                  }}
-                >
-                  <h2 className={s.columnHeader}>
-                    <span className={s.dot} />
-                    {c.label}
-                    <span className={s.count}>
-                      {shown.filter((t) => t.status === c.id).length}
-                    </span>
-                    <button
-                      aria-label={`Add task to ${c.label}`}
-                      onClick={() => setTask({ status: c.id })}
-                    >
-                      +
-                    </button>
-                  </h2>
-                  {shown
-                    .filter((t) => t.status === c.id)
-                    .sort((a, b) => a.position - b.position)
-                    .map((t) => {
-                      const assignee = api.members.find(
-                        (m) => m.id === t.assigneeId,
-                      );
-                      const date = t.dueDate
-                        ? new Date(`${t.dueDate}T12:00:00`)
-                        : null;
-                      const overdue =
-                        date &&
-                        t.status !== "done" &&
-                        t.dueDate! < new Date().toLocaleDateString("en-CA");
-                      return (
-                        <button
-                          key={t.id}
-                          className={s.card}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData(
-                              "application/x-teamspace-task",
-                              t.id,
-                            );
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          onClick={() => setTask(t)}
-                          aria-label={`Edit task: ${t.title}`}
-                        >
-                          <span className={s.cardTag}>
-                            {t.status === "done" ? "COMPLETED" : "TASK"}
-                          </span>
-                          <h3>{t.title}</h3>
-                          {t.description && <p>{t.description}</p>}
-                          <div className={s.cardFooter}>
-                            <span
-                              className={`${s.due} ${overdue ? s.overdue : ""}`}
-                            >
-                              {date ? (
-                                <>
-                                  <Icon name="calendar" size={12} />
-                                  {date.toLocaleDateString(undefined, {
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
-                                </>
-                              ) : (
-                                "No due date"
-                              )}
-                            </span>
-                            {assignee ? (
-                              <Avatar name={assignee.displayName} />
-                            ) : (
-                              <span>Unassigned</span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  {!shown.some((t) => t.status === c.id) && (
-                    <p className={s.emptyColumn}>
-                      {search || filter
-                        ? "No matching tasks."
-                        : c.id === "done"
-                          ? "Small wins go here.\nYou’ve got this."
-                          : "A little room for what’s next."}
-                    </p>
-                  )}
-                  <button
-                    className={s.addCard}
-                    onClick={() => setTask({ status: c.id })}
-                  >
-                    + &nbsp; Add a task
-                  </button>
-                </section>
-              ))}
-            </div>
+            <WorkspaceBoard
+              api={api}
+              shown={shown}
+              onTask={setTask}
+              onStatus={(task, status) =>
+                void run(() => api.saveTask({ ...task, status }))
+              }
+              filtered={Boolean(search || filter)}
+            />
           </div>
           <div hidden={view !== "notes"}>
-            <Notes api={api} search={search} onDirtyChange={onDirtyChange} />
+            <Notes
+              api={api}
+              search={search}
+              onDirtyChange={onDirtyChange}
+              onTask={setTask}
+              onStatus={(task, status) =>
+                void run(() => api.saveTask({ ...task, status }))
+              }
+            />
           </div>
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>

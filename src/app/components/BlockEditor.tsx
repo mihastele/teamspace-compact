@@ -8,8 +8,11 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import type { NoteContent } from "@/lib/model";
+import { markdownShortcut } from "@/lib/markdown-shortcuts";
+import MarkdownText from "./MarkdownText";
 import styles from "./BlockEditor.module.css";
 
 type Block = NoteContent["blocks"][number];
@@ -19,6 +22,7 @@ type Command = {
   label: string;
   description: string;
   symbol: string;
+  level?: Block["level"];
 };
 type Menu = {
   index: number;
@@ -31,25 +35,69 @@ export type BlockEditorProps = {
   onChange: (content: NoteContent) => void;
   disabled?: boolean;
   onAddSubnote?: () => void;
+  renderBoard?: () => ReactNode;
 };
 const commands: Command[] = [
   {
     type: "paragraph",
     label: "Text",
-    description: "Start with a simple paragraph",
+    description: "A simple paragraph",
     symbol: "T",
   },
-  {
-    type: "heading",
-    label: "Heading",
-    description: "Give your ideas a little structure",
-    symbol: "H",
-  },
+  ...([1, 2, 3, 4, 5, 6] as const).map((level) => ({
+    type: "heading" as const,
+    level,
+    label: `Heading ${level}`,
+    description: `H${level} · ${"#".repeat(level)} followed by space`,
+    symbol: `H${level}`,
+  })),
   {
     type: "bullet",
     label: "Bullet list",
-    description: "Make a list, one idea at a time",
+    description: "- followed by space",
     symbol: "•",
+  },
+  {
+    type: "ordered",
+    label: "Numbered list",
+    description: "1. followed by space",
+    symbol: "1.",
+  },
+  {
+    type: "todo",
+    label: "Task list",
+    description: "[] followed by space",
+    symbol: "☑",
+  },
+  {
+    type: "quote",
+    label: "Quote",
+    description: "> followed by space",
+    symbol: "❞",
+  },
+  {
+    type: "code",
+    label: "Code",
+    description: "A multiline code block",
+    symbol: "<>",
+  },
+  {
+    type: "divider",
+    label: "Divider",
+    description: "A horizontal rule",
+    symbol: "—",
+  },
+  {
+    type: "markdown",
+    label: "Markdown",
+    description: "CommonMark + tables, task lists, images and footnotes",
+    symbol: "M↓",
+  },
+  {
+    type: "board",
+    label: "Kanban board",
+    description: "Embed the live shared workspace board",
+    symbol: "▥",
   },
   {
     type: "subnote",
@@ -60,51 +108,25 @@ const commands: Command[] = [
 ];
 const emptyBlock = (): Block => ({ type: "paragraph", text: "" });
 
-function FormattedText({ text }: { text: string }) {
-  return text
-    .split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\))/g)
-    .map((part, index) => {
-      if (part.startsWith("**") && part.endsWith("**"))
-        return <strong key={index}>{part.slice(2, -2)}</strong>;
-      const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (match) {
-        try {
-          const url = new URL(match[2]);
-          if (["http:", "https:"].includes(url.protocol))
-            return (
-              <a
-                key={index}
-                href={url.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {match[1]}
-              </a>
-            );
-        } catch {
-          /* Unsupported URLs stay visible as text. */
-        }
-      }
-      return <span key={index}>{part}</span>;
-    });
-}
 export default function BlockEditor({
   value,
   onChange,
   disabled = false,
   onAddSubnote,
+  renderBoard,
 }: BlockEditorProps) {
   const blocks = value.blocks.length ? value.blocks : [emptyBlock()];
   const container = useRef<HTMLDivElement>(null);
   const refs = useRef(new Map<number, HTMLTextAreaElement>());
   const pendingFocus = useRef<{ index: number; offset: number } | null>(null);
+  const commandMenuRef = useRef<HTMLDivElement>(null);
   const formattedRefs = useRef(new Map<number, HTMLDivElement>());
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [feedback, setFeedback] = useState("");
   const menuId = useId();
   const options = commands.filter((command) =>
-    `${command.label} ${command.type}`
+    `${command.label} ${command.type} ${command.level ? `h${command.level}` : ""}`
       .toLowerCase()
       .includes(menu?.query.toLowerCase() || ""),
   );
@@ -116,6 +138,22 @@ export default function BlockEditor({
     for (const [index, input] of refs.current.entries()) {
       input.style.height = "auto";
       input.style.height = `${Math.max(input.scrollHeight, (formattedRefs.current.get(index)?.scrollHeight || 0) + 10, 30)}px`;
+    }
+    const menuElement = commandMenuRef.current;
+    const activeItem = menuElement?.querySelector<HTMLElement>(
+      '[aria-selected="true"]',
+    );
+    if (menuElement && activeItem) {
+      if (activeItem.offsetTop < menuElement.scrollTop)
+        menuElement.scrollTop = activeItem.offsetTop;
+      else if (
+        activeItem.offsetTop + activeItem.offsetHeight >
+        menuElement.scrollTop + menuElement.clientHeight
+      )
+        menuElement.scrollTop =
+          activeItem.offsetTop +
+          activeItem.offsetHeight -
+          menuElement.clientHeight;
     }
     const target = pendingFocus.current;
     if (target && !disabled) {
@@ -196,19 +234,52 @@ export default function BlockEditor({
     }
     let target = index;
     if (source === "slash" || !next[index].text)
-      next[index] = { type: command.type, text: "" };
+      next[index] = {
+        type: command.type,
+        text: "",
+        ...(command.level ? { level: command.level } : {}),
+      };
     else {
       target = index + 1;
-      next.splice(target, 0, { type: command.type, text: "" });
+      next.splice(target, 0, {
+        type: command.type,
+        text: "",
+        ...(command.level ? { level: command.level } : {}),
+      });
+    }
+    if (["board", "divider"].includes(command.type)) {
+      next.splice(target + 1, 0, emptyBlock());
+      target += 1;
     }
     if (commit(next, { index: target, offset: 0 })) setMenu(null);
   }
   function update(index: number, text: string) {
+    const shortcut =
+      blocks[index].type === "paragraph" ||
+      (blocks[index].type === "bullet" && /^\[[ xX]\] $/.test(text))
+        ? markdownShortcut(text)
+        : null;
     const next = blocks.map((block, i) =>
-      i === index ? { ...block, text } : block,
+      i === index ? shortcut || { ...block, text } : block,
     );
-    if (!commit(next)) return;
-    if (/^\/[a-z ]*$/i.test(text))
+    if (shortcut?.type === "divider") next.splice(index + 1, 0, emptyBlock());
+    if (
+      !commit(
+        next,
+        shortcut
+          ? {
+              index: shortcut.type === "divider" ? index + 1 : index,
+              offset: 0,
+            }
+          : undefined,
+      )
+    )
+      return;
+    if (shortcut) {
+      setMenu(null);
+      return;
+    }
+    if (/^\/[a-z0-9 -]*$/i.test(text))
       setMenu({ index, source: "slash", query: text.slice(1), active: 0 });
     else if (menu?.index === index) setMenu(null);
   }
@@ -243,31 +314,57 @@ export default function BlockEditor({
     const start = input.selectionStart;
     const end = input.selectionEnd;
     const current = blocks[index];
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (
+      event.key === "Enter" &&
+      current.type === "paragraph" &&
+      /^(```|---|\*\*\*|___)$/.test(current.text)
+    ) {
+      event.preventDefault();
+      const shortcut = markdownShortcut(`${current.text} `)!;
+      const next = blocks.map((block, i) => (i === index ? shortcut : block));
+      if (shortcut.type === "divider") next.splice(index + 1, 0, emptyBlock());
+      commit(next, {
+        index: shortcut.type === "divider" ? index + 1 : index,
+        offset: 0,
+      });
+      return;
+    }
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !["code", "markdown"].includes(current.type)
+    ) {
       event.preventDefault();
       const next = blocks.map((block) => ({ ...block }));
-      if (!current.text && current.type === "bullet")
-        next[index].type = "paragraph";
+      if (!current.text && ["bullet", "ordered", "todo"].includes(current.type))
+        next[index] = { type: "paragraph", text: "" };
       else {
         next[index].text = current.text.slice(0, start);
         next.splice(index + 1, 0, {
-          type: current.type === "bullet" ? "bullet" : "paragraph",
+          type: ["bullet", "ordered", "todo"].includes(current.type)
+            ? current.type
+            : "paragraph",
           text: current.text.slice(end),
         });
       }
       const target =
-        !current.text && current.type === "bullet" ? index : index + 1;
+        !current.text && ["bullet", "ordered", "todo"].includes(current.type)
+          ? index
+          : index + 1;
       if (commit(next, { index: target, offset: 0 })) setMenu(null);
     } else if (event.key === "Backspace" && start === 0 && end === 0) {
       if (current.type !== "paragraph" && !current.text) {
         event.preventDefault();
         commit(
           blocks.map((block, i) =>
-            i === index ? { ...block, type: "paragraph" } : block,
+            i === index ? { type: "paragraph", text: "" } : block,
           ),
           { index, offset: 0 },
         );
-      } else if (index > 0) {
+      } else if (
+        index > 0 &&
+        !["board", "divider"].includes(blocks[index - 1].type)
+      ) {
         event.preventDefault();
         const next = blocks.map((block) => ({ ...block }));
         const offset = next[index - 1].text.length;
@@ -280,44 +377,30 @@ export default function BlockEditor({
   function paste(event: ClipboardEvent<HTMLTextAreaElement>, index: number) {
     if (disabled) return;
     const pasted = event.clipboardData.getData("text/plain");
-    if (!/[\r\n]/.test(pasted)) return;
+    if (
+      ["code", "markdown"].includes(blocks[index].type) ||
+      !/[\r\n]/.test(pasted)
+    )
+      return;
     event.preventDefault();
     const start = event.currentTarget.selectionStart;
     const end = event.currentTarget.selectionEnd;
-    const lines = pasted.replace(/\r\n?/g, "\n").split("\n");
-    const prefix = blocks[index].text.slice(0, start);
-    const suffix = blocks[index].text.slice(end);
-    const inserted = lines.map((line, i): Block => {
-      const type =
-        i === 0
-          ? blocks[index].type
-          : line.startsWith("# ")
-            ? "heading"
-            : line.startsWith("- ")
-              ? "bullet"
-              : blocks[index].type === "bullet"
-                ? "bullet"
-                : "paragraph";
-      const text = i > 0 ? line.replace(/^(# |- )/, "") : line;
-      return {
-        type,
-        text: `${i === 0 ? prefix : ""}${text}${i === lines.length - 1 ? suffix : ""}`,
-      };
-    });
-    const next = [
-      ...blocks.slice(0, index),
-      ...inserted,
-      ...blocks.slice(index + 1),
-    ];
-    const target = index + inserted.length - 1;
+    const text =
+      blocks[index].text.slice(0, start) +
+      pasted.replace(/\r\n?/g, "\n") +
+      blocks[index].text.slice(end);
+    const next = blocks.map((block, i) =>
+      i === index ? { type: "markdown" as const, text } : block,
+    );
     if (
       commit(next, {
-        index: target,
-        offset: inserted[inserted.length - 1].text.length - suffix.length,
+        index,
+        offset: start + pasted.replace(/\r\n?/g, "\n").length,
       })
     )
       setMenu(null);
   }
+
   function move(index: number, direction: -1 | 1) {
     const target = index + direction;
     if (target < 0 || target >= blocks.length) return;
@@ -351,7 +434,8 @@ export default function BlockEditor({
       }}
     >
       <p className={styles.hint}>
-        Type / for blocks. Enter adds a block. Shift + Enter adds a line.
+        Type / for blocks, or # + space for a heading. Enter adds a block; Shift
+        + Enter adds a line.
       </p>
       {feedback && (
         <p className={styles.feedback} role="alert">
@@ -359,7 +443,10 @@ export default function BlockEditor({
         </p>
       )}
       {blocks.map((block, index) => (
-        <div className={`${styles.block} ${styles[block.type]}`} key={index}>
+        <div
+          className={`${styles.block} ${styles[block.type]} ${block.type === "heading" ? styles[`heading${block.level ?? 1}`] : ""}`}
+          key={index}
+        >
           <div className={styles.tools}>
             <button
               type="button"
@@ -389,7 +476,14 @@ export default function BlockEditor({
                     onChange={(event) => {
                       const next = blocks.map((item, i) =>
                         i === index
-                          ? { ...item, type: event.target.value as BlockType }
+                          ? {
+                              type: event.target.value as BlockType,
+                              text: ["board", "divider"].includes(
+                                event.target.value,
+                              )
+                                ? ""
+                                : item.text,
+                            }
                           : item,
                       );
                       commit(next, { index, offset: block.text.length });
@@ -398,8 +492,47 @@ export default function BlockEditor({
                     <option value="paragraph">Text</option>
                     <option value="heading">Heading</option>
                     <option value="bullet">Bullet list</option>
+                    <option value="ordered">Numbered list</option>
+                    <option value="todo">Task list</option>
+                    <option value="quote">Quote</option>
+                    <option value="code">Code</option>
+                    <option value="markdown">Markdown</option>
+                    {["board", "divider"].includes(block.type) && (
+                      <option value={block.type}>{block.type}</option>
+                    )}
                   </select>
                 </label>
+                {block.type === "heading" && (
+                  <label>
+                    Heading level
+                    <select
+                      aria-label={`Block ${index + 1} heading level`}
+                      value={block.level ?? 1}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        commit(
+                          blocks.map((item, i) =>
+                            i === index
+                              ? {
+                                  ...item,
+                                  level: Number(
+                                    event.target.value,
+                                  ) as Block["level"],
+                                }
+                              : item,
+                          ),
+                          { index, offset: block.text.length },
+                        )
+                      }
+                    >
+                      {[1, 2, 3, 4, 5, 6].map((level) => (
+                        <option key={level} value={level}>
+                          Heading {level}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <button
                   type="button"
                   disabled={disabled || index === 0}
@@ -430,44 +563,89 @@ export default function BlockEditor({
               •
             </span>
           )}
-          <textarea
-            ref={(element) => {
-              if (element) refs.current.set(index, element);
-              else refs.current.delete(index);
-            }}
-            rows={1}
-            maxLength={20000}
-            className={`${styles.text} ${focusedIndex !== index && /\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\)/.test(block.text) ? styles.formattedSource : ""}`}
-            value={block.text}
-            disabled={disabled}
-            aria-label={`${block.type === "paragraph" ? "Text" : block.type === "heading" ? "Heading" : "Bullet list item"} block ${index + 1}`}
-            placeholder={
-              block.type === "heading"
-                ? "Heading"
-                : block.type === "bullet"
-                  ? "List item"
-                  : index === 0
-                    ? "Write something, or type / for blocks…"
-                    : "Type / for blocks…"
-            }
-            aria-controls={menu?.index === index ? menuId : undefined}
-            aria-expanded={menu?.index === index ? true : undefined}
-            aria-activedescendant={
-              menu?.index === index && options.length
-                ? `${menuId}-${active}`
-                : undefined
-            }
-            onFocus={() => {
-              setFocusedIndex(index);
-              if (menu && menu.index !== index) setMenu(null);
-            }}
-            onBlur={() => setFocusedIndex(null)}
-            onChange={(event) => update(index, event.target.value)}
-            onKeyDown={(event) => keyDown(event, index)}
-            onPaste={(event) => paste(event, index)}
-          />
+          {block.type === "ordered" && (
+            <span className={styles.bulletMark} aria-hidden="true">
+              {blocks
+                .slice(0, index)
+                .reverse()
+                .findIndex((item) => item.type !== "ordered") < 0
+                ? index + 1
+                : blocks
+                    .slice(0, index)
+                    .reverse()
+                    .findIndex((item) => item.type !== "ordered") + 1}
+              .
+            </span>
+          )}
+          {block.type === "todo" && (
+            <input
+              type="checkbox"
+              className={styles.checkbox}
+              aria-label={`Complete task-list block ${index + 1}`}
+              checked={block.checked ?? false}
+              disabled={disabled}
+              onChange={(event) =>
+                commit(
+                  blocks.map((item, i) =>
+                    i === index
+                      ? { ...item, checked: event.target.checked }
+                      : item,
+                  ),
+                )
+              }
+            />
+          )}
+          {block.type === "board" ? (
+            <div className={styles.embeddedBoard}>
+              {renderBoard?.()}
+              <small>
+                Changes here update the shared workspace board. Removing this
+                block keeps its tasks.
+              </small>
+            </div>
+          ) : block.type === "divider" ? (
+            <hr className={styles.divider} />
+          ) : (
+            <textarea
+              ref={(element) => {
+                if (element) refs.current.set(index, element);
+                else refs.current.delete(index);
+              }}
+              rows={1}
+              maxLength={20000}
+              className={`${styles.text} ${focusedIndex !== index && !["code", "markdown"].includes(block.type) && /[\*_~`\[\]]/.test(block.text) ? styles.formattedSource : ""}`}
+              value={block.text}
+              disabled={disabled}
+              aria-label={`${block.type === "paragraph" ? "Text" : block.type === "heading" ? `Heading ${block.level ?? 1}` : block.type === "bullet" ? "Bullet list item" : block.type} block ${index + 1}`}
+              placeholder={
+                block.type === "heading"
+                  ? "Heading"
+                  : block.type === "bullet"
+                    ? "List item"
+                    : index === 0
+                      ? "Write something, or type / for blocks…"
+                      : "Type / for blocks…"
+              }
+              aria-controls={menu?.index === index ? menuId : undefined}
+              aria-expanded={menu?.index === index ? true : undefined}
+              aria-activedescendant={
+                menu?.index === index && options.length
+                  ? `${menuId}-${active}`
+                  : undefined
+              }
+              onFocus={() => {
+                setFocusedIndex(index);
+                if (menu && menu.index !== index) setMenu(null);
+              }}
+              onBlur={() => setFocusedIndex(null)}
+              onChange={(event) => update(index, event.target.value)}
+              onKeyDown={(event) => keyDown(event, index)}
+              onPaste={(event) => paste(event, index)}
+            />
+          )}
           {focusedIndex !== index &&
-            /\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\)/.test(block.text) && (
+            !["code", "markdown"].includes(block.type) &&
+            /[\*_~`\[\]]/.test(block.text) && (
               <div
                 className={styles.formatted}
                 ref={(element) => {
@@ -476,12 +654,21 @@ export default function BlockEditor({
                 }}
                 aria-label="Formatted block text"
               >
-                <FormattedText text={block.text} />
+                <MarkdownText text={block.text} />
               </div>
             )}
+          {block.type === "markdown" && (
+            <div
+              className={styles.markdownPreview}
+              aria-label="Live Markdown preview"
+            >
+              <MarkdownText text={block.text} />
+            </div>
+          )}
           {menu?.index === index && !disabled && (
             <div
               className={styles.menu}
+              ref={commandMenuRef}
               id={menuId}
               role="listbox"
               aria-label="Insert a block"
@@ -492,7 +679,7 @@ export default function BlockEditor({
                 options.map((command, optionIndex) => (
                   <button
                     type="button"
-                    key={command.type}
+                    key={`${command.type}-${command.level ?? 0}`}
                     id={`${menuId}-${optionIndex}`}
                     role="option"
                     aria-disabled={command.type === "subnote" && !onAddSubnote}

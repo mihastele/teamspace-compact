@@ -344,3 +344,130 @@
     font-size: 21px;
   }
 }
+.heading1 .text,
+.heading1 .formatted {
+  font-size: 32px;
+  line-height: 1.35;
+}
+.heading2 .text,
+.heading2 .formatted {
+  font-size: 26px;
+  line-height: 1.4;
+}
+.heading3 .text,
+.heading3 .formatted {
+  font-size: 21px;
+}
+.heading4 .text,
+.heading4 .formatted {
+  font-size: 18px;
+}
+.heading5 .text,
+.heading5 .formatted {
+  font-size: 16px;
+}
+.heading6 .text,
+.heading6 .formatted {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ordered .text,
+.todo .text {
+  padding-left: 0;
+}
+.quote .text {
+  border-left: 3px solid #ccd6ee;
+  padding-left: 14px;
+  font-style: italic;
+}
+.code .text,
+.markdown .text {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: #f5f7fb;
+  padding: 14px;
+}
+.checkbox {
+  flex-shrink: 0;
+  margin: 12px 10px 0 0;
+  accent-color: #4263e9;
+}
+.divider {
+  flex: 1;
+  border: 0;
+  border-top: 1px solid #dfe5f0;
+  margin: 18px 0;
+}
+.embeddedBoard {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #e2e7f0;
+  border-radius: 10px;
+  padding: 16px;
+}
+.embeddedBoard > div {
+  min-width: 740px;
+}
+.embeddedBoard > small {
+  display: block;
+  color: #8a95aa;
+  font-size: 10px;
+  margin-top: 12px;
+}
+.markdown {
+  flex-wrap: wrap;
+}
+.markdownPreview {
+  flex-basis: 100%;
+  margin: 14px 0 12px 35px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.formatted p {
+  margin: 0;
+}
+.markdownPreview p {
+  margin: 8px 0;
+}
+.markdownPreview pre {
+  background: #f2f5fa;
+  padding: 16px;
+  overflow: auto;
+  border-radius: 6px;
+}
+.markdownPreview code,
+.formatted code {
+  background: #f0f3f8;
+  font-family: ui-monospace, monospace;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+.markdownPreview table {
+  border-collapse: collapse;
+  max-width: 100%;
+}
+.markdownPreview th,
+.markdownPreview td {
+  padding: 9px 12px;
+  border: 1px solid #dfe5ee;
+}
+.markdownPreview blockquote {
+  border-left: 3px solid #c5d0e5;
+  padding-left: 16px;
+  margin-left: 0;
+}
+.markdownPreview img,
+.formatted img {
+  max-width: 100%;
+  height: auto;
+}
+.markdownPreview a {
+  color: #4263e9;
+}
+
+.menu {
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+}

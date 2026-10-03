@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ApiError, identifier, integer, noteContent, object, taskInput, text } from "../.test-build/validation.js";
+import { ApiError, identifier, integer, noteContent, object, taskInput, text } from "../.test-build/server/validation.js";
 
 const rejected = (run) => assert.throws(run, error => error instanceof ApiError && error.status === 400 && error.code === "invalid_input");
 
