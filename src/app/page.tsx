@@ -1,69 +1,1533 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
 
-export default function Home() {
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { useTeamspace } from "@/lib/client";
+import type { Task, Note, NoteContent, Attachment } from "@/lib/model";
+import s from "./page.module.css";
+
+type Api = ReturnType<typeof useTeamspace>;
+type View = "board" | "notes" | "members";
+type Status = Task["status"];
+const columns: { id: Status; label: string }[] = [
+  { id: "todo", label: "To do" },
+  { id: "doing", label: "In progress" },
+  { id: "done", label: "Done" },
+];
+function initials(name: string) {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
+    name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase() || "?"
+  );
+}
+function Icon({ name, size = 16 }: { name: string; size?: number }) {
+  const paths: Record<string, ReactNode> = {
+    board: (
+      <>
+        <rect x="3" y="4" width="5" height="16" rx="1" />
+        <rect x="10" y="4" width="5" height="11" rx="1" />
+        <rect x="17" y="4" width="4" height="14" rx="1" />
+      </>
+    ),
+    notes: (
+      <>
+        <path d="M14 3H5v18h14V8z" />
+        <path d="M14 3v5h5M8 12h8M8 16h6" />
+      </>
+    ),
+    members: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 20v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="10" cy="10" r="6" />
+        <path d="m15 15 6 6" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    calendar: (
+      <>
+        <rect x="4" y="5" width="16" height="16" rx="2" />
+        <path d="M8 3v5M16 3v5M4 11h16" />
+      </>
+    ),
+    file: (
+      <>
+        <path d="M14 3H5v18h14V8z" />
+        <path d="M14 3v5h5" />
+      </>
+    ),
+  };
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name] || paths.file}
+    </svg>
+  );
+}
+function Avatar({ name }: { name: string }) {
+  return (
+    <span className={s.avatar} title={name}>
+      {initials(name)}
+    </span>
+  );
+}
+function ErrorMessage({ message }: { message: string }) {
+  return (
+    <div className={s.error} role="alert">
+      {message}
+    </div>
+  );
+}
+function contentText(content: NoteContent) {
+  return content.blocks
+    .map(
+      (b) =>
+        `${b.type === "heading" ? "# " : b.type === "bullet" ? "- " : ""}${b.text}`,
+    )
+    .join("\n");
+}
+function parseContent(text: string): NoteContent {
+  return {
+    blocks: text.split("\n").map((line) => ({
+      type: line.startsWith("# ")
+        ? "heading"
+        : line.startsWith("- ")
+          ? "bullet"
+          : "paragraph",
+      text: line.replace(/^(# |- )/, ""),
+    })),
+  };
+}
+function InlineText({ text }: { text: string }) {
+  const pieces = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\))/g);
+  return pieces.map((piece, index) => {
+    if (piece.startsWith("**") && piece.endsWith("**"))
+      return <strong key={index}>{piece.slice(2, -2)}</strong>;
+    const link = piece.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) {
+      try {
+        const url = new URL(link[2]);
+        if (["https:", "http:"].includes(url.protocol))
+          return (
             <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              key={index}
+              href={url.href}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {link[1]}
+            </a>
+          );
+      } catch {
+        /* Invalid links remain plain text. */
+      }
+    }
+    return <span key={index}>{piece}</span>;
+  });
+}
+
+function Attachments({
+  api,
+  type,
+  id,
+}: {
+  api: Api;
+  type: "task" | "note";
+  id: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [original, setOriginal] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const items = api.attachments.filter(
+    (a: Attachment) => a.parentId === id && a.parentType === type,
+  );
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "The file action failed. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section aria-label="Attachments">
+      <h3 className={s.sectionHeading}>
+        Attachments {items.length > 0 && `(${items.length})`}
+      </h3>
+      {error && <ErrorMessage message={error} />}
+      {items.map((a) => (
+        <div className={s.attachment} key={a.id}>
+          <Icon name="file" />
+          <button
+            disabled={busy}
+            onClick={() => void run(() => api.downloadAttachment(a.id))}
+          >
+            {a.originalName}
+          </button>
+          <small>
+            {a.status === "deleting"
+              ? "Deletion pending — retry below"
+              : `${(a.bytes / 1024).toFixed(0)} KB`}
+          </small>
+          <button
+            className={s.danger}
+            disabled={busy}
+            aria-label={`Delete ${a.originalName}`}
+            onClick={() => {
+              if (confirm(`Delete ${a.originalName}?`))
+                void run(() => api.deleteAttachment(a.id));
+            }}
+          >
+            Delete
+          </button>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+      ))}
+      <label className={s.upload}>
+        {busy ? "Working on your file…" : "Add an image or PDF · Up to 15 MB"}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          disabled={busy}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file)
+              void run(async () => {
+                await api.uploadAttachment(file, type, id, original);
+                if (fileInput.current) fileInput.current.value = "";
+              });
+          }}
+        />
+      </label>
+      <label className={s.check}>
+        <input
+          type="checkbox"
+          checked={original}
+          onChange={(e) => setOriginal(e.target.checked)}
+        />
+        Keep original (maximum 10 MB)
+      </label>
+    </section>
+  );
+}
+
+function TaskDialog({
+  api,
+  initial,
+  close,
+}: {
+  api: Api;
+  initial: Partial<Task>;
+  close: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [draft, setDraft] = useState({
+    ...initial,
+    title: initial.title || "",
+    description: initial.description || "",
+    status: initial.status || ("todo" as Status),
+    assigneeId: initial.assigneeId || "",
+    dueDate: initial.dueDate || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const original = JSON.stringify({
+    title: initial.title || "",
+    description: initial.description || "",
+    status: initial.status || "todo",
+    assigneeId: initial.assigneeId || "",
+    dueDate: initial.dueDate || "",
+  });
+  const changed =
+    original !==
+    JSON.stringify({
+      title: draft.title,
+      description: draft.description,
+      status: draft.status,
+      assigneeId: draft.assigneeId,
+      dueDate: draft.dueDate,
+    });
+  function attemptClose() {
+    if (!busy && (!changed || confirm("Discard unsaved task changes?")))
+      close();
+  }
+  useEffect(() => {
+    const element = dialog.current;
+    const prior = document.activeElement as HTMLElement | null;
+    element?.showModal();
+    element?.querySelector<HTMLInputElement>("input")?.focus();
+    return () => {
+      element?.close();
+      prior?.focus();
+    };
+  }, []);
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.saveTask({
+        ...draft,
+        title: draft.title.trim(),
+        assigneeId: draft.assigneeId || null,
+        dueDate: draft.dueDate || null,
+      });
+      close();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Task could not be saved. Your changes are still here.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    if (!initial.id || !confirm("Delete this task and its attachments?"))
+      return;
+    setBusy(true);
+    try {
+      await api.deleteTask(initial.id);
+      close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Task could not be deleted.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <dialog
+      ref={dialog}
+      className={s.dialog}
+      aria-labelledby="task-dialog-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        attemptClose();
+      }}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <div className={s.dialogHeader}>
+          <h2 id="task-dialog-title">
+            {initial.id ? "Task details" : "Create a task"}
+          </h2>
+          <button
+            type="button"
+            className={s.close}
+            onClick={attemptClose}
+            aria-label="Close task editor"
+            disabled={busy}
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+            ×
+          </button>
+        </div>
+        <div className={s.dialogBody}>
+          {error && <ErrorMessage message={error} />}
+          <label className={s.field}>
+            Task name
+            <input
+              autoFocus
+              required
+              maxLength={160}
+              value={draft.title}
+              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              placeholder="What needs to happen?"
             />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </label>
+          <label className={s.field}>
+            Description
+            <textarea
+              maxLength={10000}
+              value={draft.description}
+              onChange={(e) =>
+                setDraft({ ...draft, description: e.target.value })
+              }
+              placeholder="A little context goes a long way…"
+            />
+          </label>
+          <div className={s.fieldRow}>
+            <label className={s.field}>
+              Status
+              <select
+                value={draft.status}
+                onChange={(e) =>
+                  setDraft({ ...draft, status: e.target.value as Status })
+                }
+              >
+                {columns.map((c) => (
+                  <option value={c.id} key={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={s.field}>
+              Assignee
+              <select
+                value={draft.assigneeId}
+                onChange={(e) =>
+                  setDraft({ ...draft, assigneeId: e.target.value })
+                }
+              >
+                <option value="">Unassigned</option>
+                {api.members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className={s.field}>
+            Due date
+            <input
+              type="date"
+              value={draft.dueDate}
+              onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+            />
+          </label>
+          {initial.id ? (
+            <Attachments api={api} type="task" id={initial.id} />
+          ) : (
+            <p className={s.hint}>Save your task to add attachments.</p>
+          )}
+        </div>
+        <div className={s.dialogActions}>
+          {initial.id && (
+            <button
+              type="button"
+              className={s.danger}
+              disabled={busy}
+              onClick={() => void remove()}
+            >
+              Delete task
+            </button>
+          )}
+          <button
+            type="button"
+            className={s.secondary}
+            onClick={attemptClose}
+            disabled={busy}
           >
-            Documentation
-          </a>
+            Cancel
+          </button>
+          <button className={s.primary} disabled={busy || !draft.title.trim()}>
+            {busy ? "Saving…" : "Save task"}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+type Draft = {
+  title: string;
+  text: string;
+  revision: number;
+  baseline: string;
+  state: "Unsaved" | "Saved" | "Saving" | "Failed";
+  error?: string;
+};
+function Notes({
+  api,
+  search,
+  onDirtyChange,
+}: {
+  api: Api;
+  search: string;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const workspaceId = api.workspace!.id;
+  const [selections, setSelections] = useState<Record<string, string | null>>(
+    {},
+  );
+  const selected = selections[workspaceId] || null;
+  function setSelected(id: string | null) {
+    setSelections((prev) => ({ ...prev, [workspaceId]: id }));
+  }
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const key = `${workspaceId}:${selected || "new"}`;
+  const remote = api.notes.find((n) => n.id === selected);
+  const baseline = (n: Note) =>
+    JSON.stringify([n.title, contentText(n.content)]);
+  const draft =
+    drafts[key] ||
+    (remote
+      ? {
+          title: remote.title,
+          text: contentText(remote.content),
+          revision: remote.revision,
+          baseline: baseline(remote),
+          state: "Saved" as const,
+        }
+      : {
+          title: "",
+          text: "",
+          revision: 0,
+          baseline: JSON.stringify(["", ""]),
+          state: "Unsaved" as const,
+        });
+  const dirty = JSON.stringify([draft.title, draft.text]) !== draft.baseline;
+  const anyDirty = Object.values(drafts).some(
+    (d) => JSON.stringify([d.title, d.text]) !== d.baseline,
+  );
+  useEffect(() => {
+    onDirtyChange(anyDirty);
+    function preventLoss(e: BeforeUnloadEvent) {
+      if (anyDirty) e.preventDefault();
+    }
+    window.addEventListener("beforeunload", preventLoss);
+    return () => window.removeEventListener("beforeunload", preventLoss);
+  }, [anyDirty, onDirtyChange]);
+  const conflict = Boolean(
+    !api.loading &&
+    selected &&
+    drafts[key] &&
+    (!remote || remote.revision !== draft.revision),
+  );
+  function update(patch: Partial<Draft>) {
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: { ...draft, ...patch, state: "Unsaved", error: patch.error },
+    }));
+  }
+  async function save() {
+    const capturedKey = key;
+    setDrafts((prev) => ({
+      ...prev,
+      [capturedKey]: { ...draft, state: "Saving", error: undefined },
+    }));
+    try {
+      const saved = await api.saveNote({
+        id: selected || undefined,
+        title: draft.title.trim(),
+        content: parseContent(draft.text),
+        expectedRevision: selected ? draft.revision : undefined,
+      });
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[capturedKey];
+        next[`${workspaceId}:${saved.id}`] = {
+          ...draft,
+          title: saved.title,
+          revision: saved.revision,
+          baseline: JSON.stringify([saved.title, draft.text]),
+          state: "Saved",
+        };
+        return next;
+      });
+      setSelections((prev) =>
+        (prev[workspaceId] || null) === selected
+          ? { ...prev, [workspaceId]: saved.id }
+          : prev,
+      );
+    } catch (e) {
+      setDrafts((prev) => ({
+        ...prev,
+        [capturedKey]: {
+          ...draft,
+          state: "Failed",
+          error:
+            e instanceof Error
+              ? e.message
+              : "Save failed. Your draft has been kept.",
+        },
+      }));
+    }
+  }
+  async function remove() {
+    if (!selected || !confirm("Delete this note and its attachments?")) return;
+    try {
+      await api.deleteNote(selected);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setSelected(null);
+    } catch (e) {
+      update({ error: e instanceof Error ? e.message : "Delete failed." });
+    }
+  }
+  return (
+    <div className={s.notes}>
+      <aside className={s.noteList} aria-label="Notes">
+        <button className={s.secondary} onClick={() => setSelected(null)}>
+          <Icon name="plus" />
+          New note
+        </button>
+        {api.notes
+          .filter((n) => n.title.toLowerCase().includes(search.toLowerCase()))
+          .map((n) => (
+            <button
+              className={`${s.noteItem} ${selected === n.id ? s.selected : ""}`}
+              key={n.id}
+              onClick={() => setSelected(n.id)}
+            >
+              ▤ &nbsp;{n.title}
+              {drafts[`${workspaceId}:${n.id}`] &&
+              drafts[`${workspaceId}:${n.id}`].state !== "Saved"
+                ? " •"
+                : ""}
+            </button>
+          ))}
+        {!api.notes.length && (
+          <p className={s.hint}>Your shared knowledge starts here.</p>
+        )}
+      </aside>
+      <section className={s.editor} aria-label="Note editor">
+        <div className={s.editorToolbar}>
+          <span aria-live="polite">
+            {conflict
+              ? "Remote changes available"
+              : draft.state === "Saved" && dirty
+                ? "Unsaved"
+                : draft.state}{" "}
+            · Explicit save
+          </span>
+          {selected && (
+            <button
+              className={s.secondary}
+              onClick={() => void remove()}
+              disabled={api.loading || draft.state === "Saving"}
+            >
+              Delete
+            </button>
+          )}
+          <button
+            className={s.primary}
+            onClick={() => void save()}
+            disabled={
+              api.loading ||
+              !draft.title.trim() ||
+              draft.state === "Saving" ||
+              conflict ||
+              (Boolean(selected) && !dirty)
+            }
+          >
+            {draft.state === "Saving" ? "Saving…" : "Save note"}
+          </button>
+        </div>
+        {conflict && (
+          <div className={s.banner}>
+            <div>
+              <strong>This note changed while you were editing.</strong>
+              <p>
+                Your draft is preserved. Copy it before reloading if you want to
+                keep your version.
+              </p>
+              <button
+                className={s.secondary}
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(`${draft.title}\n\n${draft.text}`)
+                    .catch(() =>
+                      update({
+                        error:
+                          "Clipboard unavailable. Select and copy the editor text manually.",
+                      }),
+                    );
+                }}
+              >
+                Copy my draft
+              </button>
+              {remote && (
+                <button
+                  className={s.secondary}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "Replace your local draft with the latest saved version?",
+                      )
+                    )
+                      setDrafts((prev) => {
+                        const next = { ...prev };
+                        delete next[key];
+                        return next;
+                      });
+                  }}
+                >
+                  Reload latest
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {draft.error && <ErrorMessage message={draft.error} />}
+        <input
+          className={s.noteTitle}
+          aria-label="Note title"
+          maxLength={160}
+          placeholder="Untitled note"
+          value={draft.title}
+          disabled={api.loading || draft.state === "Saving"}
+          onChange={(e) => update({ title: e.target.value })}
+        />
+        <textarea
+          className={s.noteText}
+          aria-label="Note content"
+          maxLength={50000}
+          placeholder={
+            "Start with an idea…\n\n# A heading\n- A list item\n**Something important**\n[A useful link](https://example.com)"
+          }
+          value={draft.text}
+          disabled={api.loading || draft.state === "Saving"}
+          onChange={(e) => update({ text: e.target.value })}
+        />
+        <p className={s.hint}>
+          # Heading &nbsp; · &nbsp; - List item &nbsp; · &nbsp; **Bold** &nbsp;
+          · &nbsp; [Link](https://…)
+        </p>
+        {draft.text && (
+          <div className={s.preview} aria-label="Formatted preview">
+            {parseContent(draft.text).blocks.map((b, i) =>
+              b.type === "heading" ? (
+                <h3 key={i}>
+                  <InlineText text={b.text} />
+                </h3>
+              ) : b.type === "bullet" ? (
+                <ul key={i}>
+                  <li>
+                    <InlineText text={b.text} />
+                  </li>
+                </ul>
+              ) : (
+                <p key={i}>
+                  <InlineText text={b.text || "\u00a0"} />
+                </p>
+              ),
+            )}
+          </div>
+        )}
+        {selected && (
+          <div style={{ marginTop: 30 }}>
+            <Attachments api={api} type="note" id={selected} />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Members({ api }: { api: Api }) {
+  const [invite, setInvite] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const owner = api.workspace?.ownerId === api.user?.uid;
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "This action failed. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={s.members}>
+      {error && <ErrorMessage message={error} />}
+      <section className={s.panel}>
+        <h2>Good work happens together.</h2>
+        <p>
+          Invite your teammates to share this board, project notes, and files.
+        </p>
+        {!api.configured ? (
+          <p>Invitations are available after shared workspace configuration.</p>
+        ) : owner ? (
+          <>
+            {invite && (
+              <>
+                <input
+                  readOnly
+                  aria-label="Invite link"
+                  className={s.inviteLink}
+                  value={invite}
+                />
+                <button
+                  className={s.secondary}
+                  onClick={() =>
+                    void run(async () => {
+                      await navigator.clipboard.writeText(invite);
+                      setCopied(true);
+                    })
+                  }
+                >
+                  {copied ? "Copied!" : "Copy link"}
+                </button>{" "}
+              </>
+            )}
+            <button
+              className={s.primary}
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const token = await api.createInvite();
+                  setInvite(
+                    token.startsWith(`${location.origin}/?invite=`)
+                      ? token
+                      : `${location.origin}/?invite=${encodeURIComponent(token)}`,
+                  );
+                  setCopied(false);
+                })
+              }
+            >
+              {busy ? "Working…" : "Create invite link"}
+            </button>{" "}
+            <button
+              className={s.secondary}
+              disabled={busy}
+              onClick={() => {
+                if (
+                  confirm(
+                    "Revoke the current invitation? Existing members keep access.",
+                  )
+                )
+                  void run(async () => {
+                    await api.revokeInvite();
+                    setInvite("");
+                  });
+              }}
+            >
+              Revoke invite
+            </button>
+          </>
+        ) : (
+          <p>Ask your workspace owner for an invitation link.</p>
+        )}
+      </section>
+      <section className={s.panel}>
+        <h2>
+          Workspace members{" "}
+          <span className={s.count}>{api.members.length}</span>
+        </h2>
+        {api.members.map((m) => (
+          <div className={s.memberRow} key={m.id}>
+            <Avatar name={m.displayName} />
+            <div className={s.memberInfo}>
+              {m.displayName}
+              {m.id === api.user?.uid && " (you)"}
+              <small>{m.role === "owner" ? "Workspace owner" : "Member"}</small>
+            </div>
+            {api.configured && owner && m.id !== api.user?.uid && (
+              <>
+                <button
+                  className={s.secondary}
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Transfer workspace ownership to ${m.displayName}?`,
+                      )
+                    )
+                      void run(() => api.transferOwner(m.id));
+                  }}
+                >
+                  Make owner
+                </button>
+                <button
+                  className={s.secondary}
+                  disabled={busy}
+                  onClick={() => {
+                    if (confirm(`Remove ${m.displayName} from this workspace?`))
+                      void run(() => api.removeMember(m.id));
+                  }}
+                >
+                  Remove
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </section>
+      {api.configured && !owner && (
+        <button
+          className={s.secondary}
+          disabled={busy}
+          onClick={() => {
+            if (
+              confirm(
+                "Leave this workspace? You will need an invitation to return.",
+              )
+            )
+              void run(() => api.leaveWorkspace());
+          }}
+        >
+          Leave workspace
+        </button>
+      )}
+      {owner && (
+        <p className={s.hint}>
+          To leave this workspace, transfer ownership to another member first.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceSetup({ api }: { api: Api }) {
+  const [name, setName] = useState("");
+  const [tokenDraft, setToken] = useState<string | null>(null);
+  const incomingToken = useSyncExternalStore(
+    useCallback(() => () => {}, []),
+    () => new URLSearchParams(location.search).get("invite") || "",
+    () => "",
+  );
+  const token = tokenDraft ?? incomingToken;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Unable to continue. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={s.onboarding}>
+      <main className={s.welcome}>
+        <div className={s.brand}>
+          <span className={s.brandMark}>t</span>teamspace
+        </div>
+        <h1>
+          A little space.
+          <br />
+          For your next big idea.
+        </h1>
+        <p>
+          Bring the work, the people, and the ideas together. One focused home
+          for your team.
+        </p>
+        {(error || api.error) && <ErrorMessage message={error || api.error!} />}{" "}
+        {!api.user ? (
+          <button
+            className={s.primary}
+            disabled={busy || api.loading}
+            onClick={() => void run(api.signIn)}
+          >
+            {busy ? "Signing in…" : "Continue with Google"}
+          </button>
+        ) : (
+          <>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(() => api.createWorkspace(name.trim()));
+              }}
+            >
+              <label className={s.field}>
+                Workspace name
+                <input
+                  required
+                  maxLength={100}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your team or project"
+                />
+              </label>
+              <button className={s.primary} disabled={busy || !name.trim()}>
+                Create workspace
+              </button>
+            </form>
+            <div className={s.separator} />
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                let value = token.trim();
+                try {
+                  value = new URL(value).searchParams.get("invite") || value;
+                } catch {
+                  /* Raw tokens are also accepted. */
+                }
+                void run(() => api.joinWorkspace(value));
+              }}
+            >
+              <label className={s.field}>
+                Have an invitation?
+                <input
+                  required
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="Paste an invite link or token"
+                />
+              </label>
+              <button className={s.secondary} disabled={busy || !token.trim()}>
+                Join a workspace
+              </button>
+            </form>
+            <button
+              className={s.secondary}
+              style={{ marginTop: 20 }}
+              onClick={() => void run(api.signOut)}
+            >
+              Sign out
+            </button>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function WorkspaceDialog({
+  api,
+  initialToken,
+  close,
+}: {
+  api: Api;
+  initialToken: string;
+  close: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState("");
+  const [token, setToken] = useState(initialToken);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const element = dialog.current;
+    const prior = document.activeElement as HTMLElement | null;
+    element?.showModal();
+    element?.querySelector<HTMLInputElement>("input")?.focus();
+    return () => {
+      element?.close();
+      prior?.focus();
+    };
+  }, []);
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      close();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Unable to open this workspace. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <dialog
+      ref={dialog}
+      className={s.dialog}
+      aria-labelledby="workspace-dialog-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) close();
+      }}
+    >
+      <div className={s.dialogHeader}>
+        <h2 id="workspace-dialog-title">A new space for your team</h2>
+        <button
+          className={s.close}
+          aria-label="Close workspace setup"
+          disabled={busy}
+          onClick={close}
+        >
+          ×
+        </button>
+      </div>
+      <div className={s.dialogBody}>
+        {error && <ErrorMessage message={error} />}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api.createWorkspace(name.trim()));
+          }}
+        >
+          <label className={s.field}>
+            Workspace name
+            <input
+              autoFocus
+              required
+              maxLength={100}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your team or project"
+            />
+          </label>
+          <button className={s.primary} disabled={busy || !name.trim()}>
+            Create workspace
+          </button>
+        </form>
+        <div className={s.separator} />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            let value = token.trim();
+            try {
+              value = new URL(value).searchParams.get("invite") || value;
+            } catch {
+              /* Raw tokens are also accepted. */
+            }
+            void run(() => api.joinWorkspace(value));
+          }}
+        >
+          <label className={s.field}>
+            Join with an invitation
+            <input
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste an invite link or token"
+            />
+          </label>
+          <button className={s.secondary} disabled={busy || !token.trim()}>
+            Join workspace
+          </button>
+        </form>
+      </div>
+    </dialog>
+  );
+}
+export default function Home() {
+  const api = useTeamspace();
+  const [view, setView] = useState<View>("board");
+  const [search, setSearch] = useState("");
+  const [task, setTask] = useState<Partial<Task> | null>(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState(false);
+  const [workspaceDialog, setWorkspaceDialog] = useState(false);
+  const [dismissedInvite, setDismissedInvite] = useState("");
+  const incomingInvite = useSyncExternalStore(
+    useCallback(() => () => {}, []),
+    () => new URLSearchParams(location.search).get("invite") || "",
+    () => "",
+  );
+  const searchRef = useRef<HTMLInputElement>(null);
+  const dirtyNotes = useRef(false);
+  const onDirtyChange = useCallback((dirty: boolean) => {
+    dirtyNotes.current = dirty;
+  }, []);
+  function signOut() {
+    if (
+      !dirtyNotes.current ||
+      confirm("Sign out and discard your unsaved note drafts?")
+    )
+      void run(api.signOut);
+  }
+  useEffect(() => {
+    function shortcut(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", shortcut);
+    return () => document.removeEventListener("keydown", shortcut);
+  }, []);
+  async function run(action: () => Promise<void>) {
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "That change could not be saved. Please try again.",
+      );
+    }
+  }
+  if (api.loading && !api.workspace)
+    return (
+      <div className={s.onboarding}>
+        <div className={s.busy} role="status">
+          Opening your workspace…
+        </div>
+      </div>
+    );
+  if (!api.workspace || (api.configured && !api.user))
+    return <WorkspaceSetup api={api} />;
+  const shown = api.tasks.filter(
+    (t) =>
+      `${t.title} ${t.description}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (!filter ||
+        t.assigneeId === (api.configured ? api.user?.uid : "preview")),
+  );
+  const title =
+    view === "board"
+      ? "Project board"
+      : view === "notes"
+        ? "Project notes"
+        : "Your people";
+  return (
+    <div className={s.shell}>
+      <aside className={s.sidebar}>
+        <div className={s.brand}>
+          <span className={s.brandMark}>t</span>teamspace
+        </div>
+        <select
+          className={s.workspaceSelect}
+          value={api.workspace.id}
+          aria-label="Active workspace"
+          onChange={(e) => {
+            api.selectWorkspace(e.target.value);
+            setTask(null);
+          }}
+        >
+          {api.workspaces.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+        {api.configured && (
+          <button
+            className={s.workspaceAction}
+            onClick={() => setWorkspaceDialog(true)}
+          >
+            + Create or join workspace
+          </button>
+        )}
+        <p className={s.sideLabel}>WORKSPACE</p>
+        <nav className={s.nav} aria-label="Main navigation">
+          {(["board", "notes", "members"] as View[]).map((v) => (
+            <button
+              key={v}
+              className={view === v ? s.active : ""}
+              onClick={() => setView(v)}
+              aria-current={view === v ? "page" : undefined}
+            >
+              <Icon name={v} />
+              {v === "board" ? "Board" : v === "notes" ? "Notes" : "Members"}
+              {v === "board" && (
+                <span className={s.navCount}>{api.tasks.length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className={s.sidebarBottom}>
+          <div className={s.sideCard}>
+            <h3>A shared space. A shared goal.</h3>
+            <p>Big things start with a small team working together.</p>
+            <button onClick={() => setView("members")}>
+              Invite your teammates ↗
+            </button>
+          </div>
+          <div className={s.profile}>
+            <Avatar name={api.user?.displayName || "Local explorer"} />
+            <div>
+              <strong>{api.user?.displayName || "Local explorer"}</strong>
+              <small>
+                {api.configured ? "Your personal account" : "Preview mode"}
+              </small>
+            </div>
+            {api.configured && <button onClick={signOut}>Sign out</button>}
+          </div>
+        </div>
+      </aside>
+      <main className={s.main}>
+        <header className={s.topbar}>
+          <div className={s.breadcrumb}>
+            {api.workspace.name}
+            <span>/</span>
+            <strong>
+              {view === "board"
+                ? "Board"
+                : view === "notes"
+                  ? "Notes"
+                  : "Members"}
+            </strong>
+          </div>
+          <div className={s.topbarRight}>
+            <label className={s.search}>
+              <Icon name="search" size={14} />
+              <input
+                ref={searchRef}
+                aria-label="Search tasks and notes"
+                placeholder="Search anything…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <kbd>⌘ K</kbd>
+            </label>
+            <Avatar name={api.user?.displayName || "You"} />
+          </div>
+        </header>
+        <div className={s.surface}>
+          {!api.configured && (
+            <div className={s.banner}>
+              <strong>LOCAL PREVIEW</strong>
+              <span>
+                This device only. No sign-in, shared team data, or private cloud
+                storage is connected.
+              </span>
+            </div>
+          )}
+          {(error || api.error) && (
+            <div className={s.error} role="alert">
+              {error || api.error}
+              <button
+                aria-label="Dismiss error"
+                onClick={() => {
+                  setError("");
+                  api.clearError();
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          <div className={s.hero}>
+            <div>
+              <p className={s.eyebrow}>LET’S MAKE SOMETHING GREAT</p>
+              <h1>{title}</h1>
+              <p className={s.subtitle}>
+                {view === "board"
+                  ? "A clear view of what’s next. One task at a time."
+                  : view === "notes"
+                    ? "Keep the ideas, decisions, and details in one place."
+                    : "A small team can do extraordinary things."}
+              </p>
+            </div>
+            {view === "board" && (
+              <button
+                className={s.primary}
+                onClick={() => setTask({ status: "todo" })}
+              >
+                <Icon name="plus" size={15} />
+                Add task
+              </button>
+            )}
+          </div>
+          <div className={s.toolbar}>
+            <div className={s.viewLabel}>
+              <Icon name={view} />
+              {view === "board"
+                ? "Board view"
+                : view === "notes"
+                  ? "All notes"
+                  : "Team directory"}
+              <span>
+                {view === "board"
+                  ? `${api.tasks.length} tasks in this workspace`
+                  : view === "notes"
+                    ? `${api.notes.length} shared documents`
+                    : "Better, together"}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              {view === "board" && (
+                <button
+                  className={s.secondary}
+                  aria-pressed={filter}
+                  onClick={() => setFilter(!filter)}
+                >
+                  {filter ? "My tasks ✓" : "All assignees"}
+                </button>
+              )}
+              <div className={s.people}>
+                {api.members.slice(0, 4).map((m) => (
+                  <Avatar key={m.id} name={m.displayName} />
+                ))}
+                <span className={s.peopleText}>
+                  {api.members.length}{" "}
+                  {api.members.length === 1 ? "member" : "members"}
+                </span>
+              </div>
+            </div>
+          </div>
+          {api.loading && (
+            <p className={s.busy} role="status">
+              Loading workspace…
+            </p>
+          )}
+          <div hidden={view !== "board"}>
+            <div className={s.board}>
+              {columns.map((c) => (
+                <section
+                  key={c.id}
+                  className={`${s.column} ${s[c.id] || ""}`}
+                  aria-label={c.label}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const id = e.dataTransfer.getData(
+                      "application/x-teamspace-task",
+                    );
+                    const current = api.tasks.find((t) => t.id === id);
+                    if (current && current.status !== c.id)
+                      void run(() =>
+                        api.saveTask({ ...current, status: c.id }),
+                      );
+                  }}
+                >
+                  <h2 className={s.columnHeader}>
+                    <span className={s.dot} />
+                    {c.label}
+                    <span className={s.count}>
+                      {shown.filter((t) => t.status === c.id).length}
+                    </span>
+                    <button
+                      aria-label={`Add task to ${c.label}`}
+                      onClick={() => setTask({ status: c.id })}
+                    >
+                      +
+                    </button>
+                  </h2>
+                  {shown
+                    .filter((t) => t.status === c.id)
+                    .sort((a, b) => a.position - b.position)
+                    .map((t) => {
+                      const assignee = api.members.find(
+                        (m) => m.id === t.assigneeId,
+                      );
+                      const date = t.dueDate
+                        ? new Date(`${t.dueDate}T12:00:00`)
+                        : null;
+                      const overdue =
+                        date &&
+                        t.status !== "done" &&
+                        t.dueDate! < new Date().toLocaleDateString("en-CA");
+                      return (
+                        <button
+                          key={t.id}
+                          className={s.card}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(
+                              "application/x-teamspace-task",
+                              t.id,
+                            );
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onClick={() => setTask(t)}
+                          aria-label={`Edit task: ${t.title}`}
+                        >
+                          <span className={s.cardTag}>
+                            {t.status === "done" ? "COMPLETED" : "TASK"}
+                          </span>
+                          <h3>{t.title}</h3>
+                          {t.description && <p>{t.description}</p>}
+                          <div className={s.cardFooter}>
+                            <span
+                              className={`${s.due} ${overdue ? s.overdue : ""}`}
+                            >
+                              {date ? (
+                                <>
+                                  <Icon name="calendar" size={12} />
+                                  {date.toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                  })}
+                                </>
+                              ) : (
+                                "No due date"
+                              )}
+                            </span>
+                            {assignee ? (
+                              <Avatar name={assignee.displayName} />
+                            ) : (
+                              <span>Unassigned</span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  {!shown.some((t) => t.status === c.id) && (
+                    <p className={s.emptyColumn}>
+                      {search || filter
+                        ? "No matching tasks."
+                        : c.id === "done"
+                          ? "Small wins go here.\nYou’ve got this."
+                          : "A little room for what’s next."}
+                    </p>
+                  )}
+                  <button
+                    className={s.addCard}
+                    onClick={() => setTask({ status: c.id })}
+                  >
+                    + &nbsp; Add a task
+                  </button>
+                </section>
+              ))}
+            </div>
+          </div>
+          <div hidden={view !== "notes"}>
+            <Notes api={api} search={search} onDirtyChange={onDirtyChange} />
+          </div>
+          {view === "members" && <Members key={api.workspace.id} api={api} />}
+          <footer className={s.footer}>
+            <span>
+              <span className={s.dot} />
+              {api.configured
+                ? "Shared workspace · Live task updates"
+                : "Local prototype · Stored on this device"}
+            </span>
+            <span>A little progress, every day.</span>
+          </footer>
         </div>
       </main>
+      {task && (
+        <TaskDialog api={api} initial={task} close={() => setTask(null)} />
+      )}
+      {api.configured &&
+        (workspaceDialog ||
+          (incomingInvite && dismissedInvite !== incomingInvite)) && (
+          <WorkspaceDialog
+            api={api}
+            initialToken={incomingInvite}
+            close={() => {
+              setWorkspaceDialog(false);
+              setDismissedInvite(incomingInvite);
+            }}
+          />
+        )}
     </div>
   );
 }

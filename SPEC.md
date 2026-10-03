@@ -91,4 +91,4 @@ If time runs short, defer attachments first; label incomplete work explicitly. N
 - Production build passes; authentication works on the deployed authorized domain.
 
 ## Current implementation milestone
-Start with a clearly labeled local board prototype: create/edit/delete cards and move status, plus a notes draft surface. This is the first visual slice, not the finished collaboration system. Connect Firebase in the next milestone after project configuration is available.
+The application UI, Firebase client integration, trusted API handlers, default-deny rules, indexes and baseline schema are implemented. Automated validation/rules/API checks and local browser checks pass. Without Firebase configuration the app remains a clearly labeled device-local preview. Production release still requires project provisioning, deployed Google sign-in, real two-user acceptance, Storage CORS/lifecycle setup and dependency-audit review. See README.md and .agentic/PROJECT-STATE.md.

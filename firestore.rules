@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(workspaceId) {
+      return signedIn() && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
+    // Browsers observe data; authenticated, validated server routes perform all writes.
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    match /workspaces/{workspaceId} {
+      allow get: if isMember(workspaceId);
+      allow list, write: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+
+      match /notes/{noteId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+
+      match /attachments/{attachmentId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+    }
+
+    // Includes invitations, abuse counters, and future collections until explicitly reviewed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Teamspace
 
-## Getting Started
+A college team workspace with a live Kanban board, explicit note saving and private attachments. Next.js + Google sign-in + Firestore + Firebase Storage; Vercel hosting.
 
-First, run the development server:
+## Run locally
 
-```bash
+Use Node 22.13+ or Node 24 LTS, npm, and Java 21 for emulator tests.
+
+```sh
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. Without Firebase configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Firebase setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a Firebase project and register a Web app. Enable Authentication > Google. Add localhost and your deployment domain to authorized domains.
+2. Create a Cloud Firestore database and Firebase Storage bucket. Enable the required Storage billing plan; configure budgets and alerts.
+3. Copy `.env.example` to `.env.local`. Populate browser values from Web app settings. Populate server service-account values separately. Never expose server values through NEXT_PUBLIC or commit credentials.
+4. Deploy rules/indexes: `npx firebase deploy --only firestore:rules,firestore:indexes,storage --project YOUR_PROJECT_ID`. All direct writes are denied. Only workspace members can read workspace content. Trusted server handlers validate and authorize every write.
+5. Replace the example origins in `storage.cors.example.json`; apply with `gcloud storage buckets update gs://YOUR_BUCKET --cors-file=storage.cors.example.json`.
+6. Configure a bucket lifecycle rule deleting objects under `staging/` after one day, to clean abandoned/recreated signed uploads.
+7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. Ready attachments have no expiry. TTL is eventual; expired invites and request counters are checked synchronously by the application.
 
-## Learn More
+Invite tokens are random, hashed at rest, bounded and redeemed transactionally. Notes compare expected revisions in a transaction; losing drafts remain in the editor. Signed staging uploads are validated and promoted to private workspace paths. Downloads use short-lived signed URLs issued after membership checks; these are temporary bearer capabilities, never permanent public download tokens. Removed members cannot obtain new URLs, while already issued URLs expire shortly.
 
-To learn more about Next.js, take a look at the following resources:
+## Verify
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run test:rules
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The GitHub workflow repeats these checks on pushes and pull requests with Node 24,
+Java 21 and no production credentials. Actions are pinned to verified commit IDs;
+the runtime audit gate fails for high/critical findings. Moderate and development
+tool findings still require review before release. The workflow itself has not
+run remotely yet.
 
-## Deploy on Vercel
+On this Windows/Corretto installation, emulator startup needs a process-only
+workaround: set `JAVA_TOOL_OPTIONS` to
+`-Djdk.net.unixdomain.tmpdir=Z:\teamspace-nonexistent` before `npm run test:rules`.
+Use a nonexistent directory; see the baseline migration for the reason.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Rules tests use clean isolated emulators under demo-teamspace, never a live database. See migrations/ for schema and export/deletion policies. Before release, use two signed-in users to check live task updates, refresh persistence, simultaneous note-save conflicts, expired/revoked invites, membership removal, outsider SDK denial and private file access. Also check file orientation/transparency/screenshot legibility, cleanup, mobile layout and keyboard dialog use.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Vercel deployment
+
+Import the repository and add all environment variables. Use a separate Firebase project for previews when appropriate. Redeploy after changing NEXT_PUBLIC values because they are bundled at build time. Add deployment domains to Firebase auth and Storage CORS. Deploy rules to the same project as the app. Use Node 24 or a supported Node 22 release.
+
+No project/deployment credentials are included. Production release is gated on configuration, external two-user acceptance and any unresolved dependency audit findings recorded in `.agentic/PROJECT-STATE.md`.
+
+## Scope
+
+One board per workspace; tasks with assignees and due dates; notes with headings, bold, bullets and safe links; owner-managed invitations, member removal and ownership transfer. No simultaneous text editing or public publishing. SPEC.md records the agreed scope. A repository license must be selected before public distribution.
