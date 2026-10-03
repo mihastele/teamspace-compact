@@ -129,3 +129,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Download Markdown exports the current note title and block content, including unsaved/conflicting drafts, without saving or mutating workspace data. Retain Unicode text, heading levels, checklist states and multiline code/Markdown.
 - Download a portable .md filename locally. Export only this note: board blocks remain textual references; task data, attachments and child notes are not bundled. Failed downloads keep the draft intact.
+
+
+### Small increment: search note content — 2026-10-03
+
+- Workspace search matches saved note titles and textual blocks, case-insensitively with whitespace normalization. Show a bounded plain-text excerpt for body matches and preserve matching descendants' ancestor context.
+- Search uses only notes already loaded for the active workspace; it does not fetch other workspace content or index unsaved drafts/attachments/embedded task data.

@@ -21,6 +21,7 @@ import s from "./page.module.css";
 import BlockEditor from "./components/BlockEditor";
 import { blockMarkdown } from "@/lib/markdown-shortcuts";
 import { exportNoteMarkdown } from "@/lib/note-export";
+import { matchNote } from "@/lib/note-search";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -695,12 +696,16 @@ function Notes({
   const flattened = flattenNoteTree(api.notes);
   const query = search.trim().toLowerCase();
   const matching = new Set<string>();
+  const excerpts = new Map<string, string>();
   if (query)
-    for (const note of api.notes)
-      if (note.title.toLowerCase().includes(query)) {
+    for (const note of api.notes) {
+      const match = matchNote(note, query);
+      if (match.matches) {
         matching.add(note.id);
+        if (match.excerpt) excerpts.set(note.id, match.excerpt);
         noteAncestors(api.notes, note.id).forEach((n) => matching.add(n.id));
       }
+    }
   const forcedOpen = new Set(currentAncestors.map((n) => n.id));
   if (!selected && parent)
     [...noteAncestors(api.notes, parent.id), parent].forEach((n) =>
@@ -939,7 +944,11 @@ function Notes({
           <Icon name="plus" />
           New root note
         </button>
-        <p className={s.hint}>Organize ideas into notes and subnotes.</p>
+        <p className={s.hint}>
+          {query
+            ? "Searching titles and saved note text."
+            : "Organize ideas into notes and subnotes."}
+        </p>
         <ul className={s.noteTree} aria-label="Notes hierarchy">
           {visibleTree.map(({ note, depth }) => {
             const hasChildren = api.notes.some((n) => n.parentId === note.id);
@@ -1004,6 +1013,12 @@ function Notes({
                     }
                   }}
                   title={note.title}
+                  aria-label={note.title}
+                  aria-describedby={
+                    excerpts.has(note.id)
+                      ? `note-match-${workspaceId}-${note.id}`
+                      : undefined
+                  }
                   aria-current={selected === note.id ? "page" : undefined}
                   onClick={() => selectNote(note.id)}
                 >
@@ -1013,6 +1028,14 @@ function Notes({
                       {" "}
                       •
                     </span>
+                  )}
+                  {excerpts.has(note.id) && (
+                    <small
+                      id={`note-match-${workspaceId}-${note.id}`}
+                      className={s.noteExcerpt}
+                    >
+                      {excerpts.get(note.id)}
+                    </small>
                   )}
                 </button>
                 <button

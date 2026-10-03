@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks and local Undo/Redo/Markdown download implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks and local Undo/Redo/Markdown download/content search implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 37 unit/validation/tree/renderer/history/export tests and latest lint/typecheck/build; 29 unchanged rules/trusted-API cases passed in the previous increment (66 total cases). Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
+- PASSED: 41 unit/validation/tree/renderer/history/export/search tests and latest lint/typecheck/build; 29 unchanged rules/trusted-API cases passed in the previous increment (70 total cases). Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -130,3 +130,11 @@
 ### FAILED — 2026-10-03: export handler placement corrected
 
 - First build caught download handler inserted into TaskDialog instead of Notes because both have save functions. Moved handler into Notes; final lint/build passed. No broken state remains.
+
+### 2026-10-03 — Small increment: search saved note content
+
+- Added workspace note search across saved titles and block text, with case-insensitive matching and normalized whitespace. Body matches show a bounded plain-text snippet; matching descendants retain their ancestor path even when collapsed. Accessible note names retain the title and associate the snippet as a description.
+- Search uses only notes already loaded for the active workspace. Unsaved drafts become searchable after Save; attachments and tasks inside board blocks are not indexed. Updated README/SPEC.
+- PASSED: 41 unit/tree/validation/renderer/history/export/search cases, lint, and optimized production build including TypeScript. Four new regressions cover normalized title/body matching, bounded literal snippets, collapsed ancestor retention and supported block text. Unchanged 29 rules/API cases remain previously validated; no server/schema/access code changed.
+- OPEN TEST GAP: live snippet layout and mobile search acceptance remain unverified in browser alongside earlier editor/download checks. Existing browser-policy limitation and Firebase/license/dependency/deployed two-user release gates remain unchanged.
+- No subagents, dependencies, schema/backend changes, migrations, exotic technology deviation, code TODOs, secrets or live data mutation.

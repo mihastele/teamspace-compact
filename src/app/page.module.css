@@ -1264,3 +1264,14 @@
 .subnoteLink:hover {
   background: #edf2ff;
 }
+
+.noteExcerpt {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8996af;
+  margin-top: 3px;
+}
