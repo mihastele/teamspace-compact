@@ -72,3 +72,5 @@ Use Download Markdown in the note toolbar to download its current title and cont
 
 
 Workspace search finds saved note titles and body text, showing a short snippet for content matches and retaining the note's ancestor path. Unsaved edits become searchable after Save. Attachments and tasks inside board blocks are not indexed as note text.
+
+Each block's options menu offers Duplicate block. Copies appear immediately below with their formatting intact and remain unsaved until Save. Undo removes the copy. Duplicating a board block adds another view of the same workspace board; it does not copy tasks. Existing note size limits apply.

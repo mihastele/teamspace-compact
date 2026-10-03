@@ -135,3 +135,8 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Workspace search matches saved note titles and textual blocks, case-insensitively with whitespace normalization. Show a bounded plain-text excerpt for body matches and preserve matching descendants' ancestor context.
 - Search uses only notes already loaded for the active workspace; it does not fetch other workspace content or index unsaved drafts/attachments/embedded task data.
+
+### Small increment: duplicate blocks — 2026-10-03
+
+- Duplicate block in each block's options inserts a copy immediately below, preserving type, text, heading level and checklist state. The operation participates in local Undo/Redo and explicit Save.
+- Board copies reference the same shared workspace board. Existing block/text limits apply; oversized copies retain the original draft and show feedback.

@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { NoteContent } from "@/lib/model";
 import { markdownShortcut } from "@/lib/markdown-shortcuts";
+import { duplicateBlock } from "@/lib/note-blocks";
 import {
   createHistory,
   recordHistory,
@@ -452,6 +453,13 @@ export default function BlockEditor({
     if (commit(next, { index: target, offset: next[target]?.text.length || 0 }))
       setMenu(null);
   }
+  function duplicate(index: number) {
+    const next = duplicateBlock({ blocks }, index).blocks;
+    if (commit(next, { index: index + 1, offset: next[index + 1].text.length })) {
+      setMenu(null);
+      lastBlockRef.current = index + 1;
+    }
+  }
   function openMenu(index: number) {
     restoreFocus(index);
     setMenu({ index, source: "plus", query: "", active: 0 });
@@ -633,6 +641,14 @@ export default function BlockEditor({
                   onClick={() => remove(index)}
                 >
                   Delete block
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled || blocks.length >= 1000}
+                  title={block.type === "board" ? "Add another view of the same workspace board" : "Copy this block below"}
+                  onClick={() => duplicate(index)}
+                >
+                  Duplicate block
                 </button>
               </div>
             </details>
