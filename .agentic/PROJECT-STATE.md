@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks and local Undo/Redo implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; Markdown/shared board blocks and local Undo/Redo/Markdown download implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 34 unit/validation/tree/renderer/history tests and latest lint/typecheck/build; 29 unchanged rules/trusted-API cases passed in the previous increment (63 total cases). Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
+- PASSED: 37 unit/validation/tree/renderer/history/export tests and latest lint/typecheck/build; 29 unchanged rules/trusted-API cases passed in the previous increment (66 total cases). Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -118,3 +118,15 @@
 - Updated SPEC and README. No TODO, exotic technology deviation, secret, live data change or new release gate.
 - PASSED: 34 unit/tree/validation/renderer/history cases, including six new regressions for metadata recovery, typing grouping/pauses, separate blocks, redo branching, bounded history and external replacement. Final lint and optimized build (including TypeScript) pass. Unchanged 8 rule + 21 trusted API cases passed in the previous increment; skipped their rerun because no server/schema/access code changed.
 - OPEN TEST GAP: keyboard/caret and toolbar interactions remain unverified in browser, alongside earlier rich-editor/mobile/embedded-board acceptance. Prior browser policy restriction remains recorded; no new browser check or screenshot claimed. Firebase provisioning/license/dependency/deployed two-user gates unchanged.
+
+
+### 2026-10-03 — Small increment: Download Markdown
+
+- Added note toolbar Download Markdown for the current title/content, including unsaved or conflicting drafts. Export does not save, alter dirty state or mutate workspace data.
+- Preserves heading levels, checklist states, Unicode, multiline quotes/code and Markdown. Portable .md filename strips forbidden path/device-name hazards; title is a single escaped heading. Board embeds are textual references; tasks/attachments/subnotes are not bundled. UI tooltip states export scope, failures retain drafts, temporary DOM/blob URLs are cleaned up.
+- Updated README/SPEC. No subagents, dependencies, schema/backend changes, migrations, exotic technology deviation, TODOs, secrets or live data mutation.
+- PASSED: 37 unit/tree/validation/renderer/history/export cases (3 new export regressions), final lint and optimized build including TypeScript. Unchanged 29 rules/API cases remain previously validated; no backend rerun needed. Browser download completion remains an open acceptance check alongside prior editor checks. Existing release gates unchanged.
+
+### FAILED — 2026-10-03: export handler placement corrected
+
+- First build caught download handler inserted into TaskDialog instead of Notes because both have save functions. Moved handler into Notes; final lint/build passed. No broken state remains.

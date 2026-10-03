@@ -20,6 +20,7 @@ import {
 import s from "./page.module.css";
 import BlockEditor from "./components/BlockEditor";
 import { blockMarkdown } from "@/lib/markdown-shortcuts";
+import { exportNoteMarkdown } from "@/lib/note-export";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -590,6 +591,10 @@ function Notes({
     if (!selected) noteTitleRef.current?.focus();
   }, [key, selected]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [exportError, setExportError] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [noteMenu, setNoteMenu] = useState<{
     id: string;
@@ -718,6 +723,33 @@ function Notes({
       ...prev,
       [key]: { ...draft, ...patch, state: "Unsaved", error: patch.error },
     }));
+  }
+  function downloadMarkdown() {
+    const link = document.createElement("a");
+    let url: string | undefined;
+    try {
+      const exported = exportNoteMarkdown(draft.title, draft.content);
+      url = URL.createObjectURL(
+        new Blob([exported.markdown], { type: "text/markdown;charset=utf-8" }),
+      );
+      link.href = url;
+      link.download = exported.filename;
+      document.body.appendChild(link);
+      link.click();
+      setExportError(null);
+    } catch {
+      setExportError({
+        key,
+        message:
+          "Download could not start. Your note and unsaved edits are unchanged. Please try again.",
+      });
+    } finally {
+      link.remove();
+      if (url) {
+        const downloadUrl = url;
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      }
+    }
   }
   async function save() {
     const capturedKey = key;
@@ -1073,6 +1105,14 @@ function Notes({
                 : draft.state}{" "}
             · Explicit save
           </span>
+          <button
+            className={s.secondary}
+            disabled={api.loading}
+            onClick={downloadMarkdown}
+            title="Download current note text, including unsaved edits. Board embeds are references; attachments and subnotes are not included."
+          >
+            Download Markdown
+          </button>
           {
             <button
               className={s.secondary}
@@ -1173,6 +1213,9 @@ function Notes({
               )}
             </div>
           </div>
+        )}
+        {exportError?.key === key && (
+          <ErrorMessage message={exportError.message} />
         )}
         {draft.error && <ErrorMessage message={draft.error} />}
         <label className={s.noteLocation}>

@@ -123,3 +123,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y recover block content, conversion, deletion and reordering. Group continuous typing in the same block and retain up to 20 checkpoints.
 - History is local to the currently open note and clears when navigating to another note or accepting different remote content. Undo does not save automatically, revert note title/location, or reverse shared Kanban task mutations. Disabled while saving.
+
+
+### Small increment: note Markdown download — 2026-10-03
+
+- Download Markdown exports the current note title and block content, including unsaved/conflicting drafts, without saving or mutating workspace data. Retain Unicode text, heading levels, checklist states and multiline code/Markdown.
+- Download a portable .md filename locally. Export only this note: board blocks remain textual references; task data, attachments and child notes are not bundled. Failed downloads keep the draft intact.
