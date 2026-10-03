@@ -12,13 +12,13 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 and nested-note extension validated; Milestone 6 live release blocked | 2026-10-03 |
+| Current milestone | Milestones 1–5 and nested-note extension validated; block/tree UX implemented, browser verification open; Milestone 6 live release blocked | 2026-10-03 |
 
 ## Open decisions and release gates
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 47 validation/tree/rules/trusted-API tests, lint, typecheck, production build, desktop/mobile browser checks.
+- PASSED: 50 validation/tree/rules/trusted-API tests, lint, typecheck, production build, desktop/mobile browser checks.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -75,3 +75,19 @@
 ### FAILED — 2026-10-03: rate-limit verification stabilized
 
 - First combined emulator run passed hierarchy/authorization cases but an existing invitation rate-limit test crossed the real minute boundary and unexpectedly received a legitimate new-window allowance. Scoped the test clock to a fixed window and explicitly tested allowance after advancing one minute. Reran the entire clean emulator suite successfully; application rate-limit behavior unchanged.
+
+
+### 2026-10-03 — Discoverable subnotes and inline block editing
+
+- User reported subnote creation could not be found and requested Notion-style right-click actions plus instant block formatting. Consulted official Notion writing/editing and subpage guidance. Kept the existing paragraph/heading/bullet schema and explicit-save model; no costly library/schema decision required.
+- Every saved tree row now has visible Add subnote (+) and ellipsis actions, a right-click menu, and keyboard context-menu support. The note body also lists clickable child pages with Add subnote. Unsaved parents explain that saving is required first. New/reopened drafts receive title focus; menu Escape restores its trigger; menus stay workspace-scoped.
+- Replaced Markdown textarea/separate preview with directly styled inline blocks. Slash and + menus offer text, headings, bullets and subnotes; Enter splits/continues blocks, Shift+Enter inserts a line, Backspace merges, multiline paste creates blocks, and controls convert/reorder/remove. Headings/lists render while editing; safe bold/http(s) links display when unfocused. Preserved plain source editing and existing server validation limits, with no HTML injection.
+- Drafts store NoteContent directly instead of serializing through Markdown; existing paragraph text beginning with Markdown-like prefixes cannot silently change type on save. Existing saved block types, permissions, revisions and attachments retained. README/SPEC updated; no migration, new dependency, exotic technology deviation or code TODO.
+- Review fixed title/menu focus, destination ancestor expansion after save, and malformed cyclic recovery rows being hidden by expansion filters. Added shared traversal visibility helper and three regression cases.
+- PASSED: 22 unit/validation/tree tests + 8 rules suites + 20 trusted API cases (50 total), lint, typecheck and final optimized production build. Preview server restarted on localhost:3000; HTTP smoke response 200.
+- OPEN TEST GAP: this session could not verify new context-menu keyboard focus, inline typing/paste, mobile layout or structured block save/reload in browser. Browser tool automatically rejected selecting localhost with a URL-security policy error (despite http being listed as allowed); respected the rejection without alternate UI surfaces or workarounds. Previous screenshots/checks predate this editor and are not evidence for it. No persisted automated editor/browser suite yet; these checks remain open alongside deployed two-user acceptance.
+- Release remains BLOCKED on Firebase provisioning; license/dependency release review unchanged. No secret or live data mutation performed.
+
+### FAILED — 2026-10-03: preview launch argument forwarding resolved
+
+- PowerShell/npm forwarded `npm run dev -- --port 3000` as `next dev 3000`, treating the port as a directory. Launched the installed Next executable directly with the port option; server became ready and HTTP smoke check passed. No application build failure or machine setting change.

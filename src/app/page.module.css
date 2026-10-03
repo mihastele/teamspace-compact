@@ -1174,3 +1174,93 @@
     padding-bottom: 16px;
   }
 }
+.treeTitle {
+  flex: 1;
+  min-width: 0;
+}
+.treeAction {
+  flex-shrink: 0;
+  width: 26px;
+  height: 28px;
+  border-radius: 5px;
+  background: transparent;
+  color: #7b89a2;
+  font-size: 18px;
+}
+.treeAction:hover,
+.treeAction:focus-visible {
+  background: #dce5f8;
+  color: #3459d6;
+}
+.menuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: transparent;
+  cursor: default;
+}
+.noteContextMenu {
+  position: fixed;
+  z-index: 61;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid #e0e5ef;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px #1c315b26;
+}
+.noteContextMenu small {
+  display: block;
+  padding: 7px 9px;
+  color: #8a95aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noteContextMenu button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border-radius: 5px;
+  text-align: left;
+  background: transparent;
+  color: #465674;
+}
+.noteContextMenu button:hover,
+.noteContextMenu button:focus-visible {
+  background: #eef3ff;
+  color: #355acb;
+}
+.subnoteSection {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #edf0f6;
+}
+.subnoteHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #758198;
+  font-size: 12px;
+}
+.subnoteLink {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  background: #f6f8fc;
+  border-radius: 6px;
+  text-align: left;
+  color: #506385;
+  margin-bottom: 6px;
+}
+.subnoteLink span {
+  margin-left: auto;
+  color: #9aa6bc;
+}
+.subnoteLink:hover {
+  background: #edf2ff;
+}

@@ -2,6 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   flattenNoteTree,
+  filterVisibleNoteTree,
   noteAncestors,
   noteDescendants,
   assertNoteParent,
@@ -156,4 +157,60 @@ test("an empty note collection supports each read helper", () => {
   assert.deepEqual(flattenNoteTree([]), []);
   assert.deepEqual(noteAncestors([], "missing"), []);
   assert.equal(noteDescendants([], "missing").size, 0);
+});
+
+test("collapsed navigation always shows recovered cycle roots", () => {
+  const notes = [
+    note("a", "Alpha", "b"),
+    note("b", "Beta", "a"),
+    note("child", "Child", "a"),
+    note("safe", "Safe"),
+  ];
+  const flattened = flattenNoteTree(notes);
+  const visible = filterVisibleNoteTree(flattened, () => false);
+  assert.deepEqual(
+    visible.map((row) => row.note.id),
+    ["safe", "a"],
+  );
+  assert.ok(visible.every((row) => row.depth === 0));
+  assert.equal(
+    filterVisibleNoteTree(flattened, () => true).length,
+    notes.length,
+  );
+});
+
+test("collapsing one branch hides its descendants without affecting siblings", () => {
+  const flattened = flattenNoteTree(nested());
+  assert.deepEqual(
+    filterVisibleNoteTree(flattened, () => false).map((row) => row.note.id),
+    ["overview", "roadmap"],
+  );
+  assert.deepEqual(
+    filterVisibleNoteTree(flattened, (id) => id === "roadmap").map(
+      (row) => row.note.id,
+    ),
+    ["overview", "roadmap", "build", "research"],
+  );
+  assert.equal(
+    filterVisibleNoteTree(
+      flattened,
+      (id) => id === "roadmap" || id === "research",
+    ).length,
+    nested().length,
+  );
+});
+
+test("search reveals matched ancestry through collapsed branches", () => {
+  const flattened = flattenNoteTree(nested());
+  const matching = new Set(["roadmap", "research", "interviews"]);
+  assert.deepEqual(
+    filterVisibleNoteTree(flattened, () => false, matching).map(
+      (row) => row.note.id,
+    ),
+    ["roadmap", "research", "interviews"],
+  );
+  assert.deepEqual(
+    filterVisibleNoteTree(flattened, () => true, new Set()),
+    [],
+  );
 });

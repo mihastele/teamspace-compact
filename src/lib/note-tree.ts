@@ -1,5 +1,24 @@
 import type { Note } from "./model";
 
+export type NoteTreeRow = { note: Note; depth: number };
+
+/** Use rendered traversal ancestry, including recovered roots, for collapsing. */
+export function filterVisibleNoteTree(
+  rows: NoteTreeRow[],
+  isExpanded: (id: string) => boolean,
+  matching?: ReadonlySet<string>,
+): NoteTreeRow[] {
+  const ancestors: string[] = [];
+  return rows.filter(({ note, depth }) => {
+    ancestors.length = depth;
+    const visible = matching
+      ? matching.has(note.id)
+      : ancestors.every(isExpanded);
+    ancestors[depth] = note.id;
+    return visible;
+  });
+}
+
 /** Parent links stay workspace-local; legacy documents without one are root pages. */
 export function noteAncestors(notes: Note[], id: string): Note[] {
   const byId = new Map(notes.map((note) => [note.id, note]));
@@ -61,9 +80,7 @@ export function assertNoteParent(
 }
 
 /** Iterative traversal keeps deep or malformed stored trees finite and visible. */
-export function flattenNoteTree(
-  notes: Note[],
-): { note: Note; depth: number }[] {
+export function flattenNoteTree(notes: Note[]): NoteTreeRow[] {
   const ordered = [...notes].sort(
     (a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id),
   );

@@ -12,11 +12,13 @@ import { useTeamspace } from "@/lib/client";
 import type { Task, NoteContent, Attachment } from "@/lib/model";
 import {
   flattenNoteTree,
+  filterVisibleNoteTree,
   noteAncestors,
   noteDescendants,
   assertNoteParent,
 } from "@/lib/note-tree";
 import s from "./page.module.css";
+import BlockEditor from "./components/BlockEditor";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -115,46 +117,6 @@ function contentText(content: NoteContent) {
     )
     .join("\n");
 }
-function parseContent(text: string): NoteContent {
-  return {
-    blocks: text.split("\n").map((line) => ({
-      type: line.startsWith("# ")
-        ? "heading"
-        : line.startsWith("- ")
-          ? "bullet"
-          : "paragraph",
-      text: line.replace(/^(# |- )/, ""),
-    })),
-  };
-}
-function InlineText({ text }: { text: string }) {
-  const pieces = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\))/g);
-  return pieces.map((piece, index) => {
-    if (piece.startsWith("**") && piece.endsWith("**"))
-      return <strong key={index}>{piece.slice(2, -2)}</strong>;
-    const link = piece.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (link) {
-      try {
-        const url = new URL(link[2]);
-        if (["https:", "http:"].includes(url.protocol))
-          return (
-            <a
-              key={index}
-              href={url.href}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {link[1]}
-            </a>
-          );
-      } catch {
-        /* Invalid links remain plain text. */
-      }
-    }
-    return <span key={index}>{piece}</span>;
-  });
-}
-
 function Attachments({
   api,
   type,
@@ -464,7 +426,7 @@ function TaskDialog({
 type Draft = {
   parentId: string | null;
   title: string;
-  text: string;
+  content: NoteContent;
   revision: number;
   baseline: string;
   state: "Unsaved" | "Saved" | "Saving" | "Failed";
@@ -487,6 +449,7 @@ function Notes({
   const selection = selections[workspaceId] || { id: null, newParentId: null };
   const selected = selection.id;
   function selectNote(id: string | null, newParentId: string | null = null) {
+    if (!id) requestAnimationFrame(() => noteTitleRef.current?.focus());
     setSelections((prev) => ({ ...prev, [workspaceId]: { id, newParentId } }));
     const reveal = id
       ? noteAncestors(api.notes, id)
@@ -507,15 +470,48 @@ function Notes({
   const selectionKey = (value: NoteSelection) =>
     value.id || `new:${value.newParentId || "root"}`;
   const key = `${workspaceId}:${selectionKey(selection)}`;
+  const noteTitleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!selected) noteTitleRef.current?.focus();
+  }, [key, selected]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [noteMenu, setNoteMenu] = useState<{
+    id: string;
+    workspaceId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const menuTrigger = useRef<HTMLElement | null>(null);
+  function closeNoteMenu() {
+    setNoteMenu(null);
+    menuTrigger.current?.focus();
+  }
+  function openNoteMenu(
+    id: string,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+  ) {
+    menuTrigger.current = trigger;
+    setNoteMenu({
+      id,
+      workspaceId,
+      x: Math.max(8, Math.min(x, window.innerWidth - 228)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 155)),
+    });
+  }
+
   const remote = api.notes.find((n) => n.id === selected);
-  const baseline = (title: string, text: string, parentId: string | null) =>
-    JSON.stringify([title, text, parentId]);
+  const baseline = (
+    title: string,
+    content: NoteContent,
+    parentId: string | null,
+  ) => JSON.stringify([title, content, parentId]);
   const cached = drafts[key];
   const cacheIsDirty =
     cached &&
-    baseline(cached.title, cached.text, cached.parentId) !== cached.baseline;
+    baseline(cached.title, cached.content, cached.parentId) !== cached.baseline;
   const keepCached =
     cached &&
     (cacheIsDirty ||
@@ -528,28 +524,28 @@ function Notes({
     (remote
       ? {
           title: remote.title,
-          text: contentText(remote.content),
+          content: remote.content,
           parentId: remote.parentId,
           revision: remote.revision,
-          baseline: baseline(
-            remote.title,
-            contentText(remote.content),
-            remote.parentId,
-          ),
+          baseline: baseline(remote.title, remote.content, remote.parentId),
           state: "Saved",
         }
       : {
           title: "",
-          text: "",
+          content: { blocks: [{ type: "paragraph", text: "" }] },
           parentId: selection.newParentId,
           revision: 0,
-          baseline: baseline("", "", selection.newParentId),
+          baseline: baseline(
+            "",
+            { blocks: [{ type: "paragraph", text: "" }] },
+            selection.newParentId,
+          ),
           state: "Unsaved",
         });
   const dirty =
-    baseline(draft.title, draft.text, draft.parentId) !== draft.baseline;
+    baseline(draft.title, draft.content, draft.parentId) !== draft.baseline;
   const anyDirty = Object.values(drafts).some(
-    (d) => baseline(d.title, d.text, d.parentId) !== d.baseline,
+    (d) => baseline(d.title, d.content, d.parentId) !== d.baseline,
   );
   useEffect(() => {
     onDirtyChange(anyDirty);
@@ -592,15 +588,15 @@ function Notes({
     );
   const isExpanded = (id: string) =>
     Boolean(query || (expanded[`${workspaceId}:${id}`] ?? forcedOpen.has(id)));
-  const visibleTree = flattened.filter(({ note }) =>
-    query
-      ? matching.has(note.id)
-      : noteAncestors(api.notes, note.id).every((n) => isExpanded(n.id)),
+  const visibleTree = filterVisibleNoteTree(
+    flattened,
+    isExpanded,
+    query ? matching : undefined,
   );
   const newDrafts = Object.entries(drafts).filter(
     ([draftKey, value]) =>
       draftKey.startsWith(`${workspaceId}:new:`) &&
-      baseline(value.title, value.text, value.parentId) !== value.baseline,
+      baseline(value.title, value.content, value.parentId) !== value.baseline,
   );
   function update(patch: Partial<Draft>) {
     setDrafts((prev) => ({
@@ -623,7 +619,7 @@ function Notes({
       const saved = await api.saveNote({
         id: selected || undefined,
         title: draft.title.trim(),
-        content: parseContent(draft.text),
+        content: draft.content,
         parentId: draft.parentId,
         expectedRevision: selected ? draft.revision : undefined,
       });
@@ -635,11 +631,24 @@ function Notes({
           title: saved.title,
           parentId: saved.parentId,
           revision: saved.revision,
-          baseline: baseline(saved.title, draft.text, saved.parentId),
+          baseline: baseline(saved.title, draft.content, saved.parentId),
           state: "Saved",
         };
         return next;
       });
+      if (saved.parentId) {
+        const ancestors = [
+          ...noteAncestors(api.notes, saved.parentId),
+          ...api.notes.filter((n) => n.id === saved.parentId),
+        ];
+        setExpanded((prev) => {
+          const next = { ...prev };
+          ancestors.forEach((note) => {
+            next[`${workspaceId}:${note.id}`] = true;
+          });
+          return next;
+        });
+      }
       setSelections((prev) =>
         selectionKey(prev[workspaceId] || { id: null, newParentId: null }) ===
         selectionKey(selection)
@@ -705,6 +714,75 @@ function Notes({
   }
   return (
     <div className={s.notes}>
+      {noteMenu && noteMenu.workspaceId === workspaceId && (
+        <>
+          <button
+            className={s.menuBackdrop}
+            aria-label="Close note actions"
+            onClick={closeNoteMenu}
+          />
+          <div
+            className={s.noteContextMenu}
+            role="menu"
+            aria-label="Note actions"
+            style={{ left: noteMenu.x, top: noteMenu.y }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeNoteMenu();
+              }
+              if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+                e.preventDefault();
+                const items = Array.from(
+                  e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                    "button:not(:disabled)",
+                  ),
+                );
+                const index = items.indexOf(
+                  document.activeElement as HTMLButtonElement,
+                );
+                const next =
+                  e.key === "Home"
+                    ? 0
+                    : e.key === "End"
+                      ? items.length - 1
+                      : (index +
+                          (e.key === "ArrowDown" ? 1 : -1) +
+                          items.length) %
+                        items.length;
+                items[next]?.focus();
+              }
+              if (e.key === "Tab") setNoteMenu(null);
+            }}
+          >
+            <small>{api.notes.find((n) => n.id === noteMenu.id)?.title}</small>
+            <button
+              role="menuitem"
+              ref={(el) => {
+                el?.focus();
+              }}
+              disabled={api.loading}
+              onClick={() => {
+                selectNote(null, noteMenu.id);
+                setNoteMenu(null);
+                requestAnimationFrame(() => noteTitleRef.current?.focus());
+              }}
+            >
+              ＋ Add subnote
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                selectNote(noteMenu.id);
+                setNoteMenu(null);
+                requestAnimationFrame(() => noteTitleRef.current?.focus());
+              }}
+            >
+              ▤ Open note
+            </button>
+          </div>
+        </>
+      )}
       <aside className={s.noteList} aria-label="Nested notes navigation">
         <button
           className={s.secondary}
@@ -723,7 +801,7 @@ function Notes({
               localDraft &&
               baseline(
                 localDraft.title,
-                localDraft.text,
+                localDraft.content,
                 localDraft.parentId,
               ) !== localDraft.baseline;
             return (
@@ -731,6 +809,15 @@ function Notes({
                 key={note.id}
                 className={`${s.treeRow} ${selected === note.id ? s.treeSelected : ""}`}
                 style={{ paddingLeft: depth * 14 + 4 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const trigger =
+                    e.currentTarget.querySelector<HTMLButtonElement>(
+                      "button[data-note-title]",
+                    );
+                  if (trigger)
+                    openNoteMenu(note.id, trigger, e.clientX, e.clientY);
+                }}
               >
                 {hasChildren ? (
                   <button
@@ -753,6 +840,22 @@ function Notes({
                 )}
                 <button
                   className={s.treeTitle}
+                  data-note-title
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "ContextMenu" ||
+                      (e.shiftKey && e.key === "F10")
+                    ) {
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      openNoteMenu(
+                        note.id,
+                        e.currentTarget,
+                        rect.left,
+                        rect.bottom,
+                      );
+                    }
+                  }}
                   title={note.title}
                   aria-current={selected === note.id ? "page" : undefined}
                   onClick={() => selectNote(note.id)}
@@ -764,6 +867,33 @@ function Notes({
                       •
                     </span>
                   )}
+                </button>
+                <button
+                  className={s.treeAction}
+                  aria-label={`Add subnote to ${note.title}`}
+                  title="Add subnote"
+                  disabled={api.loading}
+                  onClick={() => selectNote(null, note.id)}
+                >
+                  +
+                </button>
+                <button
+                  className={s.treeAction}
+                  aria-label={`Actions for ${note.title}`}
+                  title="Note actions"
+                  aria-haspopup="menu"
+                  aria-expanded={noteMenu?.id === note.id}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    openNoteMenu(
+                      note.id,
+                      e.currentTarget,
+                      rect.left,
+                      rect.bottom,
+                    );
+                  }}
+                >
+                  ⋯
                 </button>
               </li>
             );
@@ -828,16 +958,23 @@ function Notes({
                 : draft.state}{" "}
             · Explicit save
           </span>
-          {selected && remote && (
+          {
             <button
               className={s.secondary}
-              disabled={api.loading || draft.state === "Saving"}
+              disabled={
+                !selected || !remote || api.loading || draft.state === "Saving"
+              }
+              title={
+                !selected
+                  ? "Save this note first, then add a subnote"
+                  : "Add a page inside this note"
+              }
               onClick={() => selectNote(null, selected)}
             >
               <Icon name="plus" size={13} />
               Add subnote
             </button>
-          )}
+          }
           {selected && (
             <button
               className={s.secondary}
@@ -887,7 +1024,9 @@ function Notes({
                 className={s.secondary}
                 onClick={() => {
                   void navigator.clipboard
-                    .writeText(`${draft.title}\n\n${draft.text}`)
+                    .writeText(
+                      `${draft.title}\n\n${contentText(draft.content)}`,
+                    )
                     .catch(() =>
                       update({
                         error:
@@ -953,6 +1092,7 @@ function Notes({
         </label>
         <input
           className={s.noteTitle}
+          ref={noteTitleRef}
           aria-label="Note title"
           maxLength={160}
           placeholder="Untitled note"
@@ -960,39 +1100,43 @@ function Notes({
           disabled={api.loading || draft.state === "Saving"}
           onChange={(e) => update({ title: e.target.value })}
         />
-        <textarea
-          className={s.noteText}
-          aria-label="Note content"
-          maxLength={50000}
-          placeholder={
-            "Start with an idea…\n\n# A heading\n- A list item\n**Something important**\n[A useful link](https://example.com)"
-          }
-          value={draft.text}
+        <BlockEditor
+          key={key}
+          value={draft.content}
+          onChange={(content) => update({ content })}
           disabled={api.loading || draft.state === "Saving"}
-          onChange={(e) => update({ text: e.target.value })}
+          onAddSubnote={
+            selected && remote ? () => selectNote(null, selected) : undefined
+          }
         />
-        <p className={s.hint}>
-          # Heading &nbsp; · &nbsp; - List item &nbsp; · &nbsp; **Bold** &nbsp;
-          · &nbsp; [Link](https://…)
-        </p>
-        {draft.text && (
-          <div className={s.preview} aria-label="Formatted preview">
-            {parseContent(draft.text).blocks.map((b, i) =>
-              b.type === "heading" ? (
-                <h3 key={i}>
-                  <InlineText text={b.text} />
-                </h3>
-              ) : b.type === "bullet" ? (
-                <ul key={i}>
-                  <li>
-                    <InlineText text={b.text} />
-                  </li>
-                </ul>
-              ) : (
-                <p key={i}>
-                  <InlineText text={b.text || "\u00a0"} />
-                </p>
-              ),
+        {selected && (
+          <div className={s.subnoteSection}>
+            <div className={s.subnoteHeading}>
+              <strong>Subnotes</strong>
+              <button
+                className={s.secondary}
+                disabled={api.loading || draft.state === "Saving"}
+                onClick={() => selectNote(null, selected)}
+              >
+                + Add subnote
+              </button>
+            </div>
+            {children.length ? (
+              children.map((note) => (
+                <button
+                  key={note.id}
+                  className={s.subnoteLink}
+                  onClick={() => selectNote(note.id)}
+                >
+                  <Icon name="notes" />
+                  {note.title}
+                  <span>↗</span>
+                </button>
+              ))
+            ) : (
+              <p className={s.hint}>
+                Keep related ideas together. Add a page inside this note.
+              </p>
             )}
           </div>
         )}
