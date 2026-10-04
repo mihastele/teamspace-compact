@@ -344,3 +344,14 @@
 - PASSED: 138 unit/model/provider/storage cases, all 16 real PostgreSQL integration cases, final lint/typecheck and Compose validation including a custom website PORT. Expanded migration recovery/concurrent-run test additionally reran successfully after the full database suite. Covered failed-migration rollback, subsequent recovery, duplicate/concurrent runs, checksums, untracked schema refusal and private bookkeeping.
 - PASSED: production Docker image build and temporary isolated website container HTTP smoke on a dynamically mapped loopback port; runtime UID 1000, homepage HTTP 200 and configured Supabase response. Temporary website/test database containers were cleaned up. This does not assert live Auth/Storage readiness; previous Firestore/rules evidence remains unchanged and was not rerun for this Docker/Supabase-only iteration.
 - Updated README, SPEC and migration documentation together with first-install backend/migrate/policy/web ordering, PORT/Auth URL configuration, private transport, backup cautions and existing-schema upgrade limitations. No new package, ad-hoc live schema change, force push or unrelated rewrite. Existing live two-user/full-stack acceptance, license and dependency review gates remain open.
+
+### 2026-10-04 — Self-hosted Supabase test setup configuration and stack recovery
+
+- Generated aligned test configuration across `.env` and `.env.supabase` (gitignored), eliminating variable precedence collisions in Docker Compose. Configured classic email/password authentication with `EMAIL_CONFIRMATION_REQUIRED=false` and `ENABLE_EMAIL_AUTOCONFIRM=true` for test operation without external SMTP delivery.
+- Resolved PostgreSQL internal role password synchronization across `authenticator`, `supabase_auth_admin`, `supabase_storage_admin`, `supabase_admin`, `supabase_functions_admin` and `postgres`.
+- Fixed Realtime AES-128 encryption key length to 16 bytes, resolving Erlang `:crypto.crypto_one_time` bad key size crashes.
+- Made `scripts/publish-auth-policy.mjs` and `scripts/prune-supabase.mjs` fall back to IPv4 loopback `127.0.0.1` when `localhost` resolves to IPv6 on Windows.
+- Successfully applied application migrations `000`, `007`, `008` and published the authentication read security policy to the live PostgreSQL transactional document store.
+- Rebuilt website container with verified public anonymous key arguments. All 12 Supabase containers (`web`, `api-gw`, `db`, `auth`, `storage`, `rest`, `realtime`, `supavisor`, `meta`, `studio`, `edge-functions`, `imgproxy`) are running and passing health checks.
+- PASSED: all 138 unit/model/provider/storage cases, compose configuration validation, lint, and HTTP smoke tests (website HTTP 200, Auth health HTTP 200, Storage status HTTP 200, RPC state HTTP 200).
+

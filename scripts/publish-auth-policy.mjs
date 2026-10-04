@@ -20,7 +20,8 @@ if (provider === 'firebase') {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key || url !== process.env.NEXT_PUBLIC_SUPABASE_URL) throw new Error('Matching Supabase URL and server credentials are required.');
-  const client = createClient(process.env.SUPABASE_INTERNAL_URL || url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const targetUrl = process.env.SUPABASE_INTERNAL_URL || url.replace('//localhost:', '//127.0.0.1:');
+  const client = createClient(targetUrl, key, { auth: { persistSession: false, autoRefreshToken: false } });
   let completed = false;
   for (let attempt = 0; attempt < 12; attempt++) {
     const { data: state, error: readError } = await client.rpc('teamspace_store_epoch');
