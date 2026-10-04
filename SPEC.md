@@ -191,3 +191,10 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - EMAIL_CONFIRMATION_REQUIRED is a strict boolean, default true. Publish the matching database read policy; enforce it on direct reads and trusted API requests.
 - Supply docker.compose.supabase.yml, .env.supabase.example, pinned upstream preparation, fresh credential generation, schema migration and expiry/staging cleanup instructions. Never expose server keys through the setup guide or client variables.
 - Keep app-level 2FA optional and enrollment disabled until its future flow is implemented.
+
+### Shared task calendar — 2026-10-04
+
+- Calendar navigation offers a Monday-first month grid, selected-day task list and agenda. Show unfinished overdue tasks separately; offer completed-task visibility and an undated list. Workspace search and My tasks apply to calendar and board alike.
+- Task details reuse the existing editor, attachments and conversations. Add task for this day prefills its deadline; rescheduling through task details updates both views through existing shared subscriptions. Calendar navigation never mutates task data.
+- Deadlines remain date-only, interpreted against the viewer's local day. Date arithmetic and labels avoid timezone/DST shifts. Support Today, previous/next month and keyboard day/week/month navigation with visible selected-day focus.
+- No separate events, recurrence, external calendar integrations or drag-to-reschedule in this iteration. No schema, dependency or authorization change. Local preview remains device-local.

@@ -27,6 +27,7 @@ import SetupGuide from "./components/SetupGuide";
 import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
+import TaskCalendar from "./components/TaskCalendar";
 import {
   deadlineState,
   matchesDeadline,
@@ -36,7 +37,7 @@ import { useLocalDay } from "@/lib/use-local-day";
 import { taskEditPatch } from "@/lib/task-status";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "board" | "notes" | "members";
+type View = "board" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -2282,9 +2283,11 @@ export default function Home() {
   const title =
     view === "board"
       ? "Project board"
-      : view === "notes"
-        ? "Project notes"
-        : "Your people";
+      : view === "calendar"
+        ? "Your task calendar"
+        : view === "notes"
+          ? "Project notes"
+          : "Your people";
   return (
     <div className={s.shell}>
       <aside className={s.sidebar}>
@@ -2316,7 +2319,7 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {(["board", "notes", "members"] as View[]).map((v) => (
+          {(["board", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
@@ -2324,7 +2327,7 @@ export default function Home() {
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "board" ? "Board" : v === "notes" ? "Notes" : "Members"}
+              {v === "board" ? "Board" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2359,9 +2362,11 @@ export default function Home() {
             <strong>
               {view === "board"
                 ? "Board"
-                : view === "notes"
-                  ? "Notes"
-                  : "Members"}
+                : view === "calendar"
+                  ? "Calendar"
+                  : view === "notes"
+                    ? "Notes"
+                    : "Members"}
             </strong>
           </div>
           <div className={s.topbarRight}>
@@ -2412,12 +2417,14 @@ export default function Home() {
               <p className={s.subtitle}>
                 {view === "board"
                   ? "A clear view of what’s next. One task at a time."
-                  : view === "notes"
-                    ? "Keep the ideas, decisions, and details in one place."
-                    : "A small team can do extraordinary things."}
+                  : view === "calendar"
+                    ? "Make room for what matters. Plan your team’s work by day."
+                    : view === "notes"
+                      ? "Keep the ideas, decisions, and details in one place."
+                      : "A small team can do extraordinary things."}
               </p>
             </div>
-            {view === "board" && (
+            {(view === "board" || view === "calendar") && (
               <button
                 className={s.primary}
                 onClick={() => setTask({ status: "todo" })}
@@ -2432,11 +2439,13 @@ export default function Home() {
               <Icon name={view} />
               {view === "board"
                 ? "Board view"
-                : view === "notes"
-                  ? "All notes"
-                  : "Team directory"}
+                : view === "calendar"
+                  ? "Calendar view"
+                  : view === "notes"
+                    ? "All notes"
+                    : "Team directory"}
               <span>
-                {view === "board"
+                {view === "board" || view === "calendar"
                   ? `${api.tasks.length} tasks in this workspace`
                   : view === "notes"
                     ? `${api.notes.length} shared documents`
@@ -2444,7 +2453,7 @@ export default function Home() {
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              {view === "board" && (
+              {(view === "board" || view === "calendar") && (
                 <button
                   className={s.secondary}
                   aria-pressed={filter}
@@ -2486,6 +2495,15 @@ export default function Home() {
               onTask={setTask}
             />
           </div>
+          {view === "calendar" && (
+            <TaskCalendar
+              key={taskScope}
+              tasks={shown}
+              members={api.members}
+              filtered={Boolean(search || filter)}
+              onTask={setTask}
+            />
+          )}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
             <span>

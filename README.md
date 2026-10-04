@@ -1,6 +1,22 @@
 # Teamspace
 
-A college team workspace with a live Kanban board, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel hosting.
+A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel hosting.
+
+## Plan work in the calendar
+
+Open **Calendar** in workspace navigation for a Monday-first month view. Select a
+day to see its tasks, or choose **Add task for this day** to prefill the deadline.
+Open any task to change its date, status or assignee using the same editor,
+attachments and conversation as the board. Shared task updates feed both views.
+
+**Agenda** separates overdue work from scheduled tasks; **No due date** keeps
+unscheduled work visible. Search and My tasks apply here too. Completed tasks are
+hidden until **Show completed** is enabled. Deadlines follow your local calendar
+day. Use arrow keys to move by day/week, Page Up/Down to change month, Home/End
+for the first/last day, or **Today** to return to the current day. On small screens,
+day counts replace title previews and the selected-day list sits below the grid.
+This view uses existing task deadlines; it adds no separate event storage,
+recurrence, external-calendar integration or drag-to-reschedule.
 
 ## Run locally
 
