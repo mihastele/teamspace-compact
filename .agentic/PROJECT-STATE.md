@@ -11,6 +11,7 @@
 | Object storage | Private Firebase Storage | 2026-10-03 |
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
+| Git workflow | User authorized committing completed changes and pushing the current branch to origin; no force pushes | 2026-10-04 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
 | Current milestone | Milestones 1–5 plus bounded Yjs collaboration, durable recovery and approximate presence implemented/tested; collaboration browser acceptance open; Milestone 6 live release blocked | 2026-10-03 |
 
@@ -174,3 +175,10 @@
 
 - Initial emulator launch repeated the known Windows/Corretto AF_UNIX startup failure; retried using the already documented process-only nonexistent socket-directory workaround. Final clean rules/API suite passed; no machine settings changed.
 - New acknowledgement/journal regression initially showed Retry waiting on an existing backoff timer. Retry now clears that timer; the full final 81-case suite passes, including acknowledgement followed by journal failure, invalid Undo rollback and durable shutdown.
+
+### 2026-10-04 — Commit and push workflow
+
+- User explicitly requested committing changes and pushing to the remote. Recorded the ongoing preference: commit coherent completed changes after relevant verification and push the current branch to origin without rewriting shared history.
+- Working tree was clean; collaboration implementation already committed as 14547d7. Preparing to push that implementation and this documentation checkpoint on codex/teamspace-application to origin.
+- Setup wizard remains a proposal, with guided setup versus automatic cloud provisioning awaiting a scope decision. No wizard implementation or authentication change was made.
+- Documentation-only checkpoint: git diff --check validation; application checks remain the previously recorded 121 passing tests, lint/typecheck/build. No runtime code changed. Existing Firebase provisioning and browser acceptance gates remain open.
