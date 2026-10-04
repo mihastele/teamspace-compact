@@ -9,12 +9,12 @@
 | Backend | Shared trusted route handlers; deployment selects Firebase Admin or Supabase | 2026-10-04 |
 | Database | Cloud Firestore or Supabase PostgreSQL transactional document store | 2026-10-04 |
 | Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
-| Hosting target | Vercel | 2026-10-03 |
+| Hosting target | Vercel or production Docker website alongside self-hosted Supabase; configurable host PORT | 2026-10-04 |
 | License | Not yet selected | 2026-10-03 |
 | Git workflow | User authorized committing completed changes and pushing the current branch to origin; no force pushes | 2026-10-04 |
 | Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Access administration | Owner/admin/member workspace roles; root IDs configured server-side; direct addition of existing registered accounts; once-only development auto-join | 2026-10-04 |
-| Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
+| Secrets location | Server environment only; local .env.local and .env.supabase gitignored and excluded from Docker context | 2026-10-04 |
 | Current milestone | Milestones 1–5 plus collaboration, recovery, history, conversations, alternative backend/password auth, calendar and access administration implemented/tested; browser acceptance open; Milestone 6 live release blocked | 2026-10-04 |
 
 ## Open decisions and release gates
@@ -333,3 +333,14 @@
 ### FAILED — 2026-10-04: administration verification corrections
 
 - Initial typecheck found Refresh workspace list returned rows where callers require void; made it a void action. Initial lint found a root-member effect dependency issue; used a stable loader and request-sequence guards. Final lint/typecheck/build pass, with no partial migration or broken application left behind.
+
+### 2026-10-04 — Self-hosted website PORT and tracked Supabase migrations
+
+- Continued after workspace/root administration (391c586). User will provision the first live installation themselves; implemented setup tooling and configurable website PORT without touching a live database or starting the full Supabase stack.
+- Added a multi-stage production website image with standalone Next output, a pinned official Node 24 Alpine base and an unprivileged runtime user. Docker context excludes local credentials, Git history and provider volumes. Compose maps WEB_BIND_ADDRESS:PORT to internal website port 3000, defaulting to loopback:3000. Supabase API port remains independent.
+- Server requests use the private Docker gateway; public project matching remains enforced and signed upload/download links retain the public API origin. Only public settings enter image build arguments; service credentials are runtime-only. Production development auto-join is disabled explicitly. HTTP health checks indicate website availability, not provider readiness.
+- Added migration 000 administrative ledger and a serialized psql runner for ordered migrations 007/008. Checksums normalize line endings, receipts commit atomically with each migration, repeat runs skip acknowledged migrations, failures roll back and concurrent runs take a session advisory lock. Existing untracked schemas and altered applied files are refused; manual 007-to-008 upgrades remain documented rather than guessing a baseline.
+- RLS verified on document store, store state and ledger from a clean isolated PostgreSQL database. Ledger SELECT is denied to authenticated and service_role despite the latter bypassing RLS. Operational ledger contains no user data, requires no client model generation and is retained/deleted with the database; export/deletion implications documented in migration 000.
+- PASSED: 138 unit/model/provider/storage cases, all 16 real PostgreSQL integration cases, final lint/typecheck and Compose validation including a custom website PORT. Expanded migration recovery/concurrent-run test additionally reran successfully after the full database suite. Covered failed-migration rollback, subsequent recovery, duplicate/concurrent runs, checksums, untracked schema refusal and private bookkeeping.
+- PASSED: production Docker image build and temporary isolated website container HTTP smoke on a dynamically mapped loopback port; runtime UID 1000, homepage HTTP 200 and configured Supabase response. Temporary website/test database containers were cleaned up. This does not assert live Auth/Storage readiness; previous Firestore/rules evidence remains unchanged and was not rerun for this Docker/Supabase-only iteration.
+- Updated README, SPEC and migration documentation together with first-install backend/migrate/policy/web ordering, PORT/Auth URL configuration, private transport, backup cautions and existing-schema upgrade limitations. No new package, ad-hoc live schema change, force push or unrelated rewrite. Existing live two-user/full-stack acceptance, license and dependency review gates remain open.

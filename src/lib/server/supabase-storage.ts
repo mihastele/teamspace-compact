@@ -1,14 +1,14 @@
 import type { StoragePort } from "./storage-port";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-type Configuration = { url: string; key: string; bucket: string; fetch?: typeof fetch; now?: () => number };
+type Configuration = { url: string; publicUrl?: string; key: string; bucket: string; fetch?: typeof fetch; now?: () => number };
 class StorageFailure extends Error {
   constructor(public code: number, message: string) { super(message); }
 }
 function configuration(input?: Configuration) {
-  const config = input ?? { url: process.env.SUPABASE_URL ?? "", key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", bucket: process.env.SUPABASE_STORAGE_BUCKET ?? "" };
+  const config = input ?? { url: process.env.SUPABASE_INTERNAL_URL || process.env.SUPABASE_URL || "", publicUrl: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", bucket: process.env.SUPABASE_STORAGE_BUCKET ?? "" };
   if (!config.url || !config.key || !/^[a-zA-Z0-9_-]+$/.test(config.bucket)) throw new StorageFailure(503, "Private storage is not configured.");
-  return { ...config, url: config.url.replace(/\/$/, ""), fetch: config.fetch ?? fetch, now: config.now ?? Date.now };
+  return { ...config, url: config.url.replace(/\/$/, ""), publicUrl: (config.publicUrl || config.url).replace(/\/$/, ""), fetch: config.fetch ?? fetch, now: config.now ?? Date.now };
 }
 function validPath(path: string) {
   if (!path || path.length > 1024 || path.split("/").some(part => !part || part === "." || part === "..") || /[\x00-\x1f\\]/.test(path)) throw new StorageFailure(400, "Invalid storage path.");
@@ -98,13 +98,13 @@ export function supabaseStorage(input?: Configuration): StoragePort {
                 // the absolute size/MIME cap; completion validates the exact reservation.
                 const result = await (await request(`object/upload/sign/${encoded}`, { method: "POST", headers: { "Content-Type": "application/json", "x-upsert": "false" }, body: "{}" })).json();
                 if (typeof result.url !== "string" || !result.url.startsWith("/object/upload/sign/")) throw new StorageFailure(503, "Upload signing failed.");
-                return [new URL(`${config.url}/storage/v1${result.url}`).toString()];
+                return [new URL(`${config.publicUrl}/storage/v1${result.url}`).toString()];
               }
               const expiresIn = Math.min(60, Math.floor((settings.expires - config.now()) / 1000));
               if (expiresIn < 1) throw new StorageFailure(400, "Download expiry is invalid.");
               const result = await (await request(`object/sign/${encoded}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn }) })).json();
               if (typeof result.signedURL !== "string" || !result.signedURL.startsWith("/object/sign/")) throw new StorageFailure(503, "Download signing failed.");
-              const url = new URL(`${config.url}/storage/v1${result.signedURL}`);
+              const url = new URL(`${config.publicUrl}/storage/v1${result.signedURL}`);
               if (settings.responseDisposition?.startsWith("attachment")) {
                 const filename = settings.responseDisposition.match(/filename\*=UTF-8''(.*)/)?.[1];
                 url.searchParams.set("download", filename ? decodeURIComponent(filename) : "");

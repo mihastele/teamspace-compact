@@ -1,6 +1,6 @@
 # Teamspace
 
-A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel hosting.
+A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel or self-hosted Docker hosting.
 
 ## Plan work in the calendar
 
@@ -87,8 +87,9 @@ launch. Do not turn off verification just to work around missing email delivery.
 Create a Supabase project. Copy app settings from `.env.supabase.example` into
 `.env.local` or Vercel, setting browser URL/anonymous key and server URL/service
 role key from that same project. Keep the service role key server-only. Apply
-`migrations/007-supabase-backend.sql` using the administrative SQL connection,
-then publish the authentication security policy as described in the migration.
+`migrations/007-supabase-backend.sql`, followed by
+`migrations/008-workspace-administration.sql`, using the administrative SQL
+connection, then publish the authentication security policy as described in the migration.
 The application uses a private `teamspace-private` Storage bucket. Configure
 email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
 Google is optional. Configure email delivery for verification and password reset.
@@ -97,26 +98,67 @@ Google is optional. Configure email delivery for verification and password reset
 
 Docker Compose **2.24.4+**, Git and Node are required. This downloads the complete
 official Supabase stack pinned to `self-hosted/v0.8.2`, including its database
-initialization and gateway configuration. Supabase runs separately from the
-Next app; start the app normally or deploy it to Vercel.
+initialization and gateway configuration. Compose also builds a production
+website container, running as an unprivileged user.
 
 ```sh
+npm ci
 node scripts/prepare-supabase.mjs
 node scripts/supabase-env.mjs
-docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d
 ```
 
-The second command creates `.env.supabase` with fresh, aligned keys and refuses
+The credential command creates `.env.supabase` with fresh, aligned keys and refuses
 to overwrite an existing file. It never prints credentials. Before starting,
-edit that gitignored file: configure SMTP and app/Auth/public URLs, then copy
-only the required app variables into `.env.local` or Vercel. The example has
+edit that gitignored file: configure SMTP and app/Auth/public URLs. The example has
 empty credentials and cannot start as-is. Google OAuth is disabled by default;
 classic email/password login is enabled. `EMAIL_CONFIRMATION_REQUIRED` also
 controls self-hosted Auth's email autoconfirm behavior.
 
-Apply the application SQL migration to the running database; upstream's first
-startup creates Supabase's own schemas, not Teamspace's application tables.
-The Compose override binds API/database ports to localhost. For remote access,
+Set the website port there, for example:
+
+```dotenv
+PORT=8080
+WEB_BIND_ADDRESS=127.0.0.1
+SITE_URL=http://localhost:8080
+ADDITIONAL_REDIRECT_URLS=http://localhost:8080
+```
+
+The site will open at **http://localhost:8080**. `PORT` defaults to `3000` and
+maps the host port to the website's internal port 3000. Supabase's API remains
+on port 8000; `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` identify that public
+API endpoint, not the website. Use your actual HTTPS website domain for Auth
+URLs in production. Restart Auth after changing its URLs.
+
+Start the backend first, wait for its services to be ready, then migrate and
+publish the access policy before starting the website:
+
+```sh
+docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --scale web=0
+docker compose --env-file .env.supabase -f docker.compose.supabase.yml ps
+node scripts/migrate-supabase.mjs
+node --env-file=.env.supabase scripts/publish-auth-policy.mjs
+docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build web
+```
+
+The migration runner is for **fresh installations and subsequent tracked
+upgrades**. It serializes runs, records checksums atomically with each migration,
+and safely skips completed migrations. A failed migration rolls back; earlier
+completed migrations remain applied. Retry after correcting the failure.
+It refuses an existing application schema without its ledger. For installations
+where 007 was previously applied manually, apply 008 manually following
+[its upgrade guide](migrations/008-workspace-administration.md); do not replay
+007 or delete existing tables to make the runner accept them. See
+[migration bookkeeping](migrations/000-supabase-migration-ledger.md).
+
+The website uses the private Docker gateway for server requests, while browser
+requests and signed attachment links retain the configured public API URL.
+Only public browser settings are image build arguments; server credentials are
+runtime environment settings. Rebuild after changing browser URL/key settings.
+The website health check confirms HTTP availability, not backend readiness.
+After registering your first account, configure its provider ID in
+`ROOT_ADMIN_UIDS` and recreate the web service to enable root administration.
+
+The Compose override binds website/API/database ports to localhost. For remote access,
 use a TLS reverse proxy and explicit firewall rules, replace localhost URLs and
 configure allowed redirects. A Vercel deployment needs a reachable HTTPS
 Supabase endpoint. Keep Studio and database administration private.

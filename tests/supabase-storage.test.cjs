@@ -29,6 +29,18 @@ function harness() {
 }
 const settings = { resumable: false, contentType: "application/pdf", preconditionOpts: { ifGenerationMatch: 0 }, metadata: { cacheControl: "private, no-store" } };
 function signing(bytes = 3) { return { version: "v4", action: "write", expires: 10000, contentType: "application/pdf", extensionHeaders: { "x-goog-content-length-range": `${bytes},${bytes}`, "x-goog-if-generation-match": "0" } }; }
+
+test('Docker internal storage transport never appears in browser signed URLs',async()=>{
+  const h=harness();const calls=[];
+  const storage=supabaseStorage({...h.config,url:'http://api-gw:8000',publicUrl:'https://api.example.test',fetch:async(url,init)=>{calls.push(url);return h.config.fetch(url,init);}});
+  const file=storage.bucket().file('staging/ws/file');
+  const [upload]=await file.getSignedUrl(signing());
+  const [download]=await file.getSignedUrl({version:'v4',action:'read',expires:10000});
+  assert.equal(new URL(upload).origin,'https://api.example.test');
+  assert.equal(new URL(download).origin,'https://api.example.test');
+  assert.ok(calls.every(url=>new URL(url).origin==='http://api-gw:8000'));
+  assert.ok(!upload.includes('api-gw')&&!download.includes(h.config.key));
+});
 test("Supabase writes and signed uploads are create-only", async () => {
   const h = harness(), file = h.storage.bucket().file("staging/ws/file");
   const [url] = await file.getSignedUrl(signing());

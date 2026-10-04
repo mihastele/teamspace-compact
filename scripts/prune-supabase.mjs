@@ -5,7 +5,7 @@ const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const bucket = process.env.SUPABASE_STORAGE_BUCKET;
 if (!url || !key || !bucket || url !== process.env.NEXT_PUBLIC_SUPABASE_URL) throw new Error('Matching Supabase URL and private storage settings are required.');
-const client = createClient(url, key, {auth:{persistSession:false,autoRefreshToken:false}});
+const client = createClient(process.env.SUPABASE_INTERNAL_URL || url, key, {auth:{persistSession:false,autoRefreshToken:false}});
 const {error} = await client.rpc('teamspace_store_prune_expired');
 if (error) throw new Error('Expired metadata could not be pruned. Check migration and server permissions.');
 const {data: result,error: readError} = await client.rpc('teamspace_store_read', {

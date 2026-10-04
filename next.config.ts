@@ -7,6 +7,7 @@ if (isPrivilegedSupabaseKey(browserKey) || (browserKey && browserKey === process
 }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async headers() {
     return [
       {

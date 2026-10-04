@@ -84,6 +84,32 @@ async function api(uid, method, path, input) {
 }
 const value = async path => (await db.doc(path).get()).data();
 
+test('migration runner applies clean schemas once, guards checksums and keeps bookkeeping private',async()=>{
+  const {migrationSQL}=await import('../scripts/migrate-supabase.mjs');
+  await sql('create database teamspace_migration_test;');
+  const query=source=>command(['exec','-i',container,'psql','-U','postgres','-d','teamspace_migration_test','-qAt','-v','ON_ERROR_STOP=1'],source);
+  await query(`create schema auth; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
+    create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;
+    create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);`);
+  const script=migrationSQL();
+  const failingScript=script.replace('create function public.teamspace_registered_account_id', 'select 1/0;\ncreate function public.teamspace_registered_account_id');
+  await assert.rejects(query(failingScript),/division by zero/);
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'1');
+  assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
+  await Promise.all([query(script),query(script)]);
+  await query(script);
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'2');
+  assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
+  await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
+  await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
+  await query("update public.teamspace_schema_migrations set checksum='changed' where name='008-workspace-administration.sql';");
+  await assert.rejects(query(script),/checksum changed/);
+  // Unmanaged existing schemas are refused rather than guessed or destructively recreated.
+  await query("delete from public.teamspace_schema_migrations where name='007-supabase-backend.sql';");
+  await assert.rejects(query(script),/no migration ledger/);
+  await sql('drop database teamspace_migration_test;');
+});
+
 test('account email RPC is service-only, case-insensitive and rejects ambiguous identities',async()=>{
   await sql(`update auth.users set email='User@Example.test' where id='${outsider}';`);
   assert.equal(await sql("set role service_role; select public.teamspace_registered_account_id('user@example.test');"),outsider);

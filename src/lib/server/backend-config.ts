@@ -24,6 +24,15 @@ export function backendConfiguration() {
         : !!(process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_STORAGE_BUCKET && process.env.NEXT_PUBLIC_FIREBASE_API_KEY && process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && process.env.NEXT_PUBLIC_FIREBASE_APP_ID && process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
     if (provider === "supabase" && process.env.SUPABASE_URL !== process.env.NEXT_PUBLIC_SUPABASE_URL)
         throw new ApiError(503, "invalid_configuration", "Server and browser Supabase projects must match.");
+    if (provider === "supabase" && process.env.SUPABASE_INTERNAL_URL) {
+        try {
+            const internal = new URL(process.env.SUPABASE_INTERNAL_URL);
+            if (!["http:", "https:"].includes(internal.protocol) || internal.username || internal.password || internal.search || internal.hash)
+                throw new Error("Invalid transport URL");
+        } catch {
+            throw new ApiError(503, "invalid_configuration", "SUPABASE_INTERNAL_URL must be an HTTP(S) transport URL without credentials, query or fragment.");
+        }
+    }
     if (provider === "firebase" && process.env.FIREBASE_PROJECT_ID && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && process.env.FIREBASE_PROJECT_ID !== process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID)
         throw new ApiError(503, "invalid_configuration", "Server and browser Firebase projects must match.");
     return { provider, emailConfirmationRequired, passwordAuthEnabled, googleAuthEnabled, configured };

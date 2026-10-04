@@ -53,3 +53,18 @@ test('privileged Supabase keys are rejected before browser bundling', () => {
   assert.equal(isPrivilegedSupabaseKey('sb_publishable_test'),false);
   assert.equal(isPrivilegedSupabaseKey('malformed-public-test'),false);
 });
+
+test('private Docker transport preserves public project matching and rejects credential-bearing URLs',()=>{
+  const names=['BACKEND_PROVIDER','NEXT_PUBLIC_BACKEND_PROVIDER','SUPABASE_URL','NEXT_PUBLIC_SUPABASE_URL','SUPABASE_INTERNAL_URL'];
+  const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
+  try {
+    process.env.BACKEND_PROVIDER=process.env.NEXT_PUBLIC_BACKEND_PROVIDER='supabase';
+    process.env.SUPABASE_URL=process.env.NEXT_PUBLIC_SUPABASE_URL='https://api.example.test';
+    process.env.SUPABASE_INTERNAL_URL='http://api-gw:8000';assert.equal(backendConfiguration().provider,'supabase');
+    for(const invalid of ['file:///private','http://user:password@api-gw:8000','http://api-gw:8000?key=wrong']){
+      process.env.SUPABASE_INTERNAL_URL=invalid;assert.throws(()=>backendConfiguration(),/transport URL/);
+    }
+    process.env.SUPABASE_INTERNAL_URL='http://api-gw:8000';process.env.NEXT_PUBLIC_SUPABASE_URL='https://other.test';
+    assert.throws(()=>backendConfiguration(),/projects must match/);
+  } finally {for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name];}}
+});

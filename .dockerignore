@@ -1,0 +1,13 @@
+.git
+.next
+node_modules
+.env*
+*.pem
+*.key
+.supabase
+.agentic/verification
+.test-build
+.storage-test-build
+coverage
+*-debug.log
+*.tsbuildinfo

@@ -206,3 +206,10 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Direct addition by email or account ID skips invitation acceptance and never creates or confirms an account. Reauthorize after provider lookup; atomically write membership/account index and private permanent idempotency receipt. Retries after removal cannot resurrect membership.
 - Development auto-join uses an explicitly configured existing test workspace and once-only enrollment marker, respects removal/leave, and rejects configuration outside development. Normal email-confirmation policy still applies. Production auto-join is unavailable.
 - Root/admin UI reports acknowledgement/failure and keeps uncertain retry identities. Added users explicitly refresh their workspace list or sign in again. Migration 008 documents additive models, Supabase service-only lookup, access checks, export/deletion and deployment. No public user directory or SDK writes.
+
+### Self-hosted website and tracked migrations — 2026-10-04
+
+- Supabase Compose includes a production website container. PORT selects its host port, default 3000; WEB_BIND_ADDRESS defaults to loopback. Website port and public Supabase API URL are separate settings. Auth site/redirect URLs must match the deployed website.
+- Browser URL/key are build-time settings; server credentials are runtime-only. Server requests use the private Docker gateway while signed attachment links retain the public API origin. The container runs without root privileges; HTTP health does not imply backend readiness.
+- Fresh-install migrations use an administrator-only RLS-protected ledger, normalized checksums, a database advisory lock and atomic migration receipts. Repeated/concurrent runs skip applied files; failed migrations roll back and remain retryable. Refuse existing untracked schemas rather than guessing an upgrade baseline.
+- Document first setup, explicit manual upgrades for previously installed schemas, policy publication, backups and hourly cleanup. Provisioning and live migration remain administrator actions; no existing data is moved between providers.
