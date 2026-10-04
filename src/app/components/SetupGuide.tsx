@@ -8,7 +8,7 @@ const steps = [
   "Your project",
   "Connect the app",
   "Secure deployment",
-  "Your workspace",
+  "Sign-in & workspace",
   "Launch checks",
 ];
 const template = `# Browser configuration — Firebase Web app settings
@@ -153,7 +153,7 @@ function GuideDialog({
                 "Give your team a home.",
                 "Connect your Firebase app.",
                 "Keep the keys behind the scenes.",
-                "Make it yours.",
+                "Let your team sign in.",
                 "Ready means verified.",
               ][step]
             }
@@ -261,6 +261,29 @@ function GuideDialog({
           )}
           {step === 3 && (
             <>
+              <h3>Set up Google OAuth</h3>
+              <p>
+                Teamspace already uses Firebase Authentication for Google
+                sign-in. Configure the provider in your Firebase project:
+              </p>
+              <ol>
+                <li>
+                  Open Authentication → Sign-in method in Firebase Console.
+                  Enable Google and save the provider settings.
+                </li>
+                <li>
+                  In Authentication settings, add localhost and your deployed
+                  app domain to Authorized domains.
+                </li>
+                <li>
+                  Deploy with the Web app configuration from this same project,
+                  then test Continue with Google with your own account.
+                </li>
+              </ol>
+              <ExternalLink href="https://firebase.google.com/docs/auth/web/google-signin">
+                Google OAuth setup guide
+              </ExternalLink>
+              <h3>Create your workspace</h3>
               <p>
                 After deployment, Teamspace will offer{" "}
                 <strong>Continue with Google</strong>. Sign in and choose a name
@@ -271,16 +294,23 @@ function GuideDialog({
                 and member management. This is a workspace role; it does not
                 grant Firebase project administration.
               </p>
-              <h3>An extra layer of account protection</h3>
-              <p>
-                Authenticator-based two-factor authentication requires Firebase
-                Authentication with Identity Platform. Enrollment and
-                second-factor sign-in are not implemented in Teamspace yet;
-                enabling the provider alone will not add that experience.
-              </p>
-              <ExternalLink href="https://firebase.google.com/docs/auth/web/totp-mfa">
-                Firebase authenticator setup
-              </ExternalLink>
+              <details>
+                <summary>Optional: two-factor authentication (2FA)</summary>
+                <p>
+                  2FA is optional by default. It is not required to set up a
+                  workspace or use Google sign-in.
+                </p>
+                <p>
+                  Authenticator-based 2FA requires Firebase Authentication with
+                  Identity Platform. Enrollment and second-factor sign-in are
+                  not implemented in Teamspace yet; enabling the provider alone
+                  will not add that experience. Keep app-level enrollment
+                  disabled until that flow is implemented and verified.
+                </p>
+                <ExternalLink href="https://firebase.google.com/docs/auth/web/totp-mfa">
+                  Firebase authenticator setup
+                </ExternalLink>
+              </details>
             </>
           )}
           {step === 4 && (

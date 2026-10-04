@@ -25,6 +25,12 @@ In local preview, use **Set up your workspace** to open the five-step setup guid
 6. Configure a bucket lifecycle rule deleting objects under `staging/` after one day, to clean abandoned/recreated signed uploads.
 7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. Ready attachments have no expiry. TTL is eventual; expired invites and request counters are checked synchronously by the application.
 
+### User sign-in and optional 2FA
+
+Google OAuth through Firebase Authentication is the supported user login. The setup guide's **Sign-in & workspace** step walks through enabling the Google provider, authorizing app domains and testing sign-in before workspace creation. Follow [Firebase's Google sign-in guide](https://firebase.google.com/docs/auth/web/google-signin).
+
+Two-factor authentication is **optional by default**, not a prerequisite for workspace setup. Its guidance is collapsed initially. Teamspace does not yet implement authenticator enrollment or second-factor challenges, so leave app-level enrollment disabled until that flow is supported and verified. Future enrollment must be an explicit user choice; Firebase TOTP requires [Authentication with Identity Platform](https://firebase.google.com/docs/auth/web/totp-mfa).
+
 Invite tokens are random, hashed at rest, bounded and redeemed transactionally. Legacy/new notes use revision-checked saves; configured saved notes are promoted to transactional Yjs collaboration when opened with a clean draft. Title/location retain separate revision checks. Signed staging uploads are validated and promoted to private workspace paths. Downloads use short-lived signed URLs issued after membership checks; these are temporary bearer capabilities, never permanent public download tokens. Removed members cannot obtain new URLs, while already issued URLs expire shortly.
 
 ## Verify

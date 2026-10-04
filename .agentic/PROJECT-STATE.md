@@ -12,6 +12,7 @@
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Git workflow | User authorized committing completed changes and pushing the current branch to origin; no force pushes | 2026-10-04 |
+| Authentication policy | Google OAuth via Firebase; 2FA optional by default, enrollment/challenge UI not yet implemented | 2026-10-04 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
 | Current milestone | Milestones 1–5 plus bounded Yjs collaboration, durable recovery and approximate presence implemented/tested; collaboration browser acceptance open; Milestone 6 live release blocked | 2026-10-03 |
 
@@ -196,3 +197,10 @@
 ### FAILED — 2026-10-04: setup guide lint corrected
 
 - Initial lint rejected three unescaped apostrophes in JSX prose. Corrected the text; final lint/typecheck/build pass. No broken state remains.
+
+### 2026-10-04 — OAuth setup and optional 2FA clarification
+
+- User clarified that setup means user OAuth login, while retaining 2FA as optional by default. Made Google OAuth provider enablement, authorized domains and actual sign-in verification the main Sign-in & workspace guide step; linked official Firebase instructions.
+- Moved authenticator guidance into a collapsed-by-default Optional 2FA section. Recorded opt-in policy in SPEC/README/Current Facts; no MFA requirement or pretend enablement toggle added. Enrollment/challenge implementation remains an explicit open feature, so app-level enrollment must stay disabled until supported and verified. Existing Google login and authorization behavior unchanged.
+- PASSED: 81 unit/model/controller/store/editor-helper tests, lint, standalone typecheck, optimized production build and git diff --check. No server/schema/rules changes; previously validated 40 rules/API cases not rerun. No additional test for reversible guide copy; browser keyboard/mobile/dialog verification remains an open gap under the recorded browser-tool restriction.
+- No dependency, migration, credential, live provider change or cloud provisioning. Previous guided setup iteration b9396f5 pushed successfully. This iteration will be committed/pushed per user preference; Firebase provisioning, deployed collaboration acceptance, licensing and dependency review gates remain open.
