@@ -319,6 +319,10 @@ Deploy the rules/index configuration in `migrations/006-conversations.md` before
 
   docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build
 
+## Task table
+
+Choose **Table** in workspace navigation to compare tasks and custom fields in columns. Click a task title to use the existing editor. Column headings cycle ascending, descending and board order; empty values stay last. **Columns** controls visibility, and status/deadline filters combine with search and My tasks. **Reset table** restores local defaults. Table settings reset when you leave the view; task edits update Board and Calendar too. On narrow screens, scroll within the table to reach additional columns.
+
 ## Linked boards and synced content
 
 Use `/kanban` in any note, then **Edit linked view** to save its name, task search, status, assignee, deadline and sorting. Each embed has independent settings and shares the same workspace tasks. **Current viewer** shows each reader their own assigned tasks. Task edits update every board; removing a view leaves tasks intact.

@@ -28,6 +28,7 @@ import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
+import TaskTable from "./components/TaskTable";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
 import { changedPropertyValues } from "@/lib/board-properties";
@@ -44,7 +45,7 @@ import { taskEditPatch } from "@/lib/task-status";
 import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "board" | "calendar" | "notes" | "members";
+type View = "board" | "table" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -63,6 +64,7 @@ function initials(name: string) {
 }
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
+    table: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 14h18M10 4v16" /></>,
     board: (
       <>
         <rect x="3" y="4" width="5" height="16" rx="1" />
@@ -2326,6 +2328,8 @@ export default function Home() {
   const title =
     view === "board"
       ? "Project board"
+      : view === "table"
+        ? "Your task table"
       : view === "calendar"
         ? "Your task calendar"
         : view === "notes"
@@ -2365,7 +2369,7 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {(["board", "calendar", "notes", "members"] as View[]).map((v) => (
+          {(["board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
@@ -2373,7 +2377,7 @@ export default function Home() {
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "board" ? "Board" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
+              {v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2408,6 +2412,8 @@ export default function Home() {
             <strong>
               {view === "board"
                 ? "Board"
+                : view === "table"
+                  ? "Table"
                 : view === "calendar"
                   ? "Calendar"
                   : view === "notes"
@@ -2463,6 +2469,8 @@ export default function Home() {
               <p className={s.subtitle}>
                 {view === "board"
                   ? "A clear view of what’s next. One task at a time."
+                  : view === "table"
+                    ? "Compare tasks and custom fields in one place."
                   : view === "calendar"
                     ? "Make room for what matters. Plan your team’s work by day."
                     : view === "notes"
@@ -2470,7 +2478,7 @@ export default function Home() {
                       : "A small team can do extraordinary things."}
               </p>
             </div>
-            {(view === "board" || view === "calendar") && (
+            {(view === "board" || view === "table" || view === "calendar") && (
               <button
                 className={s.primary}
                 onClick={() => setTask({ status: "todo" })}
@@ -2485,13 +2493,15 @@ export default function Home() {
               <Icon name={view} />
               {view === "board"
                 ? "Board view"
+                : view === "table"
+                  ? "Table view"
                 : view === "calendar"
                   ? "Calendar view"
                   : view === "notes"
                     ? "All notes"
                     : "Team directory"}
               <span>
-                {view === "board" || view === "calendar"
+                {view === "board" || view === "table" || view === "calendar"
                   ? `${api.tasks.length} tasks in this workspace`
                   : view === "notes"
                     ? `${api.notes.length} shared documents`
@@ -2499,7 +2509,7 @@ export default function Home() {
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              {(view === "board" || view === "calendar") && (
+              {(view === "board" || view === "table" || view === "calendar") && (
                 <button
                   className={s.secondary}
                   aria-pressed={filter}
@@ -2550,6 +2560,11 @@ export default function Home() {
               onTask={setTask}
             />
           )}
+          {view === "table" && <>
+            <BoardProperties key={`table-properties:${taskScope}`} api={api} />
+            <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members}
+              filtered={Boolean(search || filter)} onTask={setTask} />
+          </>}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
             <span>

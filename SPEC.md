@@ -44,7 +44,7 @@ providers. Migration 009 and the maintained TypeScript models document the shape
 Download board JSON exports all saved tasks and definitions; attachments and
 conversations are excluded. Task deletion removes its values. Definitions remain
 for the workspace lifetime; full workspace deletion remains a separate open feature.
-Linked-content block behavior is pending the user's separate scope choice.
+Linked board views and synced text references are implemented as described below.
 
 ## Main screens and behavior
 
@@ -219,6 +219,13 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Task details reuse the existing editor, attachments and conversations. Add task for this day prefills its deadline; rescheduling through task details updates both views through existing shared subscriptions. Calendar navigation never mutates task data.
 - Deadlines remain date-only, interpreted against the viewer's local day. Date arithmetic and labels avoid timezone/DST shifts. Support Today, previous/next month and keyboard day/week/month navigation with visible selected-day focus.
 - No separate events, recurrence, external calendar integrations or drag-to-reschedule in this iteration. No schema, dependency or authorization change. Local preview remains device-local.
+
+### Shared task table — 2026-10-04
+
+- Table navigation displays the same shared tasks as Board and Calendar, with built-in title/status/assignee/deadline and named custom-field columns. Task titles open the existing trusted task editor; Add task and Properties reuse current controls.
+- Column headings cycle ascending, descending and original board order. Sort select/multi-select fields by displayed option names, status by workflow order and text naturally; blank values stay last in either direction. Stable task-ID ties and copied arrays avoid mutating shared positions.
+- Offer local column visibility, status/deadline filters, reset and result counts, combining with workspace search/My tasks. Task title stays visible. New/renamed field definitions reconcile by stable IDs; removed tasks disappear from derived rows. Local settings reset when leaving Table or switching account/workspace.
+- Use a native accessible table with keyboard sorting, row/header scopes, announced sort/result state and contained horizontal scrolling. No inline spreadsheet editing, table note blocks, shared table-view settings, extra listeners, dependency or schema change. Browser/mobile/keyboard and two-user acceptance remain open release checks.
 
 ### Workspace administrators and direct membership — 2026-10-04
 
