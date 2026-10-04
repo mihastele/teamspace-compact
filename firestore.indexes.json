@@ -18,7 +18,25 @@
     }
   ],
   "fieldOverrides": [
-    { "collectionGroup": "rateLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
-    { "collectionGroup": "attachments", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+    {
+      "collectionGroup": "presence",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    { "collectionGroup": "notes", "fieldPath": "collab", "indexes": [] },
+    { "collectionGroup": "notes", "fieldPath": "content", "indexes": [] },
+    {
+      "collectionGroup": "rateLimits",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "attachments",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    }
   ]
 }

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTeamspace } from "@/lib/client";
+import { useCollaborativeNote } from "@/lib/use-collaborative-note";
 import type { Task, NoteContent, Attachment } from "@/lib/model";
 import {
   flattenNoteTree,
@@ -542,6 +543,8 @@ type Draft = {
   content: NoteContent;
   revision: number;
   baseline: string;
+  metadataBaseline?: string;
+  live?: boolean;
   state: "Unsaved" | "Saved" | "Saving" | "Failed";
   error?: string;
 };
@@ -629,17 +632,37 @@ function Notes({
     content: NoteContent,
     parentId: string | null,
   ) => JSON.stringify([title, content, parentId]);
+  const [compositionDraft, setCompositionDraft] = useState({
+    key: "",
+    pending: false,
+  });
+  const composingNote =
+    compositionDraft.key === key && compositionDraft.pending;
   const cached = drafts[key];
   const cacheIsDirty =
     cached &&
-    baseline(cached.title, cached.content, cached.parentId) !== cached.baseline;
+    (cached.live
+      ? JSON.stringify([cached.title, cached.parentId]) !==
+        cached.metadataBaseline
+      : baseline(cached.title, cached.content, cached.parentId) !==
+        cached.baseline);
+  const liveEnabled = Boolean(
+    api.configured && selected && ((remote && !cacheIsDirty) || cached?.live),
+  );
+  const collaboration = useCollaborativeNote({
+    api,
+    noteId: selected,
+    enabled: liveEnabled,
+  });
+  const metadataRevision = remote?.metadataRevision ?? remote?.revision;
   const keepCached =
     cached &&
     (cacheIsDirty ||
       cached.state === "Saving" ||
       cached.error ||
       !remote ||
-      remote.revision <= cached.revision);
+      (cached.live ? (metadataRevision ?? 0) : remote.revision) <=
+        cached.revision);
   const draft: Draft =
     (keepCached ? cached : undefined) ||
     (remote
@@ -647,7 +670,11 @@ function Notes({
           title: remote.title,
           content: remote.content,
           parentId: remote.parentId,
-          revision: remote.revision,
+          revision: liveEnabled
+            ? (metadataRevision ?? remote.revision)
+            : remote.revision,
+          metadataBaseline: JSON.stringify([remote.title, remote.parentId]),
+          live: liveEnabled,
           baseline: baseline(remote.title, remote.content, remote.parentId),
           state: "Saved",
         }
@@ -663,11 +690,23 @@ function Notes({
           ),
           state: "Unsaved",
         });
-  const dirty =
-    baseline(draft.title, draft.content, draft.parentId) !== draft.baseline;
-  const anyDirty = Object.values(drafts).some(
-    (d) => baseline(d.title, d.content, d.parentId) !== d.baseline,
-  );
+  const displayedContent =
+    liveEnabled && collaboration.ready && collaboration.content
+      ? collaboration.content
+      : draft.content;
+  const dirty = liveEnabled
+    ? JSON.stringify([draft.title, draft.parentId]) !==
+      (draft.metadataBaseline ||
+        JSON.stringify([remote?.title, remote?.parentId]))
+    : baseline(draft.title, draft.content, draft.parentId) !== draft.baseline;
+  const anyDirty =
+    compositionDraft.pending ||
+    collaboration.pending ||
+    Object.values(drafts).some((d) =>
+      d.live
+        ? JSON.stringify([d.title, d.parentId]) !== d.metadataBaseline
+        : baseline(d.title, d.content, d.parentId) !== d.baseline,
+    );
   useEffect(() => {
     onDirtyChange(anyDirty);
     function preventLoss(e: BeforeUnloadEvent) {
@@ -680,7 +719,11 @@ function Notes({
     !api.loading &&
     selected &&
     drafts[key] &&
-    (!remote || (remote && remote.revision !== draft.revision)),
+    dirty &&
+    (!remote ||
+      (liveEnabled
+        ? (metadataRevision ?? 0) > draft.revision
+        : remote.revision !== draft.revision)),
   );
   const children = api.notes.filter(
     (n) => n.parentId === selected && selected !== null,
@@ -726,14 +769,48 @@ function Notes({
   function update(patch: Partial<Draft>) {
     setDrafts((prev) => ({
       ...prev,
-      [key]: { ...draft, ...patch, state: "Unsaved", error: patch.error },
+      [key]: {
+        ...draft,
+        ...(liveEnabled
+          ? {
+              live: true,
+              metadataBaseline:
+                draft.metadataBaseline ||
+                JSON.stringify([remote?.title, remote?.parentId]),
+              revision: draft.live
+                ? draft.revision
+                : (metadataRevision ?? draft.revision),
+            }
+          : {}),
+        ...patch,
+        state: "Unsaved",
+        error: patch.error,
+      },
+    }));
+  }
+  function changeLiveContent(content: NoteContent, base?: NoteContent) {
+    collaboration.change(content, base || displayedContent);
+    // Recovery snapshot only: collaborative content is never sent through Save note.
+    setDrafts((previous) => ({
+      ...previous,
+      [key]: {
+        ...draft,
+        live: true,
+        metadataBaseline:
+          draft.metadataBaseline ||
+          JSON.stringify([remote?.title, remote?.parentId]),
+        content,
+      },
     }));
   }
   function downloadMarkdown() {
     const link = document.createElement("a");
     let url: string | undefined;
     try {
-      const exported = exportNoteMarkdown(draft.title, draft.content);
+      const exported = exportNoteMarkdown(
+        draft.title,
+        collaboration.recoveryContent ?? displayedContent,
+      );
       url = URL.createObjectURL(
         new Blob([exported.markdown], { type: "text/markdown;charset=utf-8" }),
       );
@@ -768,13 +845,20 @@ function Notes({
           "The parent note is no longer available. Choose another location before saving.",
         );
       assertNoteParent(api.notes, selected, draft.parentId);
-      const saved = await api.saveNote({
-        id: selected || undefined,
-        title: draft.title.trim(),
-        content: draft.content,
-        parentId: draft.parentId,
-        expectedRevision: selected ? draft.revision : undefined,
-      });
+      const saved =
+        liveEnabled && selected
+          ? await api.saveNoteMetadata(selected, {
+              title: draft.title.trim(),
+              parentId: draft.parentId,
+              expectedRevision: draft.revision,
+            })
+          : await api.saveNote({
+              id: selected || undefined,
+              title: draft.title.trim(),
+              content: draft.content,
+              parentId: draft.parentId,
+              expectedRevision: selected ? draft.revision : undefined,
+            });
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[capturedKey];
@@ -782,8 +866,13 @@ function Notes({
           ...draft,
           title: saved.title,
           parentId: saved.parentId,
-          revision: saved.revision,
-          baseline: baseline(saved.title, draft.content, saved.parentId),
+          content: saved.content,
+          live: liveEnabled,
+          metadataBaseline: JSON.stringify([saved.title, saved.parentId]),
+          revision: liveEnabled
+            ? (saved.metadataRevision ?? saved.revision)
+            : saved.revision,
+          baseline: baseline(saved.title, saved.content, saved.parentId),
           state: "Saved",
         };
         return next;
@@ -1121,12 +1210,30 @@ function Notes({
         </nav>
         <div className={s.editorToolbar}>
           <span aria-live="polite">
-            {conflict
-              ? "Remote changes available"
-              : draft.state === "Saved" && dirty
-                ? "Unsaved"
-                : draft.state}{" "}
-            · Explicit save
+            {liveEnabled
+              ? composingNote && collaboration.status === "Saved"
+                ? "Saving…"
+                : collaboration.status
+              : conflict
+                ? "Remote changes available"
+                : draft.state === "Saved" && dirty
+                  ? "Unsaved"
+                  : draft.state}{" "}
+            · {liveEnabled ? "Live content" : "Explicit save"}
+            {liveEnabled &&
+              (dirty ||
+                draft.state === "Saving" ||
+                draft.state === "Failed") && (
+                <span>
+                  {" "}
+                  ·{" "}
+                  {draft.state === "Saving"
+                    ? "Saving title / location…"
+                    : draft.error
+                      ? "Title / location save failed"
+                      : "Title / location unsaved"}
+                </span>
+              )}
           </span>
           <button
             className={s.secondary}
@@ -1180,9 +1287,46 @@ function Notes({
               (Boolean(selected) && !dirty)
             }
           >
-            {draft.state === "Saving" ? "Saving…" : "Save note"}
+            {draft.state === "Saving"
+              ? "Saving…"
+              : liveEnabled
+                ? "Save title / location"
+                : "Save note"}
           </button>
         </div>
+        {liveEnabled && (
+          <div className={s.collaborationInfo}>
+            <span>
+              Text and blocks sync automatically. Title and location use Save.
+            </span>
+            <span aria-label="People viewing this note">
+              {collaboration.presence.length
+                ? collaboration.presence
+                    .map((person) => person.displayName)
+                    .join(", ") + " · viewing recently"
+                : "Live workspace note"}
+            </span>
+            <small>
+              Pending work stays on this device when switching notes. Reopen it
+              to resume synchronization.
+            </small>
+          </div>
+        )}
+        {api.configured && selected && !liveEnabled && (
+          <p className={s.hint}>
+            Save or download your existing draft before starting live
+            collaboration. Your draft has been preserved.
+          </p>
+        )}
+        {liveEnabled && collaboration.error && (
+          <div className={s.banner} role="alert">
+            <span>{collaboration.error}</span>
+            <button className={s.secondary} onClick={collaboration.retry}>
+              Retry synchronization
+            </button>
+            <span>Use Download Markdown to keep a recovery copy.</span>
+          </div>
+        )}
         {children.length > 0 && (
           <p className={s.hint} style={{ marginBottom: 14 }}>
             This note has {children.length}{" "}
@@ -1203,7 +1347,7 @@ function Notes({
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(
-                      `${draft.title}\n\n${contentText(draft.content)}`,
+                      `${draft.title}\n\n${contentText(displayedContent)}`,
                     )
                     .catch(() =>
                       update({
@@ -1291,9 +1435,28 @@ function Notes({
               onStatus={onStatus}
             />
           )}
-          value={draft.content}
-          onChange={(content) => update({ content })}
-          disabled={api.loading || draft.state === "Saving"}
+          value={displayedContent}
+          onCompositionPendingChange={(pending) =>
+            setCompositionDraft({ key, pending })
+          }
+          onChange={(content, base) =>
+            liveEnabled ? changeLiveContent(content, base) : update({ content })
+          }
+          collaborativeHistory={
+            liveEnabled
+              ? {
+                  undo: collaboration.undo,
+                  redo: collaboration.redo,
+                  canUndo: collaboration.canUndo,
+                  canRedo: collaboration.canRedo,
+                }
+              : undefined
+          }
+          disabled={
+            liveEnabled
+              ? !collaboration.ready || collaboration.readOnly
+              : api.loading || draft.state === "Saving"
+          }
           onAddSubnote={
             selected && remote ? () => selectNote(null, selected) : undefined
           }

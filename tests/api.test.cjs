@@ -888,3 +888,427 @@ test("extended Markdown and board blocks persist through trusted saves without c
   });
   assert.equal(outsider.status, 403);
 });
+
+const Y = require("yjs");
+const { randomUUID } = require("node:crypto");
+const {
+  decodeDocument,
+  readContent,
+  applyEditorContent,
+  toBase64,
+} = require("../.test-build/collaboration-model.js");
+async function promoted() {
+  await db.doc(`${prefix}/notes/note`).update({
+    content: {
+      blocks: [
+        { type: "paragraph", text: "Alpha" },
+        { type: "paragraph", text: "Beta" },
+        { type: "paragraph", text: "Gamma" },
+      ],
+    },
+  });
+  const [a, b] = await Promise.all([
+    api("owner", "POST", `${prefix}/notes/note/collaboration`, {}),
+    api("member", "POST", `${prefix}/notes/note/collaboration`, {}),
+  ]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.equal(a.data.note.collab.generation, b.data.note.collab.generation);
+  assert.deepEqual(a.data.note.content, b.data.note.content);
+  return a.data.note;
+}
+function editOperation(note, change, client) {
+  const doc = client ?? decodeDocument(note.collab.state);
+  const before = readContent(doc),
+    next = structuredClone(before);
+  const vector = Y.encodeStateVector(doc);
+  change(next);
+  applyEditorContent(doc, before, next);
+  return {
+    doc,
+    input: {
+      operationId: randomUUID(),
+      generation: note.collab.generation,
+      update: toBase64(Y.encodeStateAsUpdate(doc, vector)),
+    },
+  };
+}
+async function currentNote() {
+  return (await db.doc(`${prefix}/notes/note`).get()).data();
+}
+async function sendOperation(uid, op) {
+  return api(uid, "POST", `${prefix}/notes/note/updates`, op.input);
+}
+
+test("collaboration merges concurrent different-block and same-text edits with acknowledged final state", async () => {
+  const note = await promoted();
+  const a = editOperation(note, (c) => {
+    c.blocks[0].text = "Alpha A";
+  });
+  const b = editOperation(note, (c) => {
+    c.blocks[1].text = "Beta B";
+  });
+  const responses = await Promise.all([
+    sendOperation("owner", a),
+    sendOperation("member", b),
+  ]);
+  responses.forEach((r) => assert.equal(r.status, 200, JSON.stringify(r.data)));
+  let state = await currentNote();
+  assert.deepEqual(
+    state.content.blocks.map((b) => b.text),
+    ["Alpha A", "Beta B", "Gamma"],
+  );
+  assert.equal(state.collab.sequence, 2);
+  const base = { ...state, id: "note" };
+  const x = editOperation(base, (c) => {
+    c.blocks[0].text += " X";
+  });
+  const y = editOperation(base, (c) => {
+    c.blocks[0].text += " Y";
+  });
+  for (const r of await Promise.all([
+    sendOperation("owner", x),
+    sendOperation("member", y),
+  ]))
+    assert.equal(r.status, 200);
+  state = await currentNote();
+  assert.match(state.content.blocks[0].text, / X/);
+  assert.match(state.content.blocks[0].text, / Y/);
+  for (const doc of [a.doc, b.doc, x.doc, y.doc]) doc.destroy();
+});
+
+test("concurrent inserts and move/edit preserve globally unique deterministic blocks", async () => {
+  const note = await promoted();
+  const a = editOperation(note, (c) => {
+    c.blocks.splice(1, 0, { type: "heading", text: "Inserted A", level: 2 });
+  });
+  const b = editOperation(note, (c) => {
+    c.blocks.splice(1, 0, { type: "paragraph", text: "Inserted B" });
+  });
+  for (const r of await Promise.all([
+    sendOperation("owner", a),
+    sendOperation("member", b),
+  ]))
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  let state = await currentNote();
+  assert.equal(state.content.blocks.length, 5);
+  assert.equal(new Set(state.content.blocks.map((b) => b.id)).size, 5);
+  const merged = new Y.Doc();
+  Y.applyUpdate(merged, Y.encodeStateAsUpdate(a.doc));
+  Y.applyUpdate(merged, Y.encodeStateAsUpdate(b.doc));
+  assert.deepEqual(readContent(merged), state.content);
+  const base = { ...state, id: "note" };
+  const move = editOperation(base, (c) => {
+    c.blocks.unshift(c.blocks.pop());
+  });
+  const edit = editOperation(base, (c) => {
+    c.blocks[0].text = "Edited while moved";
+  });
+  for (const r of await Promise.all([
+    sendOperation("owner", move),
+    sendOperation("member", edit),
+  ]))
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  state = await currentNote();
+  assert.equal(state.content.blocks[0].text, "Gamma");
+  assert.equal(
+    state.content.blocks.find((b) => b.id === base.content.blocks[0].id).text,
+    "Edited while moved",
+  );
+  for (const doc of [a.doc, b.doc, merged, move.doc, edit.doc]) doc.destroy();
+});
+
+test("deletion tombstones prevent resurrection by stale edits, duplicate requests do not mutate", async () => {
+  const note = await promoted();
+  const stale = editOperation(note, (c) => {
+    c.blocks[0].text = "Stale edit";
+  });
+  const remove = editOperation(note, (c) => {
+    c.blocks.shift();
+  });
+  assert.equal((await sendOperation("owner", remove)).status, 200);
+  assert.equal((await sendOperation("member", stale)).status, 200);
+  const before = await currentNote();
+  assert.equal(before.content.blocks.length, 2);
+  assert.ok(
+    !before.content.blocks.some((b) => b.id === note.content.blocks[0].id),
+  );
+  assert.equal((await sendOperation("member", stale)).status, 200);
+  assert.deepEqual((await currentNote()).collab, before.collab);
+  const changed = editOperation({ ...before, id: "note" }, (c) => {
+    c.blocks[0].text = "Changed payload";
+  });
+  changed.input.operationId = stale.input.operationId;
+  assert.equal(
+    (await sendOperation("member", changed)).data.error.code,
+    "operation_conflict",
+  );
+  for (const doc of [stale.doc, remove.doc, changed.doc]) doc.destroy();
+});
+
+test("ordered offline updates reject missing dependencies then survive retry and response-loss replay", async () => {
+  const note = await promoted();
+  const first = editOperation(note, (c) => {
+    c.blocks[0].text += " First";
+  });
+  const second = editOperation(
+    note,
+    (c) => {
+      c.blocks[0].text += " Second";
+    },
+    first.doc,
+  );
+  const remote = editOperation(note, (c) => {
+    c.blocks[1].text = "Remote while offline";
+  });
+  assert.equal((await sendOperation("owner", remote)).status, 200);
+  const outOfOrder = await sendOperation("member", second);
+  assert.equal(outOfOrder.status, 409);
+  assert.equal(outOfOrder.data.error.code, "missing_dependencies");
+  assert.equal((await sendOperation("member", first)).status, 200);
+  assert.equal((await sendOperation("member", first)).status, 200);
+  assert.equal((await sendOperation("member", second)).status, 200);
+  const saved = await currentNote();
+  assert.deepEqual(
+    saved.content.blocks.map((b) => b.text),
+    ["Alpha First Second", "Remote while offline", "Gamma"],
+  );
+  assert.equal(saved.collab.sequence, 3);
+  assert.deepEqual(
+    readContent(decodeDocument(saved.collab.state)),
+    saved.content,
+  );
+  first.doc.destroy();
+  remote.doc.destroy();
+});
+
+test("generation, malformed payload, legacy writes and revoked members are fenced", async () => {
+  const note = await promoted();
+  const op = editOperation(note, (c) => {
+    c.blocks[0].text = "Update";
+  });
+  assert.equal(
+    (await api("outsider", "POST", `${prefix}/notes/note/collaboration`, {}))
+      .status,
+    403,
+  );
+  assert.equal((await sendOperation("outsider", op)).status, 403);
+  assert.equal(
+    (
+      await api("member", "PATCH", `${prefix}/notes/note`, {
+        title: "Legacy",
+        content: { blocks: [] },
+        expectedRevision: note.revision,
+      })
+    ).data.error.code,
+    "collaboration_required",
+  );
+  const generation = op.input.generation;
+  op.input.generation = randomUUID();
+  assert.equal(
+    (await sendOperation("member", op)).data.error.code,
+    "generation_conflict",
+  );
+  op.input.generation = generation;
+  assert.equal(
+    (
+      await api("member", "POST", `${prefix}/notes/note/updates`, {
+        ...op.input,
+        update: "bogus",
+      })
+    ).status,
+    400,
+  );
+  await db.doc(`${prefix}/members/member`).delete();
+  assert.equal((await sendOperation("member", op)).status, 403);
+  assert.equal((await currentNote()).collab.sequence, 0);
+  op.doc.destroy();
+});
+
+test("metadata revision is independent of concurrent content and title updates preserve content", async () => {
+  const note = await promoted();
+  const op = editOperation(note, (c) => {
+    c.blocks[0].text = "Concurrent content";
+  });
+  assert.equal((await sendOperation("member", op)).status, 200);
+  const metadata = await api(
+    "owner",
+    "PATCH",
+    `${prefix}/notes/note/metadata`,
+    {
+      title: "New title",
+      parentId: null,
+      expectedRevision: note.metadataRevision,
+    },
+  );
+  assert.equal(metadata.status, 200, JSON.stringify(metadata.data));
+  assert.equal(metadata.data.note.content.blocks[0].text, "Concurrent content");
+  assert.equal(metadata.data.note.collab.sequence, 1);
+  assert.equal(metadata.data.note.metadataRevision, note.metadataRevision + 1);
+  assert.equal(
+    (
+      await api("member", "PATCH", `${prefix}/notes/note/metadata`, {
+        title: "Stale title",
+        expectedRevision: note.metadataRevision,
+      })
+    ).status,
+    409,
+  );
+  op.doc.destroy();
+});
+
+test("presence identity is server-derived and deleting a note removes leases and receipts without replay resurrection", async () => {
+  const note = await promoted(),
+    sessionId = randomUUID();
+  assert.equal(
+    (
+      await api("member", "POST", `${prefix}/notes/note/presence`, {
+        sessionId,
+      })
+    ).status,
+    200,
+  );
+  const leases = await db.collection(`${prefix}/notes/note/presence`).get();
+  assert.equal(leases.size, 1);
+  const lease = leases.docs[0].data();
+  assert.equal(lease.uid, "member");
+  assert.equal(lease.displayName, "Member");
+  assert.ok(lease.expiresAt.toMillis() > Date.now() + 80000);
+  assert.equal(
+    (
+      await api("outsider", "POST", `${prefix}/notes/note/presence`, {
+        sessionId,
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await api("member", "POST", `${prefix}/notes/note/presence`, {
+        sessionId,
+        uid: "owner",
+      })
+    ).status,
+    400,
+  );
+  const op = editOperation(note, (c) => {
+    c.blocks[0].text = "Ack before removal";
+  });
+  assert.equal((await sendOperation("member", op)).status, 200);
+  assert.equal(
+    (await api("owner", "DELETE", `${prefix}/notes/note`)).status,
+    200,
+  );
+  assert.equal(
+    (await db.collection(`${prefix}/notes/note/presence`).get()).size,
+    0,
+  );
+  assert.equal(
+    (await db.collection(`${prefix}/notes/note/collaborationReceipts`).get())
+      .size,
+    0,
+  );
+  assert.equal((await sendOperation("member", op)).status, 404);
+  assert.equal((await db.doc(`${prefix}/notes/note`).get()).exists, false);
+  op.doc.destroy();
+});
+
+test("malformed CRDT schema and oversized updates fail without a checkpoint or receipt", async () => {
+  const note = await promoted();
+  const doc = decodeDocument(note.collab.state),
+    vector = Y.encodeStateVector(doc);
+  doc.getMap("unexpected").set("data", "untrusted");
+  const operationId = randomUUID();
+  const request = {
+    operationId,
+    generation: note.collab.generation,
+    update: toBase64(Y.encodeStateAsUpdate(doc, vector)),
+  };
+  assert.equal(
+    (await api("member", "POST", `${prefix}/notes/note/updates`, request))
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await api("member", "POST", `${prefix}/notes/note/updates`, {
+        ...request,
+        operationId: randomUUID(),
+        update: Buffer.alloc(64001).toString("base64"),
+      })
+    ).status,
+    400,
+  );
+  assert.deepEqual((await currentNote()).collab, note.collab);
+  assert.equal(
+    (await db.collection(`${prefix}/notes/note/collaborationReceipts`).get())
+      .size,
+    0,
+  );
+  doc.destroy();
+});
+
+test("simultaneous retries of the same operation have exactly one durable receipt and sequence", async () => {
+  const note = await promoted();
+  const op = editOperation(note, (c) => {
+    c.blocks[0].text = "Retry once";
+  });
+  for (const response of await Promise.all([
+    sendOperation("member", op),
+    sendOperation("member", op),
+  ]))
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+  const state = await currentNote();
+  assert.equal(state.collab.sequence, 1);
+  assert.equal(state.content.blocks[0].text, "Retry once");
+  assert.equal(
+    (await db.collection(`${prefix}/notes/note/collaborationReceipts`).get())
+      .size,
+    1,
+  );
+  op.doc.destroy();
+});
+
+test("failed collaboration cleanup leaves a fenced parent and deletion is retryable", async () => {
+  const note = await promoted(),
+    sessionId = randomUUID();
+  assert.equal(
+    (
+      await api("member", "POST", `${prefix}/notes/note/presence`, {
+        sessionId,
+      })
+    ).status,
+    200,
+  );
+  const op = editOperation(note, (c) => {
+    c.blocks[0].text = "Durable before delete";
+  });
+  assert.equal((await sendOperation("member", op)).status, 200);
+  const recursiveDelete = db.recursiveDelete;
+  db.recursiveDelete = async function (ref, ...args) {
+    if (ref.id === "presence")
+      throw new Error("Simulated operational cleanup failure");
+    return recursiveDelete.call(this, ref, ...args);
+  };
+  try {
+    assert.equal(
+      (await api("owner", "DELETE", `${prefix}/notes/note`)).status,
+      500,
+    );
+  } finally {
+    db.recursiveDelete = recursiveDelete;
+  }
+  const pending = await currentNote();
+  assert.equal(pending.deleting, true);
+  assert.equal((await sendOperation("member", op)).data.error.code, "deleting");
+  assert.equal(
+    (await api("owner", "DELETE", `${prefix}/notes/note`)).status,
+    200,
+  );
+  assert.equal((await db.doc(`${prefix}/notes/note`).get()).exists, false);
+  assert.equal(
+    (await db.collection(`${prefix}/notes/note/presence`).get()).size,
+    0,
+  );
+  op.doc.destroy();
+});

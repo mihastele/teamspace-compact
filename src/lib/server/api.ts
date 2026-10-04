@@ -1,5 +1,15 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import * as Y from "yjs";
+import {
+  initializeDocument,
+  decodeDocument,
+  encodeDocument,
+  readContent,
+  validateDocument,
+  fromBase64,
+  MAX_UPDATE_BYTES,
+} from "../collaboration-model";
 import {
   FieldValue,
   Timestamp,
@@ -19,6 +29,7 @@ import {
   object,
   taskInput,
   text,
+  uuid,
 } from "./validation";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -323,11 +334,14 @@ async function mutateNote(
   user: DecodedIdToken,
   id: string | undefined,
   input: unknown,
+  metadataOnly = false,
 ) {
   const data = object(
     input,
     id
-      ? ["title", "content", "expectedRevision", "parentId"]
+      ? metadataOnly
+        ? ["title", "expectedRevision", "parentId"]
+        : ["title", "content", "expectedRevision", "parentId"]
       : ["title", "content", "parentId"],
   );
   const requestedParent = Object.hasOwn(data, "parentId")
@@ -336,7 +350,7 @@ async function mutateNote(
       : identifier(data.parentId)
     : undefined;
   const title = text(data.title, "Note title", 200);
-  const content = noteContent(data.content);
+  const content = metadataOnly ? undefined : noteContent(data.content);
   const expected = id
     ? integer(data.expectedRevision, "Expected revision", 1, 1000000000)
     : 0;
@@ -350,7 +364,18 @@ async function mutateNote(
       throw new ApiError(404, "not_found", "Note not found.");
     if (previous?.data()?.deleting)
       throw new ApiError(409, "deleting", "This note is being deleted.");
-    if (id && previous?.data()?.revision !== expected)
+    if (previous?.data()?.collab && !metadataOnly)
+      throw new ApiError(
+        409,
+        "collaboration_required",
+        "This note uses real-time collaboration. Reload with the current editor.",
+      );
+    if (
+      id &&
+      (metadataOnly
+        ? (previous?.data()?.metadataRevision ?? previous?.data()?.revision)
+        : previous?.data()?.revision) !== expected
+    )
       throw new ApiError(
         409,
         "revision_conflict",
@@ -382,11 +407,12 @@ async function mutateNote(
         );
       ancestorId = ancestor.data()?.parentId ?? null;
     }
-    const next = expected + 1;
+    const next = (previous?.data()?.revision ?? 0) + 1;
     const value = {
       title,
-      content,
+      ...(content ? { content } : {}),
       revision: next,
+      ...(metadataOnly ? { metadataRevision: expected + 1 } : {}),
       parentId,
       updatedBy: user.uid,
       updatedAt: now(),
@@ -397,12 +423,253 @@ async function mutateNote(
       tx.update(workspace, { noteTreeRevision: FieldValue.increment(1) });
     if (id) tx.update(ref, value);
     else tx.create(ref, { ...value, createdBy: user.uid, createdAt: now() });
-    return { revision: next, parentId };
+    return {
+      revision: next,
+      parentId,
+      content: content ?? previous?.data()?.content,
+      ...(metadataOnly ? { metadataRevision: expected + 1 } : {}),
+      ...(previous?.data()?.collab ? { collab: previous.data()!.collab } : {}),
+    };
   });
-  return json(
-    { note: { id: ref.id, title, content, ...saved } },
-    id ? 200 : 201,
+  return json({ note: { id: ref.id, title, ...saved } }, id ? 200 : 201);
+}
+
+function assertCheckpointSize(content: unknown, collab: unknown) {
+  if (Buffer.byteLength(JSON.stringify({ content, collab }), "utf8") > 800000)
+    throw new ApiError(
+      413,
+      "state_limit",
+      "This document has reached its collaboration storage limit. Export a recovery copy.",
+    );
+}
+
+function noteView(id: string, value: Record<string, unknown>) {
+  return {
+    id,
+    title: value.title,
+    content: value.content,
+    revision: value.revision,
+    ...(value.metadataRevision !== undefined
+      ? { metadataRevision: value.metadataRevision }
+      : {}),
+    parentId: value.parentId ?? null,
+    ...(value.collab ? { collab: value.collab } : {}),
+  };
+}
+
+async function collaborationOperation(
+  db: Firestore,
+  workspace: DocumentReference,
+  user: DecodedIdToken,
+  id: string,
+  action: string,
+  input: unknown,
+) {
+  const data = object(
+    input,
+    action === "collaboration" ? [] : ["operationId", "generation", "update"],
   );
+  const operationId = action === "updates" ? uuid(data.operationId) : undefined;
+  const generation = action === "updates" ? uuid(data.generation) : undefined;
+  let update: Uint8Array | undefined;
+  if (action === "updates") {
+    try {
+      if (
+        typeof data.update !== "string" ||
+        data.update.length > Math.ceil(MAX_UPDATE_BYTES / 3) * 4
+      )
+        throw new Error("Invalid update length");
+      update = fromBase64(data.update);
+      if (!update.byteLength || update.byteLength > MAX_UPDATE_BYTES)
+        throw new Error("Invalid update length");
+    } catch {
+      throw new ApiError(
+        400,
+        "invalid_update",
+        "The collaboration update is invalid or too large.",
+      );
+    }
+  }
+  const ref = workspace.collection("notes").doc(id);
+  const receipt = operationId
+    ? ref
+        .collection("collaborationReceipts")
+        .doc(hash(`${user.uid}:${operationId}`))
+    : null;
+  const digest = update
+    ? createHash("sha256").update(generation!).update(update).digest("hex")
+    : undefined;
+  const saved = await db.runTransaction(async (tx) => {
+    await member(tx, workspace, user.uid);
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists)
+      throw new ApiError(404, "not_found", "Note not found.");
+    const value = snapshot.data()!;
+    if (value.deleting)
+      throw new ApiError(409, "deleting", "This note is being deleted.");
+    if (action === "collaboration") {
+      if (value.collab) return noteView(id, value);
+      const doc = initializeDocument(noteContent(value.content));
+      try {
+        validateDocument(doc);
+        const collab = {
+          version: 1,
+          generation: randomUUID(),
+          state: encodeDocument(doc),
+          sequence: 0,
+        };
+        const next = {
+          ...value,
+          content: readContent(doc),
+          collab,
+          revision: value.revision + 1,
+          metadataRevision: value.revision,
+        };
+        assertCheckpointSize(next.content, collab);
+        tx.update(ref, {
+          content: next.content,
+          collab,
+          revision: next.revision,
+          metadataRevision: next.metadataRevision,
+          updatedBy: user.uid,
+          updatedAt: now(),
+        });
+        return noteView(id, next);
+      } finally {
+        doc.destroy();
+      }
+    }
+    if (!value.collab)
+      throw new ApiError(
+        409,
+        "collaboration_required",
+        "Initialize collaboration before editing.",
+      );
+    if (value.collab.generation !== generation)
+      throw new ApiError(
+        409,
+        "generation_conflict",
+        "The document generation changed. Keep a recovery copy and reload.",
+      );
+    const priorReceipt = await tx.get(receipt!);
+    if (priorReceipt.exists) {
+      if (priorReceipt.data()?.digest !== digest)
+        throw new ApiError(
+          409,
+          "operation_conflict",
+          "An operation ID cannot be reused with different content.",
+        );
+      return noteView(id, value);
+    }
+    if (
+      !Number.isSafeInteger(value.collab.sequence) ||
+      value.collab.sequence >= 1000000000 ||
+      !Number.isSafeInteger(value.revision) ||
+      value.revision >= 1000000000
+    )
+      throw new ApiError(
+        409,
+        "state_limit",
+        "This document has reached its collaboration version limit. Export a recovery copy.",
+      );
+    const previous = decodeDocument(value.collab.state);
+    const doc = decodeDocument(value.collab.state);
+    try {
+      try {
+        Y.applyUpdate(doc, update!);
+        if (doc.store.pendingStructs || doc.store.pendingDs)
+          throw new ApiError(
+            409,
+            "missing_dependencies",
+            "Earlier updates must be synchronized before this update. Retry in order.",
+          );
+        validateDocument(doc, previous);
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(
+          400,
+          "invalid_update",
+          "The collaboration update violates the document schema or limits.",
+        );
+      }
+      let state: string;
+      try {
+        state = encodeDocument(doc);
+      } catch {
+        throw new ApiError(
+          413,
+          "state_limit",
+          "This document has reached its collaboration storage limit. Export a recovery copy.",
+        );
+      }
+      const collab = {
+        ...value.collab,
+        state,
+        sequence: value.collab.sequence + 1,
+      };
+      const content = noteContent(readContent(doc));
+      assertCheckpointSize(content, collab);
+      tx.update(ref, {
+        collab,
+        content,
+        revision: value.revision + 1,
+        updatedBy: user.uid,
+        updatedAt: now(),
+      });
+      tx.create(receipt!, {
+        uid: user.uid,
+        operationId,
+        generation,
+        digest,
+        sequence: collab.sequence,
+        committedAt: now(),
+      });
+      return noteView(id, {
+        ...value,
+        collab,
+        content,
+        revision: value.revision + 1,
+      });
+    } finally {
+      previous.destroy();
+      doc.destroy();
+    }
+  });
+  return json({ note: saved, ...(operationId ? { operationId } : {}) });
+}
+
+async function presenceOperation(
+  db: Firestore,
+  workspace: DocumentReference,
+  user: DecodedIdToken,
+  id: string,
+  method: string,
+  input: unknown,
+) {
+  const data = object(input, ["sessionId"]);
+  const sessionId = uuid(data.sessionId);
+  await rateLimit(db, user.uid, "presence", 10);
+  const note = workspace.collection("notes").doc(id);
+  const ref = note.collection("presence").doc(hash(`${user.uid}:${sessionId}`));
+  await db.runTransaction(async (tx) => {
+    await member(tx, workspace, user.uid);
+    const [snapshot, membership] = await Promise.all([
+      tx.get(note),
+      tx.get(workspace.collection("members").doc(user.uid)),
+    ]);
+    if (!snapshot.exists || snapshot.data()?.deleting)
+      throw new ApiError(404, "not_found", "Note not found.");
+    if (method === "DELETE") tx.delete(ref);
+    else
+      tx.set(ref, {
+        uid: user.uid,
+        sessionId,
+        displayName: membership.data()?.displayName ?? "Teammate",
+        lastSeen: now(),
+        expiresAt: Timestamp.fromMillis(Date.now() + 90000),
+      });
+  });
+  return json({ ok: true });
 }
 
 async function inviteOperation(
@@ -953,6 +1220,13 @@ async function deleteParent(
       }),
     );
   }
+  if (resource === "notes") {
+    // Firestore does not cascade subcollections. The live-note fence above
+    // prevents new receipts/leases while cleanup runs; no receipt has a TTL.
+    // Keep the fenced parent until cleanup succeeds so a failed delete can retry.
+    await db.recursiveDelete(ref.collection("collaborationReceipts"));
+    await db.recursiveDelete(ref.collection("presence"));
+  }
   await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
     if (resource === "notes")
@@ -1008,6 +1282,35 @@ export async function handleTrustedApi(
     if (path.length > 5)
       throw new ApiError(404, "not_found", "Endpoint not found.");
     if (resource === "tasks" || resource === "notes") {
+      if (resource === "notes" && itemId && action) {
+        if (method === "POST" && ["collaboration", "updates"].includes(action))
+          return await collaborationOperation(
+            db,
+            workspace,
+            user,
+            itemId,
+            action,
+            await body(request),
+          );
+        if (method === "PATCH" && action === "metadata")
+          return await mutateNote(
+            db,
+            workspace,
+            user,
+            itemId,
+            await body(request),
+            true,
+          );
+        if (["POST", "DELETE"].includes(method) && action === "presence")
+          return await presenceOperation(
+            db,
+            workspace,
+            user,
+            itemId,
+            method,
+            await body(request),
+          );
+      }
       if (action) throw new ApiError(404, "not_found", "Endpoint not found.");
       if ((method === "POST" && !itemId) || (method === "PATCH" && itemId))
         return await (resource === "tasks"

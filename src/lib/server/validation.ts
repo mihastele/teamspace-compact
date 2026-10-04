@@ -45,6 +45,16 @@ export function identifier(value: unknown): string {
     throw new ApiError(400, "invalid_input", "Invalid identifier.");
   return id;
 }
+export function uuid(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
+    throw new ApiError(400, "invalid_input", "Expected a UUID v4.");
+  return value.toLowerCase();
+}
 export function integer(
   value: unknown,
   label: string,
@@ -108,8 +118,9 @@ export function noteContent(value: unknown) {
   if (!Array.isArray(data.blocks) || data.blocks.length > 1000)
     throw new ApiError(400, "invalid_input", "Invalid note blocks.");
   let length = 0;
+  const ids = new Set<string>();
   const blocks = data.blocks.map((value) => {
-    const block = object(value, ["type", "text", "level", "checked"]);
+    const block = object(value, ["id", "type", "text", "level", "checked"]);
     if (
       ![
         "paragraph",
@@ -131,6 +142,16 @@ export function noteContent(value: unknown) {
       type: block.type as NoteBlock["type"],
       text: content,
     };
+    if (block.id !== undefined) {
+      result.id = uuid(block.id);
+      if (ids.has(result.id))
+        throw new ApiError(
+          400,
+          "invalid_input",
+          "Block identifiers must be unique.",
+        );
+      ids.add(result.id);
+    }
     if (block.level !== undefined) {
       if (
         block.type !== "heading" ||

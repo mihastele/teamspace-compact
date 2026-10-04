@@ -58,6 +58,21 @@ const demoTasks: Task[] = [
   },
 ];
 type Preview = { tasks: Task[]; notes: Note[] };
+export type DocumentPresence = {
+  id: string;
+  displayName: string;
+  uid: string;
+  expiresAt: number;
+};
+export class RequestError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code: string,
+  ) {
+    super(message);
+  }
+}
 export function useTeamspace() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(configured);
@@ -76,8 +91,20 @@ export function useTeamspace() {
       : [{ id: "preview", displayName: "You (local preview)", role: "owner" }],
   );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [watchEpoch, setWatchEpoch] = useState(0);
   const preview = useRef<Preview>({ tasks: demoTasks, notes: [] });
   const ready = useRef(false);
+  const noteObservers = useRef(
+    new Set<{
+      workspaceId: string;
+      noteId: string;
+      next: (note: Note) => void;
+      fail: (error: Error) => void;
+    }>(),
+  );
+  const noteSnapshot = useRef<{ workspaceId: string; rows: Note[] } | null>(
+    null,
+  );
   const report = useCallback((e: unknown) => {
     const message =
       e instanceof Error
@@ -87,9 +114,20 @@ export function useTeamspace() {
     return new Error(message);
   }, []);
   const api = useCallback(
-    async (path: string, method = "GET", body?: unknown) => {
+    async (
+      path: string,
+      method = "GET",
+      body?: unknown,
+      expectedUid?: string,
+    ) => {
       const auth = getAuth(getApps().length ? getApp() : initializeApp(config));
       if (!auth.currentUser) throw new Error("Sign in to continue.");
+      if (expectedUid && auth.currentUser.uid !== expectedUid)
+        throw new RequestError(
+          "The signed-in account changed. Reopen this document in the original account to recover its pending edits.",
+          401,
+          "account_changed",
+        );
       const token = await auth.currentUser.getIdToken();
       const response = await fetch(`/api/${path}`, {
         method,
@@ -101,16 +139,21 @@ export function useTeamspace() {
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(
+        throw new RequestError(
           data.error?.message ??
             "The request failed. Your draft has been kept.",
+          response.status,
+          data.error?.code ?? "request_failed",
         );
       return data;
     },
     [],
   );
   const loadWorkspaces = useCallback(async () => {
-    const data = await api("workspaces");
+    const expectedUid = getAuth(getApp()).currentUser?.uid;
+    const data = await api("workspaces", "GET", undefined, expectedUid);
+    if (getAuth(getApp()).currentUser?.uid !== expectedUid)
+      return [] as Workspace[];
     setWorkspaces(data.workspaces);
     setWorkspace(
       (current) =>
@@ -164,9 +207,11 @@ export function useTeamspace() {
         setLoading(true);
         loadWorkspaces()
           .then((rows) => {
+            if (getAuth(app).currentUser?.uid !== next.uid) return;
             if (!rows.length) setLoading(false);
           })
           .catch((e) => {
+            if (getAuth(app).currentUser?.uid !== next.uid) return;
             report(e);
             setLoading(false);
           });
@@ -177,10 +222,12 @@ export function useTeamspace() {
     if (!configured || !user || !workspace) return;
     const db = getFirestore(getApp());
     const loaded = new Set<string>();
+    let active = true;
     const watch = <T>(name: string, set: (rows: T[]) => void) =>
       onSnapshot(
         collection(db, `workspaces/${workspace.id}/${name}`),
         (snapshot) => {
+          if (!active) return;
           set(
             snapshot.docs
               .filter(
@@ -199,10 +246,47 @@ export function useTeamspace() {
                   }) as T,
               ),
           );
+          if (name === "notes")
+            noteSnapshot.current = {
+              workspaceId: workspace.id,
+              rows: snapshot.docs.map(
+                (document) =>
+                  ({
+                    ...document.data(),
+                    id: document.id,
+                    parentId: document.data().parentId ?? null,
+                  }) as Note,
+              ),
+            };
+          if (name === "notes")
+            for (const observer of noteObservers.current) {
+              if (observer.workspaceId !== workspace.id) continue;
+              const document = snapshot.docs.find(
+                (item) => item.id === observer.noteId,
+              );
+              if (document && !document.data().deleting)
+                observer.next({
+                  ...document.data(),
+                  id: document.id,
+                  parentId: document.data().parentId ?? null,
+                } as Note);
+              else
+                observer.fail(
+                  new RequestError(
+                    "This note was removed. Export pending work before closing it.",
+                    404,
+                    "not_found",
+                  ),
+                );
+            }
           loaded.add(name);
           if (loaded.size >= 4) setLoading(false);
         },
         (e) => {
+          if (!active) return;
+          if (name === "notes")
+            for (const observer of noteObservers.current)
+              if (observer.workspaceId === workspace.id) observer.fail(e);
           report(e);
           setLoading(false);
           set([]);
@@ -214,8 +298,11 @@ export function useTeamspace() {
       watch<Member>("members", setMembers),
       watch<Attachment>("attachments", setAttachments),
     ];
-    return () => unsubs.forEach((unsub) => unsub());
-  }, [workspace, user, report]);
+    return () => {
+      active = false;
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [workspace, user, report, watchEpoch]);
   function persist(next: Preview) {
     if (!ready.current) throw new Error("The local preview is still loading.");
     try {
@@ -256,6 +343,116 @@ export function useTeamspace() {
     notes,
     members,
     attachments,
+    restartSubscriptions: () => setWatchEpoch((epoch) => epoch + 1),
+    initializeCollaboration: async (noteId: string) => {
+      if (!configured || !user) return unavailable();
+      const data = await api(
+        `${path()}/notes/${noteId}/collaboration`,
+        "POST",
+        {},
+        user.uid,
+      );
+      return data.note as Note;
+    },
+    sendNoteUpdate: async (
+      noteId: string,
+      packet: { operationId: string; generation: string; update: string },
+    ) => {
+      if (!configured || !user) return unavailable();
+      const data = await api(
+        `${path()}/notes/${noteId}/updates`,
+        "POST",
+        packet,
+        user.uid,
+      );
+      return data.note as Note;
+    },
+    saveNoteMetadata: async (
+      noteId: string,
+      metadata: {
+        title: string;
+        parentId: string | null;
+        expectedRevision: number;
+      },
+    ) => {
+      if (!configured || !user) return unavailable();
+      const data = await api(
+        `${path()}/notes/${noteId}/metadata`,
+        "PATCH",
+        metadata,
+        user.uid,
+      );
+      return data.note as Note;
+    },
+    subscribeCollaboration: (
+      noteId: string,
+      next: (note: Note) => void,
+      fail: (error: Error) => void,
+    ) => {
+      if (!workspace) throw new Error("Choose a workspace first.");
+      const observer = { workspaceId: workspace.id, noteId, next, fail };
+      noteObservers.current.add(observer);
+      queueMicrotask(() => {
+        if (
+          !noteObservers.current.has(observer) ||
+          noteSnapshot.current?.workspaceId !== workspace.id
+        )
+          return;
+        const note = noteSnapshot.current.rows.find(
+          (item) => item.id === noteId,
+        );
+        if (note) next(note);
+      });
+      return () => {
+        noteObservers.current.delete(observer);
+      };
+    },
+    subscribePresence: (
+      noteId: string,
+      next: (rows: DocumentPresence[]) => void,
+      fail: (error: Error) => void,
+    ) => {
+      const db = getFirestore(getApp());
+      let active = true;
+      const unsubscribe = onSnapshot(
+        collection(db, `${path()}/notes/${noteId}/presence`),
+        (snapshot) => {
+          if (!active) return;
+          next(
+            snapshot.docs.map((document) => ({
+              id: document.id,
+              ...document.data(),
+              expiresAt: document.data().expiresAt?.toMillis?.() ?? 0,
+            })) as DocumentPresence[],
+          );
+        },
+        (error) => {
+          if (active) fail(error);
+        },
+      );
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    },
+    heartbeatPresence: async (noteId: string, sessionId: string) => {
+      if (!user) return;
+      await api(
+        `${path()}/notes/${noteId}/presence`,
+        "POST",
+        { sessionId },
+        user.uid,
+      );
+    },
+    leavePresence: async (noteId: string, sessionId: string) => {
+      if (!user) return;
+      await api(
+        `${path()}/notes/${noteId}/presence`,
+        "DELETE",
+        { sessionId },
+        user.uid,
+      );
+    },
     clearError: () => setError(null),
     signIn: () =>
       action(async () => {
@@ -358,7 +555,7 @@ export function useTeamspace() {
             throw new Error(
               "This note changed. Copy your draft before reloading.",
             );
-          const item = {
+          const item: Note = {
             id: note.id ?? crypto.randomUUID(),
             parentId:
               "parentId" in note

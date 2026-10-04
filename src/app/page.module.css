@@ -1275,3 +1275,15 @@
   color: #8996af;
   margin-top: 3px;
 }
+
+.collaborationInfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0 0 18px;
+  color: #8996af;
+  font-size: 12px;
+}
+.collaborationInfo small {
+  flex-basis: 100%;
+}

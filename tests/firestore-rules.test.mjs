@@ -143,3 +143,46 @@ test("private Storage objects cannot be read or written by any browser", async (
     await assertFails(deleteObject(object));
   }
 });
+
+test("presence inherits membership and live-parent access while receipts remain private", async () => {
+  const lease = `${workspace}/notes/note/presence/session`;
+  const receipt = `${workspace}/notes/note/collaborationReceipts/operation`;
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), lease), {
+      uid: "member",
+      expiresAt: Date.now() + 90000,
+    });
+    await setDoc(doc(context.firestore(), receipt), {
+      uid: "member",
+      digest: "private",
+    });
+  });
+  for (const uid of ["member", "owner"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(db, lease)));
+    await assertSucceeds(
+      getDocs(collection(db, `${workspace}/notes/note/presence`)),
+    );
+    await assertFails(setDoc(doc(db, lease), { uid }));
+    await assertFails(deleteDoc(doc(db, lease)));
+    await assertFails(getDoc(doc(db, receipt)));
+    await assertFails(setDoc(doc(db, receipt), { uid }));
+  }
+  await assertFails(
+    getDoc(
+      doc(environment.authenticatedContext("outsider").firestore(), lease),
+    ),
+  );
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await deleteDoc(doc(context.firestore(), `${workspace}/members/member`));
+  });
+  await assertFails(
+    getDoc(doc(environment.authenticatedContext("member").firestore(), lease)),
+  );
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await deleteDoc(doc(context.firestore(), `${workspace}/notes/note`));
+  });
+  await assertFails(
+    getDoc(doc(environment.authenticatedContext("owner").firestore(), lease)),
+  );
+});

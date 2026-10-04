@@ -19,18 +19,18 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 2. One board per workspace with To do, In progress, Done.
 3. Create, edit, delete, assign, and move tasks. Optional due date and description.
 4. Create, edit, and delete nested notes with headings, bold, lists, and links. Root notes can contain subnotes at any depth; all inherit workspace membership.
-5. Shared task updates through Firestore listeners. Notes use explicit Save and revision checks; conflicting saves must never silently overwrite another person's work.
+5. Shared task updates through Firestore listeners. Configured saved notes use Yjs synchronization for simultaneous typing and blocks; title/location and new/local-preview notes use explicit revision-checked Save. Conflicting metadata saves must never silently overwrite another person's work.
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-No simultaneous text editing, custom databases, AI, notifications, public publishing, or complex role hierarchy tonight. Nested notes were added to the scope on October 3 at the user's request; multi-user collaboration retains explicit note saves with conflict protection.
+Custom databases, AI, notifications, public publishing and complex role hierarchies remain outside scope. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
 
 ## Main screens and behavior
 
 - Sign-in: Google button; actionable authentication errors.
 - Workspace: sidebar with workspace name, Board, Notes, and Members.
 - Board: three columns, task count, Add task. Card shows title, assignee, due date. Detail editor holds description and attachments. Drag moves a card; a status selector provides keyboard/touch fallback.
-- Notes: expandable document tree, root/subnote creation, clickable breadcrumbs, and parent selection to move notes; visible Saved, Unsaved, Saving, or Failed state. Save is explicit. If the remote revision changes while editing, keep the local draft and offer reload/copy instead of overwriting. Clean notes reflect saved teammate changes. Parent moves save with the same revision checks as text. Move/delete child notes before deleting their parent; no implicit cascading deletion.
+- Notes: expandable document tree, root/subnote creation, clickable breadcrumbs, and parent selection to move notes; visible synchronization status for live content and separate title/location save status. New/local-preview notes use explicit Save; configured saved notes synchronize text and blocks automatically. If the remote revision changes while editing, keep the local draft and offer reload/copy instead of overwriting. Clean notes reflect saved teammate changes. Parent moves and title changes use independent metadata revision checks. Move/delete child notes before deleting their parent; no implicit cascading deletion.
 - Members: member list and invite link. Owner can revoke an invite or remove a member. Members can leave; the last owner cannot leave without transferring ownership.
 - Missing Firebase configuration: clearly labeled local prototype. No claim of shared data or authenticated access.
 
@@ -104,7 +104,7 @@ If time runs short, defer attachments first; label incomplete work explicitly. N
 
 ## Current implementation milestone
 
-The application UI, Firebase client integration, trusted API handlers, default-deny rules, indexes and baseline schema are implemented. Automated validation/rules/API checks and local browser checks pass. Without Firebase configuration the app remains a clearly labeled device-local preview. Production release still requires project provisioning, deployed Google sign-in, real two-user acceptance, Storage CORS/lifecycle setup and dependency-audit review. See README.md and .agentic/PROJECT-STATE.md.
+The application UI, Firebase client integration, trusted API handlers, default-deny rules, indexes and baseline schema are implemented. Automated validation/rules/API checks pass. Earlier local browser checks covered the previous interface; collaboration browser acceptance remains open. Without Firebase configuration the app remains a clearly labeled device-local preview. Production release still requires project provisioning, deployed Google sign-in, real two-user acceptance, Storage CORS/lifecycle setup and dependency-audit review. See README.md and .agentic/PROJECT-STATE.md.
 
 ### Notes interaction refinement — 2026-10-03
 
@@ -140,3 +140,12 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Duplicate block in each block's options inserts a copy immediately below, preserving type, text, heading level and checklist state. The operation participates in local Undo/Redo and explicit Save.
 - Board copies reference the same shared workspace board. Existing block/text limits apply; oversized copies retain the original draft and show feedback.
+
+### Real-time collaboration upgrade — 2026-10-04
+
+- Clean saved notes in configured workspaces promote once to stable-ID Yjs documents. Text and blocks sync automatically with optimistic local edits, deterministic ordering, permanent deletion tombstones and trusted transactional receipts. Existing dirty legacy drafts must be saved or exported before promotion.
+- Pending completed operations persist in account/workspace/document-scoped IndexedDB journals with tab ownership locks. Reconnect/refresh retries unchanged operation IDs/bytes; acknowledgements and remote snapshots never replace newer local work or create feedback writes. Show Saving, Saved, Offline, Syncing or Sync failed; preserve rejected work with Retry and Markdown recovery.
+- Title/location keep independent metadata revision checks. Local text Undo/Redo preserves remote changes; structural undo is unsupported. IME commits at composition end and marks unfinished input unsaved.
+- Approximate document-viewing leases expire after 90 seconds and heartbeat every 45 seconds. Browser writes remain denied; trusted API and readable presence enforce membership. Receipts remain private.
+- Updates/checkpoints are bounded (64KB/350KB binary; 800KB combined JSON). This transactional checkpoint foundation targets small team documents and does not claim unlimited history or scale. Migration 004 documents rollout, export/deletion, rules and indexes.
+- Automated final-state/concurrency/recovery/security evidence and known limitations live in .agentic/COLLABORATION-VERIFICATION.md. Authenticated two-browser/IME/mobile/deployed acceptance is still required before this ticket is complete.

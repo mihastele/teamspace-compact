@@ -30,3 +30,14 @@ test("duplication is one reversible history step and invalid indices leave conte
   assert.deepEqual(undoHistory(history).present, content);
   assert.deepEqual(redoHistory(undoHistory(history)).present, next);
 });
+
+test("collaborative duplication gives the copy a distinct identity", () => {
+  const id = crypto.randomUUID();
+  const content = { blocks: [{ id, type: "heading", level: 2, text: "Plan" }] };
+  const next = duplicateBlock(content, 0);
+  assert.equal(next.blocks[0].id, id);
+  assert.notEqual(next.blocks[1].id, id);
+  assert.equal(next.blocks[1].level, 2);
+  assert.equal(next.blocks[1].text, "Plan");
+  assert.equal(content.blocks.length, 1);
+});

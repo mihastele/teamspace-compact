@@ -9,6 +9,7 @@ export type Task = {
   position: number;
 };
 export type NoteBlock = {
+  id?: string;
   type:
     | "paragraph"
     | "heading"
@@ -31,6 +32,13 @@ export type Note = {
   title: string;
   content: NoteContent;
   revision: number;
+  metadataRevision?: number;
+  collab?: {
+    version: 1;
+    generation: string;
+    state: string;
+    sequence: number;
+  };
 };
 export type Member = {
   id: string;

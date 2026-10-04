@@ -23,7 +23,7 @@ Open http://localhost:3000. Without Firebase configuration, the clearly labeled 
 6. Configure a bucket lifecycle rule deleting objects under `staging/` after one day, to clean abandoned/recreated signed uploads.
 7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. Ready attachments have no expiry. TTL is eventual; expired invites and request counters are checked synchronously by the application.
 
-Invite tokens are random, hashed at rest, bounded and redeemed transactionally. Notes compare expected revisions in a transaction; losing drafts remain in the editor. Signed staging uploads are validated and promoted to private workspace paths. Downloads use short-lived signed URLs issued after membership checks; these are temporary bearer capabilities, never permanent public download tokens. Removed members cannot obtain new URLs, while already issued URLs expire shortly.
+Invite tokens are random, hashed at rest, bounded and redeemed transactionally. Legacy/new notes use revision-checked saves; configured saved notes are promoted to transactional Yjs collaboration when opened with a clean draft. Title/location retain separate revision checks. Signed staging uploads are validated and promoted to private workspace paths. Downloads use short-lived signed URLs issued after membership checks; these are temporary bearer capabilities, never permanent public download tokens. Removed members cannot obtain new URLs, while already issued URLs expire shortly.
 
 ## Verify
 
@@ -56,16 +56,16 @@ No project/deployment credentials are included. Production release is gated on c
 
 ## Scope
 
-One board per workspace; tasks with assignees and due dates; nested notes with headings, bold, bullets and safe links; owner-managed invitations, member removal and ownership transfer. Notes inherit workspace permissions at every depth. Teammates see saved changes live; unsaved drafts remain protected by revision checks. No simultaneous text editing or public publishing. SPEC.md records the agreed scope. A repository license must be selected before public distribution.
+One board per workspace; tasks with assignees and due dates; nested notes with headings, bold, bullets and safe links; owner-managed invitations, member removal and ownership transfer. Notes inherit workspace permissions at every depth. Configured saved notes support simultaneous text editing with Yjs; device-local preview remains explicit-save and has no shared access. Public publishing is outside the scope. SPEC.md records the agreed scope. A repository license must be selected before public distribution.
 
 Create a root note, then use Add subnote to grow its tree. Breadcrumbs navigate back to ancestors. Change the parent and explicitly save to move a note together with its descendants; server transactions reject cycles and cross-workspace parents. Move or delete children before deleting a parent. Existing notes remain roots without a destructive data backfill; see `migrations/002-note-hierarchy.md`.
 
 Notes are edited directly as text, heading and bulleted-list blocks. Use the block + button or type `/` for the block menu; Enter adds a block. Every saved note in the tree has a + button to add a subnote, plus a right-click/ellipsis menu. Save a new parent note before creating its children. Existing pages and permissions need no migration for this editor update.
 
-Typing `# ` through `###### ` converts an empty text block into H1–H6. `- `, `1. `, `> ` and `[ ] ` create lists, quotes and tasks; triple backticks and horizontal-rule markers work with Space or Enter. Use `/markdown` for a live CommonMark/GFM block (tables, footnotes, images, code, emphasis and links); multiline Markdown paste uses this block. Use `/kanban` to embed the existing shared workspace board. Its cards and task editor are the same as Board view; removing the embed does not remove tasks. Note changes still require Save. Schema deployment details: migrations/003-rich-note-blocks.md.
+Typing `# ` through `###### ` converts an empty text block into H1–H6. `- `, `1. `, `> ` and `[ ] ` create lists, quotes and tasks; triple backticks and horizontal-rule markers work with Space or Enter. Use `/markdown` for a live CommonMark/GFM block (tables, footnotes, images, code, emphasis and links); multiline Markdown paste uses this block. Use `/kanban` to embed the existing shared workspace board. Its cards and task editor are the same as Board view; removing the embed does not remove tasks. New/local-preview notes use Save; configured saved notes synchronize automatically. Schema deployment details: migrations/003-rich-note-blocks.md.
 
 
-The block editor supports Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y. It keeps up to 20 local checkpoints while the note stays open, groups continuous typing, and restores deleted/moved/converted blocks. Undo affects note blocks; shared board task changes remain independent. Save still commits the resulting draft explicitly.
+The block editor supports Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y. It keeps up to 20 local checkpoints while the note stays open, groups continuous typing, and restores deleted/moved/converted blocks. Undo affects note blocks; shared board task changes remain independent. This snapshot history applies to new/local-preview notes; collaborative notes use the local text history described below.
 
 
 Use Download Markdown in the note toolbar to download its current title and content, including unsaved edits, as a .md file. It preserves heading levels, checklists, code and raw Markdown. Board blocks become textual references; tasks, attachments and subnotes are not bundled. Export does not save or change the note.
@@ -73,4 +73,16 @@ Use Download Markdown in the note toolbar to download its current title and cont
 
 Workspace search finds saved note titles and body text, showing a short snippet for content matches and retaining the note's ancestor path. Unsaved edits become searchable after Save. Attachments and tasks inside board blocks are not indexed as note text.
 
-Each block's options menu offers Duplicate block. Copies appear immediately below with their formatting intact and remain unsaved until Save. Undo removes the copy. Duplicating a board block adds another view of the same workspace board; it does not copy tasks. Existing note size limits apply.
+Each block's options menu offers Duplicate block. Copies appear immediately below with their formatting intact. They synchronize automatically in collaborative notes; other notes retain them as drafts until Save. Undo removes the copy. Duplicating a board block adds another view of the same workspace board; it does not copy tasks. Existing note size limits apply.
+
+## Real-time notes
+
+With Firebase configured, opening a clean saved note promotes it once to Yjs collaboration. Typing, adding, deleting and moving blocks synchronize automatically; two users can type in the same block. Title/location use their own explicit Save and revision checks. New notes and local preview keep explicit Save. Save or export an existing dirty legacy draft before promotion.
+
+Completed edits persist in IndexedDB before transmission. Saved requires server acknowledgement and durable local bookkeeping. Offline work resumes when connected; a lost response retries the same operation exactly once. Switching notes keeps pending work on the device until that note is reopened. Web Locks prevent duplicated tabs from sharing a journal writer; a new session can recover pending journals left by closed tabs. Use a current browser supporting secure-context Web Locks, IndexedDB and session storage. Storage failure is explicit; Retry rebuilds synchronization, and Download Markdown exports a rejected recovery copy when necessary.
+
+Collaborative Undo/Redo affects local text only; structural actions do not use snapshot undo. Deleting blocks clears text history. A history action incompatible with current remote formatting/capacity is rejected without changing content. IME becomes durable on composition end; unfinished composition is marked unsaved. Presence is approximate recent viewing, using 90-second server leases and 45-second heartbeats.
+
+Deploy `migrations/004-realtime-collaboration.md` rules/index changes, presence expiry TTL and trusted routes before the updated client. No live database was migrated during development. Promoted documents reject old whole-content saves; rolling back clients alone does not restore legacy editing. Checkpoints/materialized content are atomically merged, bounded and subject to document contention; this implementation targets small teams, with explicit 64KB update/350KB checkpoint limits rather than unlimited history. Conversion to a textless board/divider concurrent with typing may require explicit recovery.
+
+See `.agentic/COLLABORATION-VERIFICATION.md` for invariants, adversarial fixes and test coverage. Authenticated two-browser caret/IME/mobile and deployed acceptance remain open; this is not a production-release claim. Pending edits cleared from browser storage cannot be recovered unless already acknowledged by the server.

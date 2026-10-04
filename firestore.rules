@@ -32,6 +32,10 @@ service cloud.firestore {
       match /notes/{noteId} {
         allow read: if isMember(workspaceId);
         allow write: if false;
+        match /presence/{sessionId} {
+          allow read: if isMember(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/notes/$(noteId));
+          allow write: if false;
+        }
       }
 
       match /attachments/{attachmentId} {

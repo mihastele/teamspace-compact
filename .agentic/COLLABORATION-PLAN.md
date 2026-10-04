@@ -1,6 +1,6 @@
 # Real-time collaboration implementation plan
 
-Date: 2026-10-04. Status: investigation complete; implementation not started.
+Date: 2026-10-04. Status: bounded implementation built and tested; browser/deployed acceptance remains open.
 
 ## Existing architecture and data flow
 
@@ -46,6 +46,6 @@ Security rules remain default-deny for client writes. Any new readable collectio
 
 ## Remaining gates
 
-No implementation, dependency installation, schema migration or live database change has occurred. An investigation agent hit the account usage limit, so implementation was stopped before mutations. Firebase project provisioning, deployed two-user/browser acceptance, repository licensing and dependency audit review remain existing release gates. The ticket is not complete.
+The earlier usage-limit stop was resumed with user authorization. The bounded implementation and additive migration 004 now exist; no live database was changed. See COLLABORATION-VERIFICATION.md for implemented decisions, adversarial fixes and limitations. Firebase provisioning, deployed two-user/browser acceptance, licensing and dependency audit review remain release gates. The browser definition of done is not yet met.
 
 Primary references consulted: [Yjs document updates](https://docs.yjs.dev/api/document-updates), [Yjs introduction](https://docs.yjs.dev/), [Firebase presence](https://firebase.google.com/docs/firestore/solutions/presence), and [Vercel WebSocket guidance](https://vercel.com/kb/guide/do-vercel-serverless-functions-support-websocket-connections).

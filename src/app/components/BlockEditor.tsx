@@ -33,6 +33,7 @@ type Command = {
   level?: Block["level"];
 };
 type Menu = {
+  blockId?: string;
   index: number;
   source: "slash" | "plus";
   query: string;
@@ -40,10 +41,17 @@ type Menu = {
 };
 export type BlockEditorProps = {
   value: NoteContent;
-  onChange: (content: NoteContent) => void;
+  onChange: (content: NoteContent, base?: NoteContent) => void;
   disabled?: boolean;
+  onCompositionPendingChange?: (pending: boolean) => void;
   onAddSubnote?: () => void;
   renderBoard?: () => ReactNode;
+  collaborativeHistory?: {
+    undo: () => void;
+    redo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+  };
 };
 const commands: Command[] = [
   {
@@ -120,23 +128,59 @@ export default function BlockEditor({
   value,
   onChange,
   disabled = false,
+  onCompositionPendingChange,
   onAddSubnote,
   renderBoard,
+  collaborativeHistory,
 }: BlockEditorProps) {
   const blocks = value.blocks.length ? value.blocks : [emptyBlock()];
+  const blockKey = (index: number) => blocks[index]?.id || `legacy:${index}`;
   const [storedHistory, setHistory] = useState(() => createHistory(value));
   // A remote reload replaces content rather than letting local undo cross that boundary.
-  const history = sameContent(storedHistory.present, value) ? storedHistory : createHistory(value);
+  const history =
+    sameContent(storedHistory.present, value) || collaborativeHistory
+      ? storedHistory
+      : createHistory(value);
   if (history !== storedHistory) setHistory(history);
   const lastBlockRef = useRef(0);
   const container = useRef<HTMLDivElement>(null);
-  const refs = useRef(new Map<number, HTMLTextAreaElement>());
-  const pendingFocus = useRef<{ index: number; offset: number } | null>(null);
+  const refs = useRef(new Map<string, HTMLTextAreaElement>());
+  const pendingFocus = useRef<{ id: string; offset: number } | null>(null);
   const commandMenuRef = useRef<HTMLDivElement>(null);
-  const formattedRefs = useRef(new Map<number, HTMLDivElement>());
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const formattedRefs = useRef(new Map<string, HTMLDivElement>());
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const focusedIndex =
+    focusedId === null
+      ? null
+      : blocks.findIndex((_, index) => blockKey(index) === focusedId);
+  const [storedMenu, storeMenu] = useState<Menu | null>(null);
+  const menuIndex = storedMenu?.blockId
+    ? blocks.findIndex((block) => block.id === storedMenu.blockId)
+    : storedMenu?.index;
+  const menu =
+    storedMenu && menuIndex !== undefined && menuIndex >= 0
+      ? { ...storedMenu, index: menuIndex }
+      : null;
+  function setMenu(next: Menu | null) {
+    storeMenu(
+      next
+        ? { ...next, blockId: next.blockId || blocks[next.index]?.id }
+        : null,
+    );
+  }
   const [feedback, setFeedback] = useState("");
+  const composing = useRef<{
+    key: string;
+    base: NoteContent;
+    index: number;
+  } | null>(null);
+  const completedComposition = useRef<{ key: string; text: string } | null>(
+    null,
+  );
+  const [compositionText, setCompositionText] = useState<{
+    key: string;
+    text: string;
+  } | null>(null);
   const menuId = useId();
   const options = commands.filter((command) =>
     `${command.label} ${command.type} ${command.level ? `h${command.level}` : ""}`
@@ -170,14 +214,14 @@ export default function BlockEditor({
     }
     const target = pendingFocus.current;
     if (target && !disabled) {
-      const input = refs.current.get(target.index);
+      const input = refs.current.get(target.id);
       if (input) {
         input.focus();
         input.setSelectionRange(target.offset, target.offset);
         pendingFocus.current = null;
       }
     }
-  }, [value, disabled, menu, focusedIndex]);
+  }, [value, disabled, menu?.index, menu?.active, menu?.query, focusedIndex]);
 
   useEffect(() => {
     let previousWidth = 0;
@@ -198,6 +242,7 @@ export default function BlockEditor({
     next: Block[],
     focus?: { index: number; offset: number },
     group?: string,
+    base?: NoteContent,
   ) {
     if (disabled) return false;
     if (next.length > 1000) {
@@ -215,19 +260,41 @@ export default function BlockEditor({
       );
       return false;
     }
-    pendingFocus.current = focus || null;
+    pendingFocus.current = focus
+      ? {
+          id: next[focus.index]?.id || `legacy:${focus.index}`,
+          offset: focus.offset,
+        }
+      : null;
     if (focus)
       container.current
         ?.querySelectorAll("details[open]")
         .forEach((element) => element.removeAttribute("open"));
     setFeedback("");
-    const content = { blocks: next.length ? next : [emptyBlock()] };
-    setHistory(recordHistory(history, content, group));
-    onChange(content);
+    const content = {
+      blocks: (next.length ? next : [emptyBlock()]).map((block) =>
+        collaborativeHistory && !block.id
+          ? { ...block, id: crypto.randomUUID() }
+          : block,
+      ),
+    };
+    if (focus)
+      pendingFocus.current = {
+        id: content.blocks[focus.index]?.id || `legacy:${focus.index}`,
+        offset: focus.offset,
+      };
+    if (!collaborativeHistory)
+      setHistory(recordHistory(history, content, group));
+    onChange(content, base);
     return true;
   }
   function travelHistory(direction: "undo" | "redo") {
     if (disabled) return;
+    if (collaborativeHistory) {
+      setMenu(null);
+      collaborativeHistory[direction]();
+      return;
+    }
     const next =
       direction === "undo" ? undoHistory(history) : redoHistory(history);
     if (next === history) return;
@@ -236,7 +303,7 @@ export default function BlockEditor({
       Math.max(0, next.present.blocks.length - 1),
     );
     pendingFocus.current = {
-      index,
+      id: next.present.blocks[index]?.id || `legacy:${index}`,
       offset: next.present.blocks[index]?.text.length || 0,
     };
     setMenu(null);
@@ -248,7 +315,7 @@ export default function BlockEditor({
     index: number,
     offset = blocks[index]?.text.length || 0,
   ) {
-    const input = refs.current.get(index);
+    const input = refs.current.get(blockKey(index));
     input?.focus();
     input?.setSelectionRange(offset, offset);
   }
@@ -272,6 +339,7 @@ export default function BlockEditor({
     let target = index;
     if (source === "slash" || !next[index].text)
       next[index] = {
+        ...(next[index].id ? { id: next[index].id } : {}),
         type: command.type,
         text: "",
         ...(command.level ? { level: command.level } : {}),
@@ -297,7 +365,11 @@ export default function BlockEditor({
         ? markdownShortcut(text)
         : null;
     const next = blocks.map((block, i) =>
-      i === index ? shortcut || { ...block, text } : block,
+      i === index
+        ? shortcut
+          ? { ...shortcut, ...(block.id ? { id: block.id } : {}) }
+          : { ...block, text }
+        : block,
     );
     if (shortcut?.type === "divider") next.splice(index + 1, 0, emptyBlock());
     if (
@@ -359,7 +431,11 @@ export default function BlockEditor({
     ) {
       event.preventDefault();
       const shortcut = markdownShortcut(`${current.text} `)!;
-      const next = blocks.map((block, i) => (i === index ? shortcut : block));
+      const next = blocks.map((block, i) =>
+        i === index
+          ? { ...shortcut, ...(block.id ? { id: block.id } : {}) }
+          : block,
+      );
       if (shortcut.type === "divider") next.splice(index + 1, 0, emptyBlock());
       commit(next, {
         index: shortcut.type === "divider" ? index + 1 : index,
@@ -375,7 +451,11 @@ export default function BlockEditor({
       event.preventDefault();
       const next = blocks.map((block) => ({ ...block }));
       if (!current.text && ["bullet", "ordered", "todo"].includes(current.type))
-        next[index] = { type: "paragraph", text: "" };
+        next[index] = {
+          ...(current.id ? { id: current.id } : {}),
+          type: "paragraph",
+          text: "",
+        };
       else {
         next[index].text = current.text.slice(0, start);
         next.splice(index + 1, 0, {
@@ -395,7 +475,13 @@ export default function BlockEditor({
         event.preventDefault();
         commit(
           blocks.map((block, i) =>
-            i === index ? { type: "paragraph", text: "" } : block,
+            i === index
+              ? {
+                  ...(block.id ? { id: block.id } : {}),
+                  type: "paragraph",
+                  text: "",
+                }
+              : block,
           ),
           { index, offset: 0 },
         );
@@ -428,7 +514,13 @@ export default function BlockEditor({
       pasted.replace(/\r\n?/g, "\n") +
       blocks[index].text.slice(end);
     const next = blocks.map((block, i) =>
-      i === index ? { type: "markdown" as const, text } : block,
+      i === index
+        ? {
+            ...(block.id ? { id: block.id } : {}),
+            type: "markdown" as const,
+            text,
+          }
+        : block,
     );
     if (
       commit(next, {
@@ -455,7 +547,9 @@ export default function BlockEditor({
   }
   function duplicate(index: number) {
     const next = duplicateBlock({ blocks }, index).blocks;
-    if (commit(next, { index: index + 1, offset: next[index + 1].text.length })) {
+    if (
+      commit(next, { index: index + 1, offset: next[index + 1].text.length })
+    ) {
       setMenu(null);
       lastBlockRef.current = index + 1;
     }
@@ -502,7 +596,12 @@ export default function BlockEditor({
       >
         <button
           type="button"
-          disabled={disabled || !history.past.length}
+          disabled={
+            disabled ||
+            !(collaborativeHistory
+              ? collaborativeHistory.canUndo
+              : history.past.length)
+          }
           title="Undo (Ctrl/Cmd+Z)"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => travelHistory("undo")}
@@ -511,14 +610,23 @@ export default function BlockEditor({
         </button>
         <button
           type="button"
-          disabled={disabled || !history.future.length}
+          disabled={
+            disabled ||
+            !(collaborativeHistory
+              ? collaborativeHistory.canRedo
+              : history.future.length)
+          }
           title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => travelHistory("redo")}
         >
           ↷ Redo
         </button>
-        <span>Recent changes · this open note</span>
+        <span>
+          {collaborativeHistory
+            ? "Your text edits only · block actions are permanent"
+            : "Recent changes · this open note"}
+        </span>
       </div>
       <p className={styles.hint}>
         Type / for blocks, or # + space for a heading. Enter adds a block; Shift
@@ -532,7 +640,7 @@ export default function BlockEditor({
       {blocks.map((block, index) => (
         <div
           className={`${styles.block} ${styles[block.type]} ${block.type === "heading" ? styles[`heading${block.level ?? 1}`] : ""}`}
-          key={index}
+          key={blockKey(index)}
         >
           <div className={styles.tools}>
             <button
@@ -564,6 +672,7 @@ export default function BlockEditor({
                       const next = blocks.map((item, i) =>
                         i === index
                           ? {
+                              ...(item.id ? { id: item.id } : {}),
                               type: event.target.value as BlockType,
                               text: ["board", "divider"].includes(
                                 event.target.value,
@@ -645,7 +754,11 @@ export default function BlockEditor({
                 <button
                   type="button"
                   disabled={disabled || blocks.length >= 1000}
-                  title={block.type === "board" ? "Add another view of the same workspace board" : "Copy this block below"}
+                  title={
+                    block.type === "board"
+                      ? "Add another view of the same workspace board"
+                      : "Copy this block below"
+                  }
                   onClick={() => duplicate(index)}
                 >
                   Duplicate block
@@ -703,13 +816,17 @@ export default function BlockEditor({
           ) : (
             <textarea
               ref={(element) => {
-                if (element) refs.current.set(index, element);
-                else refs.current.delete(index);
+                if (element) refs.current.set(blockKey(index), element);
+                else refs.current.delete(blockKey(index));
               }}
               rows={1}
               maxLength={20000}
               className={`${styles.text} ${focusedIndex !== index && !["code", "markdown"].includes(block.type) && /[\*_~`\[\]]/.test(block.text) ? styles.formattedSource : ""}`}
-              value={block.text}
+              value={
+                compositionText?.key === blockKey(index)
+                  ? compositionText.text
+                  : block.text
+              }
               disabled={disabled}
               aria-label={`${block.type === "paragraph" ? "Text" : block.type === "heading" ? `Heading ${block.level ?? 1}` : block.type === "bullet" ? "Bullet list item" : block.type} block ${index + 1}`}
               placeholder={
@@ -730,11 +847,60 @@ export default function BlockEditor({
               }
               onFocus={() => {
                 lastBlockRef.current = index;
-                setFocusedIndex(index);
+                setFocusedId(blockKey(index));
                 if (menu && menu.index !== index) setMenu(null);
               }}
-              onBlur={() => setFocusedIndex(null)}
-              onChange={(event) => update(index, event.target.value)}
+              onBlur={() => setFocusedId(null)}
+              onCompositionStart={() => {
+                onCompositionPendingChange?.(true);
+                composing.current = {
+                  key: blockKey(index),
+                  base: value,
+                  index,
+                };
+                setCompositionText({ key: blockKey(index), text: block.text });
+                setMenu(null);
+              }}
+              onCompositionEnd={(event) => {
+                const composition = composing.current;
+                if (!composition || composition.key !== blockKey(index)) return;
+                const next = composition.base.blocks.map(
+                  (item, originalIndex) =>
+                    originalIndex === composition.index
+                      ? { ...item, text: event.currentTarget.value }
+                      : item,
+                );
+                completedComposition.current = {
+                  key: composition.key,
+                  text: event.currentTarget.value,
+                };
+                composing.current = null;
+                setCompositionText(null);
+                onCompositionPendingChange?.(false);
+                commit(
+                  next,
+                  undefined,
+                  `typing:${composition.key}`,
+                  composition.base,
+                );
+              }}
+              onChange={(event) => {
+                const completed = completedComposition.current;
+                completedComposition.current = null;
+                // Browsers may emit a final input after compositionend. It is
+                // already applied against the captured CRDT baseline.
+                if (
+                  completed?.key === blockKey(index) &&
+                  completed.text === event.target.value
+                )
+                  return;
+                if (composing.current?.key === blockKey(index)) {
+                  setCompositionText({
+                    key: blockKey(index),
+                    text: event.target.value,
+                  });
+                } else update(index, event.target.value);
+              }}
               onKeyDown={(event) => keyDown(event, index)}
               onPaste={(event) => paste(event, index)}
             />
@@ -745,8 +911,9 @@ export default function BlockEditor({
               <div
                 className={styles.formatted}
                 ref={(element) => {
-                  if (element) formattedRefs.current.set(index, element);
-                  else formattedRefs.current.delete(index);
+                  if (element)
+                    formattedRefs.current.set(blockKey(index), element);
+                  else formattedRefs.current.delete(blockKey(index));
                 }}
                 aria-label="Formatted block text"
               >
