@@ -29,6 +29,38 @@ npm run dev
 
 Open http://localhost:3000. Without backend configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
 
+## Workspace administration and direct membership
+
+Owners can make existing members **workspace admins** from Members. Workspace
+admins can add registered accounts by email or account ID, manage invitation
+links and remove ordinary members. Owners/root admins manage admin roles; only
+the owner transfers ownership. Direct addition grants membership immediately and
+sends no invitation email. It does not create an account or confirm its email;
+`EMAIL_CONFIRMATION_REQUIRED` still applies when that user signs in.
+
+Set server-only `ROOT_ADMIN_UIDS` to comma-separated provider account IDs, then
+restart/redeploy. Root admins see **Root administration** under Members or on the
+signed-in workspace setup screen, including access management for workspaces they
+do not belong to. Root authority does not implicitly expose private notes/files.
+Root workspace lists are capped at 1,000 with an explicit truncation notice and
+manual workspace-ID entry. Remove an ID from server configuration to revoke root
+authority. Account IDs are available in provider Auth administration.
+
+For development, first create a test workspace, then set server-only
+`DEV_AUTO_JOIN_WORKSPACE_ID` to its ID and restart `npm run dev`. Authenticated
+users automatically join once, after satisfying the configured email policy.
+Removal/leave is respected on future sign-ins. Production rejects a nonempty
+setting; leave it empty in Vercel/production environments. For a test environment
+without confirmation emails, configure/publish `EMAIL_CONFIRMATION_REQUIRED=false`
+and match the provider's email-confirmation settings as documented below.
+
+Added users can select **Refresh workspace list** or sign in again to discover
+their workspace. No background membership polling or invitation email is added.
+Supabase deployments must apply [migration 008](migrations/008-workspace-administration.md)
+after migration 007 for direct email lookup. Firebase uses Admin Auth lookup and
+needs no rule changes. Private receipts make retries safe after removal; operation
+identities are retained in the open form across Retry, not browser refresh.
+
 ## Choose a backend
 
 Set both `BACKEND_PROVIDER` and `NEXT_PUBLIC_BACKEND_PROVIDER` to `firebase` or

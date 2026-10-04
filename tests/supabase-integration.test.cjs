@@ -50,19 +50,20 @@ before(async () => {
     try { await sql('select 1;'); break; } catch (error) { if (attempt === 40) throw error; await new Promise(resolve => setTimeout(resolve, 250)); }
   }
   await sql(`create role anon; create role authenticated; create role service_role bypassrls;
-    create schema auth; create table auth.users(id uuid primary key,email_confirmed_at timestamptz);
+    create schema auth; create table auth.users(id uuid primary key,email_confirmed_at timestamptz,email text);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema auth to authenticated;
     create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
     alter table storage.buckets enable row level security;
     create publication supabase_realtime;`);
   await sql(readFileSync('migrations/007-supabase-backend.sql', 'utf8'));
+  await sql(readFileSync('migrations/008-workspace-administration.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
 beforeEach(async () => {
   await sql(`truncate public.teamspace_documents; update public.teamspace_store_state set epoch=0;
-    truncate auth.users; insert into auth.users values('${owner}',now()),('${member}',now()),('${outsider}',null);`);
+    truncate auth.users; insert into auth.users(id,email_confirmed_at) values('${owner}',now()),('${member}',now()),('${outsider}',null);`);
   await db.runTransaction(async tx => {
     for (const [path, data] of [
       ['security/policy', { emailConfirmationRequired: true }],
@@ -78,10 +79,56 @@ beforeEach(async () => {
 async function api(uid, method, path, input) {
   const request = new Request(`http://test/api/${path}`, { method,
     headers: { 'Content-Type': 'application/json' }, body: input === undefined ? undefined : JSON.stringify(input) });
-  const response = await handleTrustedApi(request, path.split('?')[0].split('/'), { db, storage: {}, user: {uid,name:uid,email_verified:true} });
+  const response = await handleTrustedApi(request, path.split('?')[0].split('/'), { db, storage: {}, user: {uid,name:uid,email_verified:true}, resolveAccount:async()=>({uid:outsider,displayName:'Registered account',photoURL:null}) });
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
+
+test('account email RPC is service-only, case-insensitive and rejects ambiguous identities',async()=>{
+  await sql(`update auth.users set email='User@Example.test' where id='${outsider}';`);
+  assert.equal(await sql("set role service_role; select public.teamspace_registered_account_id('user@example.test');"),outsider);
+  await assert.rejects(sql("set role authenticated; select public.teamspace_registered_account_id('user@example.test');"),/permission denied/);
+  await assert.rejects(sql("set role anon; select public.teamspace_registered_account_id('user@example.test');"),/permission denied/);
+  await sql(`update auth.users set email='user@example.test' where id='${member}';`);
+  assert.equal(await sql("set role service_role; select coalesce(public.teamspace_registered_account_id('user@example.test'),'missing');"),'missing');
+  assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"),'t');
+});
+
+test('Supabase direct additions, admin roles and retry receipts remain transactional and private',async()=>{
+  const input={account:'user@example.test',operationId:randomUUID()};
+  assert.equal((await api(member,'POST',`${prefix}/members`,input)).status,403);
+  const results=await Promise.all([api(owner,'POST',`${prefix}/members`,input),api(owner,'POST',`${prefix}/members`,input)]);
+  assert.ok(results.every(result=>result.status===200));
+  assert.equal((await value(`${prefix}/members/${outsider}`)).role,'member');
+  assert.ok(await value(`users/${outsider}/workspaces/alpha`));
+  assert.equal((await api(owner,'PATCH',`${prefix}/members/${member}`,{role:'admin'})).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/members/${member}`,{role:'member'})).status,403);
+  assert.equal((await api(member,'DELETE',`${prefix}/members/${outsider}`)).status,200);
+  assert.equal((await api(owner,'POST',`${prefix}/members`,input)).data.removed,true);
+  assert.equal(await value(`${prefix}/members/${outsider}`),undefined);
+  assert.equal(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${member}',false); select count(*) from public.teamspace_documents where collection='${prefix}/membershipOperations';`).then(result=>result.split('\n').at(-1)),'0');
+});
+
+test('Supabase root membership administration preserves private content; development joins respect removal',async()=>{
+  const names=['ROOT_ADMIN_UIDS','NODE_ENV','DEV_AUTO_JOIN_WORKSPACE_ID'];
+  const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
+  try {
+    process.env.ROOT_ADMIN_UIDS=outsider;
+    assert.equal((await api(outsider,'GET','administration/workspaces')).status,200);
+    assert.equal((await api(outsider,'PATCH',`${prefix}/members/${member}`,{role:'admin'})).status,200);
+    assert.equal((await api(outsider,'GET',`${prefix}/snapshot`)).status,403);
+    process.env.NODE_ENV='development';process.env.DEV_AUTO_JOIN_WORKSPACE_ID='alpha';
+    await api(owner,'DELETE',`${prefix}/members/${member}`);
+    assert.equal((await api(member,'POST','access/bootstrap',{})).status,200);
+    assert.equal(await value(`${prefix}/members/${member}`),undefined);
+    const results=await Promise.all([api(outsider,'POST','access/bootstrap',{}),api(outsider,'POST','access/bootstrap',{})]);
+    assert.ok(results.every(result=>result.status===200));
+    await api(owner,'DELETE',`${prefix}/members/${outsider}`);
+    assert.equal((await api(outsider,'POST','access/bootstrap',{})).status,200);
+    assert.equal(await value(`${prefix}/members/${outsider}`),undefined);
+    assert.equal(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${outsider}',false); select count(*) from public.teamspace_documents where path='users/${outsider}/developmentEnrollments/alpha';`).then(result=>result.split('\n').at(-1)),'0');
+  } finally {for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name];}}
+});
 test('clean migration applies RLS/default-deny RPC and private bucket limits', async () => {
   assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"), 't');
   assert.equal(await sql("select public::text||':'||file_size_limit from storage.buckets where id='teamspace-private';"), 'false:10485760');

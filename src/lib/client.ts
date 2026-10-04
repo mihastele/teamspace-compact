@@ -119,6 +119,7 @@ export function useTeamspace() {
     useState(configured);
   const [authEpoch, setAuthEpoch] = useState(0);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [rootAccount, setRootAccount] = useState<string | null>(null);
   const [loading, setLoading] = useState(configured);
   const [error, setError] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>(
@@ -227,6 +228,7 @@ export function useTeamspace() {
     const expectedUid = currentBrowserUser()?.uid;
     const data = await api("workspaces", "GET", undefined, expectedUid);
     if (currentBrowserUser()?.uid !== expectedUid) return [] as Workspace[];
+    setRootAccount(data.isRootAdmin ? expectedUid ?? null : null);
     setWorkspaces(data.workspaces);
     setWorkspace(
       (current) =>
@@ -236,6 +238,12 @@ export function useTeamspace() {
     );
     return data.workspaces as Workspace[];
   }, [api]);
+  const accessUid = user?.uid;
+  const loadAdministrationMembers = useCallback(async (workspaceId: string) => {
+    if (!configured || !accessUid) return unavailable();
+    const data = await api(`workspaces/${workspaceId}/members`, "GET", undefined, accessUid);
+    return data.members as Member[];
+  }, [api, accessUid]);
   useEffect(() => {
     if (!configured) {
       let cancelled = false;
@@ -270,6 +278,7 @@ export function useTeamspace() {
     }
     return observeBrowserAuth((next, recovering) => {
       setUser(next);
+      setRootAccount(null);
       setPasswordRecovery(recovering);
       setTasks([]);
       setNotes([]);
@@ -321,6 +330,8 @@ export function useTeamspace() {
       }
       setLoading(true);
       try {
+        await api("access/bootstrap", "POST", {}, user.uid);
+        if (cancelled || currentBrowserUser()?.uid !== user.uid) return;
         const rows = await loadWorkspaces();
         if (
           !cancelled &&
@@ -338,7 +349,7 @@ export function useTeamspace() {
     return () => {
       cancelled = true;
     };
-  }, [user, authConfiguration, passwordRecovery, loadWorkspaces, report]);
+  }, [user, authConfiguration, passwordRecovery, loadWorkspaces, report, api]);
   useEffect(() => {
     if (!configured || !user || !workspace) return;
     const loaded = new Set<string>();
@@ -486,6 +497,25 @@ export function useTeamspace() {
     tasks: tasks.toSorted((a, b) => a.position - b.position),
     notes,
     members,
+    isRootAdmin: Boolean(user && rootAccount === user.uid),
+    refreshWorkspaces: () => action(async () => { await loadWorkspaces(); }),
+    listAdministrationWorkspaces: async () => {
+      if (!configured || !user) return unavailable();
+      return await api("administration/workspaces", "GET", undefined, user.uid) as { workspaces: Workspace[]; truncated: boolean };
+    },
+    listAdministrationMembers: loadAdministrationMembers,
+    addWorkspaceMember: async (workspaceId: string, account: string, operationId: string) => {
+      if (!configured || !user) return unavailable();
+      return await api(`workspaces/${workspaceId}/members`, "POST", { account, operationId }, user.uid) as { uid: string; removed: boolean; alreadyMember: boolean };
+    },
+    setAdministrationRole: async (workspaceId: string, uid: string, role: "admin" | "member") => {
+      if (!configured || !user) return unavailable();
+      await api(`workspaces/${workspaceId}/members/${uid}`, "PATCH", { role }, user.uid);
+    },
+    removeAdministrationMember: async (workspaceId: string, uid: string) => {
+      if (!configured || !user) return unavailable();
+      await api(`workspaces/${workspaceId}/members/${uid}`, "DELETE", undefined, user.uid);
+    },
     attachments,
     subscribeComments: (
       parentType: ConversationParent,
@@ -1086,6 +1116,11 @@ export function useTeamspace() {
     removeMember: (uid: string) =>
       action(async () => {
         await api(`${path()}/members/${uid}`, "DELETE");
+      }),
+    changeMemberRole: (uid: string, role: "admin" | "member") =>
+      action(async () => {
+        if (!configured || !user) return unavailable();
+        await api(`${path()}/members/${uid}`, "PATCH", { role }, user.uid);
       }),
     leaveWorkspace: () =>
       action(async () => {

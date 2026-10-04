@@ -2,6 +2,23 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { backendConfiguration, strictFlag } = require('../.test-build/server/backend-config.js');
 const { isPrivilegedSupabaseKey } = require('../.test-build/public-key.js');
+const { accessConfiguration, isRootAdmin } = require('../.test-build/server/access-config.js');
+
+test('root authority is an exact server ID allowlist; auto-join is forbidden outside development',()=>{
+  const names=['ROOT_ADMIN_UIDS','DEV_AUTO_JOIN_WORKSPACE_ID','NODE_ENV'];
+  const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
+  try {
+    names.forEach(name=>delete process.env[name]);
+    assert.equal(isRootAdmin('owner'),false);
+    process.env.ROOT_ADMIN_UIDS=' root-a,root-b ';
+    assert.equal(isRootAdmin('root-a'),true);assert.equal(isRootAdmin('root'),false);
+    process.env.ROOT_ADMIN_UIDS='root-a,';assert.throws(()=>accessConfiguration(),/comma-separated/);
+    process.env.ROOT_ADMIN_UIDS='root-a';process.env.DEV_AUTO_JOIN_WORKSPACE_ID='test-space';
+    for(const mode of ['production','test']){process.env.NODE_ENV=mode;assert.throws(()=>accessConfiguration(),/only in development/);}
+    process.env.NODE_ENV='development';assert.equal(accessConfiguration().developmentWorkspace,'test-space');
+    process.env.DEV_AUTO_JOIN_WORKSPACE_ID='../escape';assert.throws(()=>accessConfiguration(),/valid workspace/);
+  } finally {for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name];}}
+});
 test('backend selection and security flags are explicit and fail closed', () => {
   const names = ['BACKEND_PROVIDER', 'NEXT_PUBLIC_BACKEND_PROVIDER', 'EMAIL_CONFIRMATION_REQUIRED',
     'GOOGLE_AUTH_ENABLED', 'PASSWORD_AUTH_ENABLED', 'SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL'];

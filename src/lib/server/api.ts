@@ -25,6 +25,8 @@ import { backendConfiguration } from "./backend-config";
 import { supabaseAdmin } from "./supabase";
 import { supabaseStorage } from "./supabase-storage";
 import { assertAuthPolicy, guardedDocumentStore } from "./auth-policy";
+import { accessConfiguration, isRootAdmin } from "./access-config";
+import { resolveRegisteredAccount, type AccountResolver } from "./registered-accounts";
 type DecodedIdToken = { uid: string; name?: string; picture?: string; email?: string; email_verified?: boolean };
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
@@ -127,6 +129,7 @@ async function member(
 
 async function authenticate(request: Request) {
   const configuration = backendConfiguration();
+  accessConfiguration();
   if (!configuration.configured) throw new ApiError(503, "not_configured", "The selected backend is not configured. Ask the administrator to finish setup.");
   const match = /^Bearer ([^\s]+)$/.exec(
     request.headers.get("authorization") ?? "",
@@ -184,7 +187,105 @@ async function workspaceList(db: Firestore, uid: string) {
       return { id: workspace.id, name: data.name, ownerId: data.ownerId };
     }),
   );
-  return json({ workspaces: workspaces.filter(Boolean) });
+  return json({ workspaces: workspaces.filter(Boolean), isRootAdmin: isRootAdmin(uid) });
+}
+
+/** Root access administration does not bypass membership for document content. */
+async function accessAdministrator(tx: Transaction, workspace: DocumentReference, uid: string, manageAdmins = false) {
+  const space = await tx.get(workspace);
+  if (!space.exists) throw new ApiError(404, "not_found", "Workspace not found.");
+  if (isRootAdmin(uid)) return space;
+  const membership = await tx.get(workspace.collection("members").doc(uid));
+  const role = membership.data()?.role;
+  const owner = space.data()?.ownerId === uid && role === "owner";
+  if (!owner && (manageAdmins || role !== "admin"))
+    throw new ApiError(403, "forbidden", manageAdmins ? "Only the owner or a root admin can manage workspace admins." : "Only a workspace admin can manage access.");
+  return space;
+}
+
+async function changeMemberRole(db: Firestore, workspace: DocumentReference, user: DecodedIdToken, uid: string, input: unknown) {
+  const data = object(input, ["role"]);
+  if (data.role !== "admin" && data.role !== "member") throw new ApiError(400, "invalid_input", "Choose admin or member.");
+  await rateLimit(db, user.uid, "member_role", 20);
+  await db.runTransaction(async tx => {
+    const space = await accessAdministrator(tx, workspace, user.uid, true);
+    const target = await tx.get(workspace.collection("members").doc(uid));
+    if (!target.exists) throw new ApiError(404, "not_found", "Member not found.");
+    if (space.data()?.ownerId === uid || target.data()?.role === "owner")
+      throw new ApiError(409, "owner_required", "Transfer ownership instead of changing the owner's role.");
+    tx.update(target.ref, { role: data.role, roleUpdatedBy: user.uid, roleUpdatedAt: now() });
+  });
+  return json({ ok: true });
+}
+
+async function bootstrapAccess(db: Firestore, user: DecodedIdToken) {
+  const configuration = accessConfiguration();
+  if (!configuration.developmentWorkspace) return json({ isRootAdmin: configuration.roots.has(user.uid) });
+  await rateLimit(db, user.uid, "development_enroll", 10);
+  const workspace = db.doc(`workspaces/${configuration.developmentWorkspace}`);
+  await db.runTransaction(async tx => {
+    const enrollment = db.doc(`users/${user.uid}/developmentEnrollments/${workspace.id}`);
+    const [space, marker, existing, index, profile] = await Promise.all([
+      tx.get(workspace), tx.get(enrollment), tx.get(workspace.collection("members").doc(user.uid)),
+      tx.get(db.collection(`users/${user.uid}/workspaces`)), tx.get(db.doc(`users/${user.uid}`)),
+    ]);
+    if (!space.exists) throw new ApiError(503, "development_workspace_missing", "Create the configured test workspace before enabling automatic joining.");
+    // The enrollment marker survives removal/leave, so automatic joining cannot undo it.
+    if (marker.exists) return;
+    if (!existing.exists) {
+      if (index.size >= 100) throw new ApiError(409, "workspace_limit", "You can belong to at most 100 workspaces.");
+      tx.create(workspace.collection("members").doc(user.uid), { role: "member", displayName: displayName(user), joinedAt: now() });
+      tx.set(db.doc(`users/${user.uid}/workspaces/${workspace.id}`), { joinedAt: now() });
+      tx.set(db.doc(`users/${user.uid}`), { displayName: displayName(user), photoURL: user.picture ?? null, createdAt: profile.data()?.createdAt ?? now(), updatedAt: now() }, { merge: true });
+    }
+    tx.create(enrollment, { enrolledAt: now() });
+  });
+  return json({ isRootAdmin: configuration.roots.has(user.uid) });
+}
+
+async function addRegisteredMember(db: Firestore, workspace: DocumentReference, user: DecodedIdToken, input: unknown, resolveAccount: AccountResolver) {
+  const data = object(input, ["account", "operationId"]);
+  const account = text(data.account, "Email or account ID", 254);
+  if (account.includes("@")) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account)) throw new ApiError(400, "invalid_input", "Enter an email address or account ID.");
+  } else identifier(account);
+  const operationId = uuid(data.operationId);
+  const digest = hash(account.includes("@") ? account.toLowerCase() : account);
+  const receipt = workspace.collection("membershipOperations").doc(`${user.uid}_${operationId}`);
+  await rateLimit(db, user.uid, "member_add", 20);
+  async function replay(tx: Transaction) {
+    const prior = await tx.get(receipt);
+    if (!prior.exists) return null;
+    if (prior.data()?.digest !== digest) throw new ApiError(409, "operation_reused", "This operation was already used for another account.");
+    const uid = identifier(prior.data()?.uid);
+    const current = await tx.get(workspace.collection("members").doc(uid));
+    return { uid, removed: !current.exists, alreadyMember: true };
+  }
+  const prior = await db.runTransaction(async tx => {
+    await accessAdministrator(tx, workspace, user.uid);
+    return replay(tx);
+  });
+  if (prior) return json(prior);
+  const target = await resolveAccount(account);
+  if (!target) throw new ApiError(404, "account_not_found", "No active registered account matches that email or ID.");
+  const uid = identifier(target.uid);
+  const result = await db.runTransaction(async tx => {
+    await accessAdministrator(tx, workspace, user.uid);
+    const previous = await replay(tx);
+    if (previous) return previous;
+    const [existing, index, profile] = await Promise.all([
+      tx.get(workspace.collection("members").doc(uid)), tx.get(db.collection(`users/${uid}/workspaces`)), tx.get(db.doc(`users/${uid}`)),
+    ]);
+    if (!existing.exists) {
+      if (index.size >= 100) throw new ApiError(409, "workspace_limit", "This account already belongs to 100 workspaces.");
+      tx.create(workspace.collection("members").doc(uid), { role: "member", displayName: target.displayName, joinedAt: now(), addedBy: user.uid });
+      tx.set(db.doc(`users/${uid}/workspaces/${workspace.id}`), { joinedAt: now() });
+      tx.set(db.doc(`users/${uid}`), { displayName: target.displayName, photoURL: target.photoURL, createdAt: profile.data()?.createdAt ?? now(), updatedAt: now() }, { merge: true });
+    }
+    tx.create(receipt, { digest, uid, createdBy: user.uid, createdAt: now() });
+    return { uid, removed: false, alreadyMember: existing.exists };
+  });
+  return json(result);
 }
 
 async function createWorkspace(
@@ -1131,7 +1232,7 @@ async function inviteOperation(
 ) {
   if (method === "DELETE" && !id) {
     await db.runTransaction(async (tx) => {
-      await member(tx, workspace, user.uid, true);
+      await accessAdministrator(tx, workspace, user.uid);
       const invites = await tx.get(
         db
           .collection("invites")
@@ -1152,7 +1253,7 @@ async function inviteOperation(
     return json({ ok: true });
   }
   if (method === "GET" && !id) {
-    await db.runTransaction((tx) => member(tx, workspace, user.uid, true));
+    await db.runTransaction((tx) => accessAdministrator(tx, workspace, user.uid));
     const result = await db
       .collection("invites")
       .where("workspaceId", "==", workspace.id)
@@ -1173,7 +1274,7 @@ async function inviteOperation(
   }
   if (method === "DELETE" && id) {
     await db.runTransaction(async (tx) => {
-      await member(tx, workspace, user.uid, true);
+      await accessAdministrator(tx, workspace, user.uid);
       const ref = db.doc(`invites/${id}`);
       const invite = await tx.get(ref);
       if (!invite.exists || invite.data()?.workspaceId !== workspace.id)
@@ -1192,7 +1293,7 @@ async function inviteOperation(
   const tokenHash = hash(token);
   const expiresAt = Timestamp.fromMillis(Date.now() + hours * 3600000);
   await db.runTransaction(async (tx) => {
-    await member(tx, workspace, user.uid, true);
+    await accessAdministrator(tx, workspace, user.uid);
     tx.create(db.doc(`invites/${tokenHash}`), {
       workspaceId: workspace.id,
       createdBy: user.uid,
@@ -1216,19 +1317,24 @@ async function removeMember(
   uid: string,
 ) {
   await db.runTransaction(async (tx) => {
-    const space = await member(tx, workspace, user.uid, user.uid !== uid);
+    const space = user.uid === uid ? await member(tx, workspace, user.uid) : await accessAdministrator(tx, workspace, user.uid);
     const target = await tx.get(workspace.collection("members").doc(uid));
     if (!target.exists)
       throw new ApiError(404, "not_found", "Member not found.");
-    if (space.data()?.ownerId === uid)
+    if (space.data()?.ownerId === uid || target.data()?.role === "owner")
       throw new ApiError(
         409,
         "owner_required",
         "Transfer ownership before leaving.",
       );
+    if (user.uid !== uid && target.data()?.role === "admin")
+      await accessAdministrator(tx, workspace, user.uid, true);
     const tasks = await tx.get(
       workspace.collection("tasks").where("assigneeId", "==", uid).limit(450),
     );
+    const enrollment = accessConfiguration().developmentWorkspace === workspace.id
+      ? db.doc(`users/${uid}/developmentEnrollments/${workspace.id}`) : null;
+    const priorEnrollment = enrollment ? await tx.get(enrollment) : null;
     if (tasks.size >= 450)
       throw new ApiError(
         409,
@@ -1240,6 +1346,7 @@ async function removeMember(
     );
     tx.delete(target.ref);
     tx.delete(db.doc(`users/${uid}/workspaces/${workspace.id}`));
+    if (enrollment) tx.set(enrollment, { enrolledAt: priorEnrollment?.data()?.enrolledAt ?? now() }, { merge: true });
   });
   return json({ ok: true });
 }
@@ -1691,6 +1798,7 @@ export type TrustedApiContext = {
   db: Firestore | NativeFirestore;
   storage: Storage | NativeStorage;
   user: DecodedIdToken;
+  resolveAccount?: AccountResolver;
 };
 
 export async function handleApi(
@@ -1721,6 +1829,15 @@ export async function handleTrustedApi(
     const db = "settings" in context.db ? firebaseDocumentStore(context.db as NativeFirestore) : context.db as Firestore;
     const storage = context.storage as Storage;
     const method = request.method;
+    if (path.join("/") === "access/bootstrap" && method === "POST") {
+      object(await body(request), []);
+      return await bootstrapAccess(db, user);
+    }
+    if (path.join("/") === "administration/workspaces" && method === "GET") {
+      if (!isRootAdmin(user.uid)) throw new ApiError(403, "forbidden", "Root admin access required.");
+      const rows = await db.collection("workspaces").limit(1001).get();
+      return json({ workspaces: rows.docs.slice(0, 1000).map(row => ({ id: row.id, name: row.data().name, ownerId: row.data().ownerId })), truncated: rows.size > 1000 });
+    }
     if (path.length === 1 && path[0] === "workspaces") {
       if (method === "GET") return await workspaceList(db, user.uid);
       if (method === "POST")
@@ -1843,6 +1960,18 @@ export async function handleTrustedApi(
       );
     if (resource === "members" && itemId && !action && method === "DELETE")
       return await removeMember(db, workspace, user, itemId);
+    if (resource === "members" && itemId && !action && method === "PATCH")
+      return await changeMemberRole(db, workspace, user, itemId, await body(request));
+    if (resource === "members" && !itemId && method === "POST")
+      return await addRegisteredMember(db, workspace, user, await body(request), context.resolveAccount ?? resolveRegisteredAccount);
+    if (resource === "members" && !itemId && method === "GET") {
+      const result = await db.runTransaction(async tx => {
+        await accessAdministrator(tx, workspace, user.uid);
+        const rows = await tx.get(workspace.collection("members"));
+        return rows.docs.map(row => ({ id: row.id, role: row.data().role, displayName: row.data().displayName }));
+      });
+      return json({ members: result });
+    }
     if (resource === "owner" && !itemId && method === "PATCH")
       return await transferOwner(db, workspace, user, await body(request));
     if (resource === "attachments")

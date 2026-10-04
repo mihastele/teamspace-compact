@@ -71,11 +71,101 @@ async function api(uid, method, path, input, storageOverride = storage) {
       db,
       storage: storageOverride,
       user: { uid, name: uid },
+      resolveAccount: async account => account === "missing@example.test" ? null : ({ uid: account.includes("@") ? "new-user" : account, displayName: "Registered user", photoURL: null }),
     },
   );
   return { status: response.status, data: await response.json() };
 }
 const prefix = "workspaces/alpha";
+
+test("workspace admins manage ordinary members but cannot elevate themselves or remove owners/admins", async () => {
+  assert.equal((await api("member", "PATCH", `${prefix}/members/member`, {role:"admin"})).status,403);
+  assert.equal((await api("owner", "PATCH", `${prefix}/members/member`, {role:"admin"})).status,200);
+  assert.equal((await api("member", "POST", `${prefix}/invites`, {})).status,201);
+  assert.equal((await api("member", "PATCH", `${prefix}/members/member`, {role:"member"})).status,403);
+  assert.equal((await api("member", "DELETE", `${prefix}/members/owner`)).status,409);
+  await db.doc(`${prefix}/members/admin2`).set({role:"admin",displayName:"Other admin"});
+  assert.equal((await api("member", "DELETE", `${prefix}/members/admin2`)).status,403);
+  assert.equal((await api("owner", "PATCH", `${prefix}/members/owner`, {role:"member"})).status,409);
+  assert.equal((await api("owner", "PATCH", `${prefix}/members/member`, {role:"root"})).status,400);
+});
+
+test("root authorization is server-configured and does not grant content access", async () => {
+  const previous=process.env.ROOT_ADMIN_UIDS;
+  try {
+    process.env.ROOT_ADMIN_UIDS="outsider";
+    assert.equal((await api("outsider","GET","administration/workspaces")).status,200);
+    assert.equal((await api("member","GET","administration/workspaces")).status,403);
+    assert.equal((await api("outsider","PATCH",`${prefix}/members/member`,{role:"admin"})).status,200);
+    assert.equal((await api("outsider","GET",`${prefix}/snapshot`)).status,403);
+    assert.equal((await api("outsider","GET",`${prefix}/members`)).status,200);
+  } finally { if(previous===undefined)delete process.env.ROOT_ADMIN_UIDS;else process.env.ROOT_ADMIN_UIDS=previous; }
+});
+
+test("direct registered addition is atomic, duplicate-safe and stale retries cannot undo removal", async () => {
+  const input={account:"new@example.test",operationId:require("node:crypto").randomUUID()};
+  assert.equal((await api("member","POST",`${prefix}/members`,input)).status,403);
+  const results=await Promise.all([api("owner","POST",`${prefix}/members`,input),api("owner","POST",`${prefix}/members`,input)]);
+  assert.ok(results.every(result=>result.status===200));
+  assert.equal((await db.collection(`${prefix}/membershipOperations`).get()).size,1);
+  assert.equal((await db.doc("users/new-user/workspaces/alpha").get()).exists,true);
+  assert.equal((await db.doc(`${prefix}/members/new-user`).get()).data().role,"member");
+  assert.equal((await api("owner","POST",`${prefix}/members`,{...input,account:"different@example.test"})).status,409);
+  assert.equal((await api("owner","DELETE",`${prefix}/members/new-user`)).status,200);
+  assert.equal((await api("owner","POST",`${prefix}/members`,input)).data.removed,true);
+  assert.equal((await db.doc(`${prefix}/members/new-user`).get()).exists,false);
+  assert.equal((await db.doc("users/new-user/workspaces/alpha").get()).exists,false);
+});
+
+test("direct addition preserves an existing owner/admin and rejects missing accounts and mass assignment", async () => {
+  const input={account:"owner",operationId:require("node:crypto").randomUUID()};
+  assert.equal((await api("owner","POST",`${prefix}/members`,input)).status,200);
+  assert.equal((await db.doc(`${prefix}/members/owner`).get()).data().role,"owner");
+  assert.equal((await api("owner","POST",`${prefix}/members`,{...input,operationId:require("node:crypto").randomUUID(),account:"missing@example.test"})).status,404);
+  assert.equal((await api("owner","POST",`${prefix}/members`,{...input,role:"owner"})).status,400);
+});
+
+test("development enrollment is atomic and once-only even after removal; production rejects it", async () => {
+  const previous={NODE_ENV:process.env.NODE_ENV,DEV_AUTO_JOIN_WORKSPACE_ID:process.env.DEV_AUTO_JOIN_WORKSPACE_ID};
+  try {
+    process.env.NODE_ENV="development";process.env.DEV_AUTO_JOIN_WORKSPACE_ID="alpha";
+    // Removal must prevent enrollment even before the first bootstrap call.
+    await api("owner","DELETE",`${prefix}/members/member`);
+    assert.equal((await api("member","POST","access/bootstrap",{})).status,200);
+    assert.equal((await db.doc(`${prefix}/members/member`).get()).exists,false);
+    const results=await Promise.all([api("outsider","POST","access/bootstrap",{}),api("outsider","POST","access/bootstrap",{})]);
+    assert.ok(results.every(result=>result.status===200));
+    assert.equal((await db.doc(`${prefix}/members/outsider`).get()).exists,true);
+    assert.equal((await db.doc("users/outsider/developmentEnrollments/alpha").get()).exists,true);
+    await api("owner","DELETE",`${prefix}/members/outsider`);
+    assert.equal((await api("outsider","POST","access/bootstrap",{})).status,200);
+    assert.equal((await db.doc(`${prefix}/members/outsider`).get()).exists,false);
+    process.env.NODE_ENV="production";
+    assert.equal((await api("outsider","POST","access/bootstrap",{})).status,503);
+    delete process.env.DEV_AUTO_JOIN_WORKSPACE_ID;
+    assert.equal((await api("outsider","POST","access/bootstrap",{})).status,200);
+    assert.equal((await db.doc(`${prefix}/members/outsider`).get()).exists,false);
+  } finally {for(const[name,value]of Object.entries(previous)){if(value===undefined)delete process.env[name];else process.env[name]=value;}}
+});
+
+test("member limit applies to direct additions and development enrollment", async () => {
+  const batch=db.batch();for(let i=0;i<100;i++)batch.set(db.doc(`users/new-user/workspaces/w${i}`),{});await batch.commit();
+  assert.equal((await api("owner","POST",`${prefix}/members`,{account:"new-user",operationId:require("node:crypto").randomUUID()})).status,409);
+  assert.equal((await db.doc(`${prefix}/members/new-user`).get()).exists,false);
+  assert.equal((await db.collection(`${prefix}/membershipOperations`).get()).size,0);
+});
+
+test("owner transfer during account resolution prevents a stale administrator grant",async()=>{
+  let lookups=0;
+  const request=new Request(`http://localhost/api/${prefix}/members`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account:'new-user',operationId:require('node:crypto').randomUUID()})});
+  const response=await handleTrustedApi(request,[...prefix.split('/'),'members'],{db,storage,user:{uid:'owner'},resolveAccount:async()=>{
+    lookups++;await api('owner','PATCH',`${prefix}/owner`,{uid:'member'});
+    return {uid:'new-user',displayName:'New user',photoURL:null};
+  }});
+  assert.equal(lookups,1);assert.equal(response.status,403);
+  assert.equal((await db.doc(`${prefix}/members/new-user`).get()).exists,false);
+  assert.equal((await db.collection(`${prefix}/membershipOperations`).get()).size,0);
+});
 test('Firebase transactions serialize durable writes with email policy changes', async () => {
   await db.doc('security/policy').set({emailConfirmationRequired:false});
   const portable=firebaseDocumentStore(db), guarded=guardedDocumentStore(portable,false,false);

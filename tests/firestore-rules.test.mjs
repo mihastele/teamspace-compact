@@ -27,6 +27,19 @@ import {
 } from "firebase/storage";
 
 let environment;
+test('workspace admin metadata cannot grant SDK writes and enrollment/operation receipts stay private',async()=>{
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,`${workspace}/members/member`),{role:'admin'});
+    await setDoc(doc(db,`${workspace}/membershipOperations/receipt`),{uid:'member'});
+    await setDoc(doc(db,'users/member/developmentEnrollments/alpha'),{enrolledAt:1});
+  });
+  const db=environment.authenticatedContext('member').firestore();
+  await assertSucceeds(getDoc(doc(db,`${workspace}/tasks/task`)));
+  await assertFails(updateDoc(doc(db,`${workspace}/members/member`),{role:'owner'}));
+  await assertFails(getDoc(doc(db,`${workspace}/membershipOperations/receipt`)));
+  await assertFails(getDoc(doc(db,'users/member/developmentEnrollments/alpha')));
+});
 test('email confirmation policy protects direct reads and defaults to required', async () => {
   const unconfirmed = environment.authenticatedContext('member', { email_verified: false }).firestore();
   const confirmed = environment.authenticatedContext('member', { email_verified: true }).firestore();

@@ -64,7 +64,7 @@ export type ConversationComment = {
 export type Member = {
   id: string;
   displayName: string;
-  role: "owner" | "member";
+  role: "owner" | "admin" | "member";
 };
 export type Workspace = { id: string; name: string; ownerId: string };
 export type Attachment = {

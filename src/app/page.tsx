@@ -28,6 +28,7 @@ import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
+import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import {
   deadlineState,
   matchesDeadline,
@@ -1818,6 +1819,8 @@ function Members({ api }: { api: Api }) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const owner = api.workspace?.ownerId === api.user?.uid;
+  const manageAdmins = owner || api.isRootAdmin;
+  const manageMembers = manageAdmins || api.members.some((member) => member.id === api.user?.uid && member.role === "admin");
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -1836,6 +1839,8 @@ function Members({ api }: { api: Api }) {
   return (
     <div className={s.members}>
       {error && <ErrorMessage message={error} />}
+      {api.configured && manageMembers && api.workspace && <MemberAdder key={`${api.user?.uid}:${api.workspace.id}`} api={api} workspaceId={api.workspace.id} />}
+      {api.isRootAdmin && <WorkspaceAccess key={api.user?.uid} api={api} />}
       <section className={s.panel}>
         <h2>Good work happens together.</h2>
         <p>
@@ -1843,7 +1848,7 @@ function Members({ api }: { api: Api }) {
         </p>
         {!api.configured ? (
           <p>Invitations are available after shared workspace configuration.</p>
-        ) : owner ? (
+        ) : manageMembers ? (
           <>
             {invite && (
               <>
@@ -1902,7 +1907,7 @@ function Members({ api }: { api: Api }) {
             </button>
           </>
         ) : (
-          <p>Ask your workspace owner for an invitation link.</p>
+          <p>Ask a workspace admin for an invitation link.</p>
         )}
       </section>
       <section className={s.panel}>
@@ -1916,10 +1921,17 @@ function Members({ api }: { api: Api }) {
             <div className={s.memberInfo}>
               {m.displayName}
               {m.id === api.user?.uid && " (you)"}
-              <small>{m.role === "owner" ? "Workspace owner" : "Member"}</small>
+              <small>{m.role === "owner" ? "Workspace owner" : m.role === "admin" ? "Workspace admin" : "Member"}</small>
             </div>
-            {api.configured && owner && m.id !== api.user?.uid && (
+            {api.configured && manageMembers && m.id !== api.user?.uid && m.role !== "owner" && (
               <>
+                {manageAdmins && (
+                  <button className={s.secondary} disabled={busy} onClick={() => {
+                    if (confirm(`${m.role === "admin" ? "Remove admin access from" : "Make workspace admin:"} ${m.displayName}?`))
+                      void run(() => api.changeMemberRole(m.id, m.role === "admin" ? "member" : "admin"));
+                  }}>{m.role === "admin" ? "Make member" : "Make admin"}</button>
+                )}
+                {owner && (
                 <button
                   className={s.secondary}
                   disabled={busy}
@@ -1934,6 +1946,8 @@ function Members({ api }: { api: Api }) {
                 >
                   Make owner
                 </button>
+                )}
+                {(manageAdmins || m.role === "member") && (
                 <button
                   className={s.secondary}
                   disabled={busy}
@@ -1944,6 +1958,7 @@ function Members({ api }: { api: Api }) {
                 >
                   Remove
                 </button>
+                )}
               </>
             )}
           </div>
@@ -2025,6 +2040,8 @@ function WorkspaceSetup({ api }: { api: Api }) {
           <AuthPanel api={api} />
         ) : (
           <>
+            {api.isRootAdmin && <WorkspaceAccess key={api.user?.uid} api={api} />}
+            <button className={s.secondary} disabled={busy} onClick={() => void run(api.refreshWorkspaces)}>Refresh workspace list</button>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2309,6 +2326,9 @@ export default function Home() {
             </option>
           ))}
         </select>
+        {api.configured && (
+          <button className={s.workspaceAction} onClick={() => void run(api.refreshWorkspaces)}>Refresh workspace list</button>
+        )}
         {api.configured && (
           <button
             className={s.workspaceAction}

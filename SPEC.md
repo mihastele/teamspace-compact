@@ -31,7 +31,7 @@ Custom databases, AI, notifications, public publishing and complex role hierarch
 - Workspace: sidebar with workspace name, Board, Notes, and Members.
 - Board: three columns, task count, Add task. Card shows title, assignee, due date. Detail editor holds description and attachments. Drag moves a card; a status selector provides keyboard/touch fallback.
 - Notes: expandable document tree, root/subnote creation, clickable breadcrumbs, and parent selection to move notes; visible synchronization status for live content and separate title/location save status. New/local-preview notes use explicit Save; configured saved notes synchronize text and blocks automatically. If the remote revision changes while editing, keep the local draft and offer reload/copy instead of overwriting. Clean notes reflect saved teammate changes. Parent moves and title changes use independent metadata revision checks. Move/delete child notes before deleting their parent; no implicit cascading deletion.
-- Members: member list and invite link. Owner can revoke an invite or remove a member. Members can leave; the last owner cannot leave without transferring ownership.
+- Members: member list, invite links and direct registered-account addition. Workspace admins manage invitations and ordinary members; owners/root admins manage administrator roles. Members can leave; the owner must transfer ownership before leaving.
 - Missing backend configuration: clearly labeled local prototype. No claim of shared data or authenticated access.
 
 ## Design
@@ -46,7 +46,7 @@ All timestamps are server timestamps; identifiers are generated IDs.
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | users/{uid}                      | displayName, photoURL, createdAt                                                                                                                                |
 | workspaces/{id}                  | name, ownerId, createdAt, noteTreeRevision (structural transaction coordination)                                                                                |
-| workspaces/{id}/members/{uid}    | role: owner/member, displayName, joinedAt                                                                                                                       |
+| workspaces/{id}/members/{uid}    | role: owner/admin/member, displayName, joinedAt; optional addedBy, roleUpdatedBy, roleUpdatedAt                                                                  |
 | workspaces/{id}/tasks/{id}       | title, description, status: todo/doing/done, assigneeId or null, dueDate: YYYY-MM-DD or null, position, createdBy, createdAt, updatedAt                         |
 | workspaces/{id}/notes/{id}       | title, parentId: same-workspace note ID or null, content: editor JSON, revision, createdBy, createdAt, updatedAt, updatedBy; missing legacy parentId means root |
 | workspaces/{id}/attachments/{id} | parentType, parentId, storagePath, originalName, contentType, bytes, uploadedBy, createdAt                                                                      |
@@ -58,7 +58,7 @@ Only a trusted server creates/redeems invitations. Validate Firebase ID tokens, 
 
 - Default-deny Firestore and Storage rules.
 - Only authenticated workspace members can read/write that workspace's tasks, notes, and attachments.
-- Workspace/membership administration is owner-only through trusted server handlers.
+- Workspace access administration uses trusted server handlers: workspace admins manage ordinary membership/invitations; owners/root admins manage admin roles; only owners transfer ownership.
 - Validate allowed fields, lengths, status values, immutable creator fields, and assigned membership.
 - Notes save through a transaction that checks the expected revision and increments it.
 - Hierarchy mutations validate the full parent chain inside a transaction, reject cycles/missing/deleting parents, and coordinate with parent deletion. Notes and their descendants always remain within one workspace's access boundary.
@@ -198,3 +198,11 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Task details reuse the existing editor, attachments and conversations. Add task for this day prefills its deadline; rescheduling through task details updates both views through existing shared subscriptions. Calendar navigation never mutates task data.
 - Deadlines remain date-only, interpreted against the viewer's local day. Date arithmetic and labels avoid timezone/DST shifts. Support Today, previous/next month and keyboard day/week/month navigation with visible selected-day focus.
 - No separate events, recurrence, external calendar integrations or drag-to-reschedule in this iteration. No schema, dependency or authorization change. Local preview remains device-local.
+
+### Workspace administrators and direct membership — 2026-10-04
+
+- Keep owner, workspace admin and member distinct. Workspace admins add existing registered accounts directly, manage invitations and remove ordinary members. Owners and root admins appoint/demote admins. Only owners transfer ownership. No self-promotion or owner demotion through role patches.
+- Root authority comes from exact server-configured account IDs. Root UI administers access across workspaces without automatic private-content access; no client metadata or workspace role can confer root status.
+- Direct addition by email or account ID skips invitation acceptance and never creates or confirms an account. Reauthorize after provider lookup; atomically write membership/account index and private permanent idempotency receipt. Retries after removal cannot resurrect membership.
+- Development auto-join uses an explicitly configured existing test workspace and once-only enrollment marker, respects removal/leave, and rejects configuration outside development. Normal email-confirmation policy still applies. Production auto-join is unavailable.
+- Root/admin UI reports acknowledgement/failure and keeps uncertain retry identities. Added users explicitly refresh their workspace list or sign in again. Migration 008 documents additive models, Supabase service-only lookup, access checks, export/deletion and deployment. No public user directory or SDK writes.
