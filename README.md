@@ -233,8 +233,10 @@ npm run build
 The GitHub workflow repeats these checks on pushes and pull requests with Node 24,
 Java 21 and no production credentials. Actions are pinned to verified commit IDs;
 the runtime audit gate fails for high/critical findings. Moderate and development
-tool findings still require review before release. The workflow itself has not
-run remotely yet.
+tool findings still require review before release. The workflow passed remotely
+for application commit `9784c4b` in [run 37223851701](https://github.com/mihastele/teamspace-compact/actions/runs/37223851701).
+See [.agentic/DEPENDENCY-REVIEW.md](.agentic/DEPENDENCY-REVIEW.md) for the refreshed
+audit, remaining findings and upgrade constraints.
 
 On this Windows/Corretto installation, emulator startup needs a process-only
 workaround: set `JAVA_TOOL_OPTIONS` to
