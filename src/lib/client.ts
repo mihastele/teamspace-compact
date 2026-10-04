@@ -22,6 +22,7 @@ import {
   type AuthConfiguration,
 } from "./browser-backend";
 export { browserConfigurationStatus } from "./browser-backend";
+import { buildInviteUrl, resolveAppBaseUrl } from "./app-url";
 import type {
   Attachment,
   Member,
@@ -1106,7 +1107,10 @@ export function useTeamspace() {
       action(async () => {
         if (!configured) return unavailable();
         const data = await api(`${path()}/invites`, "POST", {});
-        return `${location.origin}/?invite=${encodeURIComponent(data.token)}`;
+        if (typeof data.inviteUrl === "string" && data.inviteUrl) {
+          return data.inviteUrl as string;
+        }
+        return buildInviteUrl(data.token, resolveAppBaseUrl());
       }),
     revokeInvite: () =>
       action(async () => {

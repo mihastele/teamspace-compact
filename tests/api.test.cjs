@@ -865,6 +865,7 @@ test("invitation redemption is atomic, idempotent for members, and use limits ca
   });
   assert.equal(created.status, 201);
   assert.equal(created.data.token.length, 43);
+  assert.ok(created.data.inviteUrl.includes(`?invite=${encodeURIComponent(created.data.token)}`));
   const stored = (await db.doc(`invites/${created.data.hash}`).get()).data();
   assert.equal("token" in stored, false);
   const results = await Promise.all(

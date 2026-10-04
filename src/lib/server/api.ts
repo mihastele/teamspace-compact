@@ -27,6 +27,7 @@ import { supabaseStorage } from "./supabase-storage";
 import { assertAuthPolicy, guardedDocumentStore } from "./auth-policy";
 import { accessConfiguration, isRootAdmin } from "./access-config";
 import { resolveRegisteredAccount, type AccountResolver } from "./registered-accounts";
+import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
 type DecodedIdToken = { uid: string; name?: string; picture?: string; email?: string; email_verified?: boolean };
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
@@ -1229,6 +1230,7 @@ async function inviteOperation(
   method: string,
   id: string | undefined,
   input?: unknown,
+  request?: Request,
 ) {
   if (method === "DELETE" && !id) {
     await db.runTransaction(async (tx) => {
@@ -1304,8 +1306,15 @@ async function inviteOperation(
       uses: 0,
     });
   });
+  const baseUrl = resolveAppBaseUrl(request);
+  const inviteUrl = buildInviteUrl(token, baseUrl);
   return json(
-    { token, hash: tokenHash, expiresAt: expiresAt.toDate().toISOString() },
+    {
+      token,
+      hash: tokenHash,
+      expiresAt: expiresAt.toDate().toISOString(),
+      inviteUrl,
+    },
     201,
   );
 }
@@ -1957,6 +1966,7 @@ export async function handleTrustedApi(
         method,
         itemId,
         method === "POST" ? await body(request) : undefined,
+        request,
       );
     if (resource === "members" && itemId && !action && method === "DELETE")
       return await removeMember(db, workspace, user, itemId);

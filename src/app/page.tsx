@@ -36,6 +36,7 @@ import {
 } from "@/lib/task-deadlines";
 import { useLocalDay } from "@/lib/use-local-day";
 import { taskEditPatch } from "@/lib/task-status";
+import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "calendar" | "notes" | "members";
@@ -1876,11 +1877,11 @@ function Members({ api }: { api: Api }) {
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  const token = await api.createInvite();
+                  const result = await api.createInvite();
                   setInvite(
-                    token.startsWith(`${location.origin}/?invite=`)
-                      ? token
-                      : `${location.origin}/?invite=${encodeURIComponent(token)}`,
+                    result.includes("?invite=")
+                      ? result
+                      : buildInviteUrl(result),
                   );
                   setCopied(false);
                 })

@@ -31,7 +31,7 @@ Custom databases, AI, notifications, public publishing and complex role hierarch
 - Workspace: sidebar with workspace name, Board, Notes, and Members.
 - Board: three columns, task count, Add task. Card shows title, assignee, due date. Detail editor holds description and attachments. Drag moves a card; a status selector provides keyboard/touch fallback.
 - Notes: expandable document tree, root/subnote creation, clickable breadcrumbs, and parent selection to move notes; visible synchronization status for live content and separate title/location save status. New/local-preview notes use explicit Save; configured saved notes synchronize text and blocks automatically. If the remote revision changes while editing, keep the local draft and offer reload/copy instead of overwriting. Clean notes reflect saved teammate changes. Parent moves and title changes use independent metadata revision checks. Move/delete child notes before deleting their parent; no implicit cascading deletion.
-- Members: member list, invite links and direct registered-account addition. Workspace admins manage invitations and ordinary members; owners/root admins manage administrator roles. Members can leave; the owner must transfer ownership before leaving.
+- Members: member list, invite links and direct registered-account addition. Workspace admins manage invitations and ordinary members; owners/root admins manage administrator roles. Members can leave; the owner must transfer ownership before leaving. Invite links use configured domain names (`APP_URL` / `SITE_URL` / `NEXT_PUBLIC_APP_URL`) or request host headers rather than a hardcoded loopback origin.
 - Missing backend configuration: clearly labeled local prototype. No claim of shared data or authenticated access.
 
 ## Design

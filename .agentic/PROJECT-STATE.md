@@ -355,3 +355,11 @@
 - Rebuilt website container with verified public anonymous key arguments. All 12 Supabase containers (`web`, `api-gw`, `db`, `auth`, `storage`, `rest`, `realtime`, `supavisor`, `meta`, `studio`, `edge-functions`, `imgproxy`) are running and passing health checks.
 - PASSED: all 138 unit/model/provider/storage cases, compose configuration validation, lint, and HTTP smoke tests (website HTTP 200, Auth health HTTP 200, Storage status HTTP 200, RPC state HTTP 200).
 
+### 2026-10-04 — Configurable domain name for invite links
+
+- Added configurable domain name and base URL resolution for shareable workspace invite links instead of hardcoding browser loopback origin (`localhost`).
+- Added `src/lib/app-url.ts` providing URL and domain normalization (automatic scheme addition for bare domains/loopback, trailing slash cleanup) and layered resolution: `APP_URL`, `SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`, request headers (`x-forwarded-host`, `x-forwarded-proto`, `host`), or browser location origin.
+- Trusted server `inviteOperation` in `src/lib/server/api.ts` returns `inviteUrl` directly using the resolved base URL. Client `createInvite` in `src/lib/client.ts` and `src/app/page.tsx` uses the resolved invite URL directly without prepending or rewriting `location.origin`.
+- Added `APP_URL` and `SITE_URL` to `docker.compose.supabase.yml` web service environment and documented in `.env.example`, `.env.supabase.example`, `SetupGuide.tsx`, `README.md`, and `SPEC.md`.
+- PASSED: 144 unit/model/provider/storage/app-url cases, Compose validation, standalone typecheck, lint, and optimized production build (`next build`).
+
