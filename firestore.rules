@@ -27,11 +27,23 @@ service cloud.firestore {
       match /tasks/{taskId} {
         allow read: if isMember(workspaceId);
         allow write: if false;
+        match /comments/{commentId} {
+          allow read: if isMember(workspaceId)
+            && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/tasks/$(taskId))
+            && !get(/databases/$(database)/documents/workspaces/$(workspaceId)/tasks/$(taskId)).data.get('deleting', false);
+          allow write: if false;
+        }
       }
 
       match /notes/{noteId} {
         allow read: if isMember(workspaceId);
         allow write: if false;
+        match /comments/{commentId} {
+          allow read: if isMember(workspaceId)
+            && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/notes/$(noteId))
+            && !get(/databases/$(database)/documents/workspaces/$(workspaceId)/notes/$(noteId)).data.get('deleting', false);
+          allow write: if false;
+        }
         match /presence/{sessionId} {
           allow read: if isMember(workspaceId) && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/notes/$(noteId));
           allow write: if false;

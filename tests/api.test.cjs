@@ -75,6 +75,219 @@ async function api(uid, method, path, input, storageOverride = storage) {
 }
 const prefix = "workspaces/alpha";
 
+test("conversations preserve concurrent posts and acknowledge exact retry identities", async () => {
+  const path = `${prefix}/notes/note/comments`;
+  const packet = {
+    operationId: randomUUID(),
+    body: "Hello @{member} and @{member}",
+  };
+  const [a, b] = await Promise.all([
+    api("owner", "POST", path, packet),
+    api("member", "POST", path, { operationId: randomUUID(), body: "Reply" }),
+  ]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.notEqual(a.data.comment.id, b.data.comment.id);
+  assert.deepEqual(a.data.comment.mentions, [
+    { uid: "member", displayName: "Member" },
+  ]);
+  assert.equal(a.data.comment.authorId, "owner");
+  assert.equal(a.data.comment.authorName, "owner");
+  assert.equal(typeof a.data.comment.createdAt, "number");
+  assert.deepEqual(
+    (await api("owner", "POST", path, packet)).data.comment,
+    a.data.comment,
+  );
+  assert.equal(
+    (await api("owner", "POST", path, { ...packet, body: "Different" })).status,
+    409,
+  );
+  assert.equal((await db.collection(path).get()).size, 2);
+});
+
+test("conversation input membership and deletion authorization reject impersonation", async () => {
+  const path = `${prefix}/tasks/task/comments`;
+  for (const packet of [
+    { operationId: randomUUID(), body: "" },
+    { operationId: randomUUID(), body: "x".repeat(4001) },
+    { operationId: randomUUID(), body: "x\u0000" },
+    { operationId: randomUUID(), body: "Pretend", authorId: "owner" },
+    { operationId: randomUUID(), body: "@{outsider}" },
+    { operationId: randomUUID(), body: "@{bad/id}" },
+  ])
+    assert.equal((await api("member", "POST", path, packet)).status, 400);
+  assert.equal(
+    (
+      await api("outsider", "POST", path, {
+        operationId: randomUUID(),
+        body: "Attack",
+      })
+    ).status,
+    403,
+  );
+  const created = await api("member", "POST", path, {
+    operationId: randomUUID(),
+    body: "Mine",
+  });
+  assert.equal(created.status, 200);
+  assert.equal(
+    (await api("owner", "DELETE", `${path}/${created.data.comment.id}`)).status,
+    403,
+  );
+  await db.doc(`${prefix}/members/member`).delete();
+  assert.equal(
+    (await api("member", "DELETE", `${path}/${created.data.comment.id}`))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await db.doc(`${path}/${created.data.comment.id}`).get()).data().body,
+    "Mine",
+  );
+});
+
+test("comment tombstones erase content and replay cannot resurrect it after mention removal", async () => {
+  const path = `${prefix}/tasks/task/comments`;
+  const packet = { operationId: randomUUID(), body: "Ping @{member}" };
+  const created = await api("owner", "POST", path, packet);
+  const id = created.data.comment.id;
+  assert.equal((await api("owner", "DELETE", `${path}/${id}`)).status, 200);
+  await db.doc(`${prefix}/members/member`).delete();
+  const replay = await api("owner", "POST", path, packet);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.comment.deleted, true);
+  assert.equal(replay.data.comment.body, "");
+  assert.deepEqual(replay.data.comment.mentions, []);
+  assert.equal((await api("owner", "DELETE", `${path}/${id}`)).status, 200);
+  assert.equal((await db.collection(path).get()).size, 1);
+});
+
+test("parent deletion races cannot orphan or resurrect page or task comments", async () => {
+  for (const [resource, id] of [
+    ["notes", "note"],
+    ["tasks", "task"],
+  ]) {
+    const parent = `${prefix}/${resource}/${id}`;
+    const results = await Promise.all([
+      api("member", "POST", `${parent}/comments`, {
+        operationId: randomUUID(),
+        body: "Racing",
+      }),
+      api("owner", "DELETE", parent),
+    ]);
+    assert.ok([200, 404, 409].includes(results[0].status));
+    assert.equal(results[1].status, 200);
+    assert.equal((await db.doc(parent).get()).exists, false);
+    assert.equal((await db.collection(`${parent}/comments`).get()).size, 0);
+    assert.equal(
+      (
+        await api("member", "POST", `${parent}/comments`, {
+          operationId: randomUUID(),
+          body: "Late",
+        })
+      ).status,
+      404,
+    );
+  }
+});
+
+test("history restores preserve conversations and failed cleanup remains fenced and retryable", async () => {
+  const parent = `${prefix}/notes/note`;
+  const created = await api("member", "POST", `${parent}/comments`, {
+    operationId: randomUUID(),
+    body: "Still here",
+  });
+  assert.equal(
+    (
+      await api("owner", "POST", `${parent}/history`, {
+        expectedRevision: 1,
+        name: "Original",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await api("owner", "POST", `${parent}/restore`, {
+        expectedRevision: 1,
+        versionId: "r1",
+        operationId: randomUUID(),
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await db.doc(`${parent}/comments/${created.data.comment.id}`).get()).data()
+      .body,
+    "Still here",
+  );
+  const original = db.recursiveDelete;
+  db.recursiveDelete = async function (ref, ...args) {
+    if (ref.id === "comments")
+      throw new Error("Simulated comments cleanup failure");
+    return original.call(this, ref, ...args);
+  };
+  try {
+    assert.equal((await api("owner", "DELETE", parent)).status, 500);
+  } finally {
+    db.recursiveDelete = original;
+  }
+  assert.equal((await db.doc(parent).get()).data().deleting, true);
+  assert.equal(
+    (
+      await api("member", "POST", `${parent}/comments`, {
+        operationId: randomUUID(),
+        body: "Blocked",
+      })
+    ).status,
+    409,
+  );
+  assert.equal((await api("owner", "DELETE", parent)).status, 200);
+  assert.equal((await db.collection(`${parent}/comments`).get()).size, 0);
+});
+
+test("conversation posting limits are server enforced and mention count is bounded", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const path = `${prefix}/tasks/task/comments`;
+  await Promise.all(
+    Array.from({ length: 11 }, (_, i) =>
+      db
+        .doc(`${prefix}/members/u${i}`)
+        .set({ role: "member", displayName: `User ${i}` }),
+    ),
+  );
+  const tooMany = Array.from({ length: 11 }, (_, i) => `@{u${i}}`).join(" ");
+  assert.equal(
+    (
+      await api("member", "POST", path, {
+        operationId: randomUUID(),
+        body: tooMany,
+      })
+    ).status,
+    400,
+  );
+  for (let i = 0; i < 19; i++)
+    assert.equal(
+      (
+        await api("member", "POST", path, {
+          operationId: randomUUID(),
+          body: `Message ${i}`,
+        })
+      ).status,
+      200,
+    );
+  assert.equal(
+    (
+      await api("member", "POST", path, {
+        operationId: randomUUID(),
+        body: "Excess",
+      })
+    ).status,
+    429,
+  );
+  assert.equal((await db.collection(path).get()).size, 19);
+});
+
 test("history checkpoints capture initial saved state and five-minute cadence with immutable naming", async () => {
   const created = await api("member", "POST", `${prefix}/notes`, {
     title: "Start",

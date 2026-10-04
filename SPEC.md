@@ -174,3 +174,11 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - A restore uses a fresh Yjs generation. Reject stale-generation edits, retain local pending work for Markdown recovery, and offer atomic device-local archival before reloading synchronization. Remote events never write local edits back.
 - History/receipts remain private to trusted member-authorized APIs. Naming and restoring are rate limited. Page deletion fences writes and removes all versions/receipts; migration 005 documents rollout and export/deletion. Local preview mirrors visible behavior with atomic browser persistence and device-local labeling.
 - Automated concurrency/recovery/security tests are required; live two-user restore, IME, modal focus, downloads and mobile acceptance remain external verification gates.
+
+### Page/task conversations and mentions — 2026-10-04
+
+- Saved pages and tasks have independent, live, latest-50 conversations. Individual block comments are deferred by user choice. Messages are immutable, plain text, with author-only deletion and Markdown export of the visible window.
+- @mentions use current workspace membership and server-resolved identities/names. Render message text and member names safely; notification delivery/inbox/email remain outside this iteration.
+- Posting is optimistic, acknowledged explicitly and idempotent by authenticated UID plus operation UUID. Persist exact body/identity before sending; uncertain responses retain that request across refresh. Fence same-account draft writers across tabs. Storage failure keeps recovery visible and blocks transmission until durable.
+- Default-deny browser writes remain; reads require membership and a live parent. Server transactions validate bounds, author, mentions and posting/deletion rate limits. Tombstones erase message text/mentions and prevent stale duplicate resurrection. Conversation storage is removed through fenced parent deletion and remains intact during page restore.
+- Migration 006 documents additive schema, indexing, access control, retention/export/deletion and rollback. Older-message pagination, editing, moderation, notifications and block anchors remain later features. Browser interaction/real two-user acceptance remains an external gate.

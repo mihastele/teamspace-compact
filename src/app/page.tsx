@@ -25,6 +25,7 @@ import { exportNoteMarkdown } from "@/lib/note-export";
 import { matchNote } from "@/lib/note-search";
 import SetupGuide from "./components/SetupGuide";
 import { PageHistoryAction } from "./components/PageHistory";
+import Conversation from "./components/Conversation";
 import {
   deadlineState,
   matchesDeadline,
@@ -238,6 +239,7 @@ function TaskDialog({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [commentRecoveryRisk, setCommentRecoveryRisk] = useState(false);
   const original = JSON.stringify({
     title: initial.title || "",
     description: initial.description || "",
@@ -255,6 +257,14 @@ function TaskDialog({
       dueDate: draft.dueDate,
     });
   function attemptClose() {
+    if (busy) return;
+    if (
+      commentRecoveryRisk &&
+      !confirm(
+        "Your comment draft could not be stored on this device. Copy or download it before leaving. Close anyway?",
+      )
+    )
+      return;
     if (!busy && (!changed || confirm("Discard unsaved task changes?")))
       close();
   }
@@ -269,6 +279,13 @@ function TaskDialog({
     };
   }, []);
   async function save() {
+    if (
+      commentRecoveryRisk &&
+      !confirm(
+        "Your comment draft could not be stored. Copy or download it before saving and closing this task. Continue anyway?",
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     try {
@@ -296,7 +313,17 @@ function TaskDialog({
     }
   }
   async function remove() {
-    if (!initial.id || !confirm("Delete this task and its attachments?"))
+    if (
+      commentRecoveryRisk &&
+      !confirm(
+        "Your comment draft could not be stored. Copy or download it before deleting this task. Continue anyway?",
+      )
+    )
+      return;
+    if (
+      !initial.id ||
+      !confirm("Delete this task, its attachments and conversation?")
+    )
       return;
     setBusy(true);
     try {
@@ -407,6 +434,18 @@ function TaskDialog({
             <Attachments api={api} type="task" id={initial.id} />
           ) : (
             <p className={s.hint}>Save your task to add attachments.</p>
+          )}
+          {initial.id ? (
+            <Conversation
+              key={`${api.user?.uid || "preview"}:${api.workspace!.id}:task:${initial.id}`}
+              api={api}
+              parentType="task"
+              parentId={initial.id}
+              disabled={busy}
+              onRecoveryRisk={setCommentRecoveryRisk}
+            />
+          ) : (
+            <p className={s.hint}>Save your task to start a conversation.</p>
           )}
         </div>
         <div className={s.dialogActions}>
@@ -732,7 +771,16 @@ function Notes({
   );
   const selection = selections[workspaceId] || { id: null, newParentId: null };
   const selected = selection.id;
+  const [commentRisk, setCommentRisk] = useState({ key: "", risk: false });
   function selectNote(id: string | null, newParentId: string | null = null) {
+    if (
+      commentRisk.key === key &&
+      commentRisk.risk &&
+      !confirm(
+        "Your comment draft could not be stored on this device. Copy or download it before leaving. Switch pages anyway?",
+      )
+    )
+      return;
     if (!id) requestAnimationFrame(() => noteTitleRef.current?.focus());
     setSelections((prev) => ({ ...prev, [workspaceId]: { id, newParentId } }));
     const reveal = id
@@ -754,6 +802,14 @@ function Notes({
   const selectionKey = (value: NoteSelection) =>
     value.id || `new:${value.newParentId || "root"}`;
   const key = `${workspaceId}:${selectionKey(selection)}`;
+  const onCommentRisk = useCallback(
+    (risk: boolean) => {
+      setCommentRisk((previous) =>
+        risk || previous.key === key ? { key, risk } : previous,
+      );
+    },
+    [key],
+  );
   const noteTitleRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!selected) noteTitleRef.current?.focus();
@@ -881,6 +937,7 @@ function Notes({
               ? "Wait for acknowledged synchronization, or recover pending edits before saving or restoring a version."
               : null;
   const anyDirty =
+    (commentRisk.key === key && commentRisk.risk) ||
     compositionDraft.pending ||
     collaboration.pending ||
     Object.values(drafts).some((d) =>
@@ -1736,6 +1793,18 @@ function Notes({
             <Attachments api={api} type="note" id={selected} />
           </div>
         )}
+        {selected && remote ? (
+          <Conversation
+            key={`${api.user?.uid || "preview"}:${workspaceId}:note:${selected}`}
+            api={api}
+            parentType="note"
+            parentId={selected}
+            disabled={api.loading || draft.state === "Saving"}
+            onRecoveryRisk={onCommentRisk}
+          />
+        ) : (
+          <p className={s.hint}>Save your page to start a conversation.</p>
+        )}
       </section>
     </div>
   );
@@ -2134,7 +2203,15 @@ export default function Home() {
   const api = useTeamspace();
   const [view, setView] = useState<View>("board");
   const [search, setSearch] = useState("");
-  const [task, setTask] = useState<Partial<Task> | null>(null);
+  const [taskSelection, setTaskSelection] = useState<{
+    scope: string;
+    value: Partial<Task>;
+  } | null>(null);
+  const taskScope = `${api.user?.uid || "preview"}:${api.workspace?.id || "none"}`;
+  const task = taskSelection?.scope === taskScope ? taskSelection.value : null;
+  function setTask(value: Partial<Task> | null) {
+    setTaskSelection(value ? { scope: taskScope, value } : null);
+  }
   const [error, setError] = useState("");
   const [filter, setFilter] = useState(false);
   const [workspaceDialog, setWorkspaceDialog] = useState(false);
@@ -2417,7 +2494,12 @@ export default function Home() {
       </main>
       {!api.configured && <SetupGuide />}
       {task && (
-        <TaskDialog api={api} initial={task} close={() => setTask(null)} />
+        <TaskDialog
+          key={`${taskScope}:${task.id || "new"}`}
+          api={api}
+          initial={task}
+          close={() => setTask(null)}
+        />
       )}
       {api.configured &&
         (workspaceDialog ||

@@ -52,6 +52,15 @@ export type PageVersionSummary = {
   expiresAt: number | null;
 };
 export type PageVersion = PageVersionSummary & { content: NoteContent };
+export type ConversationComment = {
+  id: string;
+  body: string;
+  authorId: string;
+  authorName: string;
+  createdAt: number;
+  deleted: boolean;
+  mentions: { uid: string; displayName: string }[];
+};
 export type Member = {
   id: string;
   displayName: string;

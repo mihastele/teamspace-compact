@@ -110,3 +110,15 @@ Restore requires a clean, acknowledged page and confirmation. It restores title/
 A restore starts a fresh collaboration generation. Other viewers reload synchronization with Retry. Pending edits from the old generation stay blocked and downloadable; Keep recovery locally & reload archives them atomically in this browser before reopening the restored page. Download archived recovery exports the most recent local archive. Archives are not cloud versions and are lost if browser data is cleared; closed stale journals may need separate recovery when reopened.
 
 Deploy the additive schema/index/TTL configuration described in `migrations/005-page-history.md` before using the updated client. Version reads and restores are member-authorized trusted transactions; direct SDK access remains denied. Named versions and retry receipts grow until page deletion. Full workspace export and browser interaction acceptance remain open features/checks.
+
+## Page and task conversations
+
+Saved pages and task details have a shared conversation showing the latest 50 messages. Add plain-text messages, choose a workspace member to insert an @mention, delete your own messages, or download the visible conversation as Markdown. Conversations survive page history restore; deleting the page or task removes its conversation. New pages/tasks need to be saved first. Preview conversations and drafts stay on this device.
+
+Messages post independently of the editor. Pending messages show their status and retain an exact retry identity/body before transmission, so refresh or a lost response cannot duplicate a retry. Browser storage failures keep the draft visible and offer recovery; posting waits until recovery storage works. One tab per account/conversation owns the draft writer lock; other tabs can read messages and retry composer access after the owning tab closes. Different members can post simultaneously.
+
+If an uncertain retry is rejected after access is removed or the parent is deleted, its original identity remains retained. Download/copy the draft for recovery; the rejection cannot prove whether the earlier attempt committed. Browser-local recovery can outlive its server conversation and is removed by clearing browser data.
+
+Mentions identify current workspace members and render as safe labels; they do not send notifications or email in this iteration. Messages are immutable except author deletion, which erases text/mentions and leaves a tombstone to prevent stale retries from resurrecting them. Older messages remain stored but pagination/editing/moderation are later features. Full export is separate; the conversation download covers only the visible latest-50 window.
+
+Deploy the rules/index configuration in `migrations/006-conversations.md` before the updated API/client. Conversation reads require current membership and a live parent; browser writes remain denied. Trusted mutations validate author identity, mentions, bounds and rate limits. Browser interaction and authenticated two-user acceptance remain required release checks.

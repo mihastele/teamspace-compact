@@ -18,6 +18,8 @@
     }
   ],
   "fieldOverrides": [
+    { "collectionGroup": "comments", "fieldPath": "body", "indexes": [] },
+    { "collectionGroup": "comments", "fieldPath": "mentions", "indexes": [] },
     {
       "collectionGroup": "historyVersions",
       "fieldPath": "content",

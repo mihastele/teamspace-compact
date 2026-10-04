@@ -311,3 +311,61 @@ test("history snapshots and restore receipts remain private to trusted APIs", as
     }
   }
 });
+
+test("conversation reads require current membership and live parent while browser writes stay denied", async () => {
+  for (const [resource, id] of [
+    ["notes", "note"],
+    ["tasks", "task"],
+  ]) {
+    const parent = `${workspace}/${resource}/${id}`;
+    const path = `${parent}/comments/comment`;
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), path), {
+        body: "Discussion",
+        authorId: "member",
+        createdAt: new Date(),
+        deleted: false,
+        mentions: [],
+      });
+    });
+    for (const uid of ["owner", "member"]) {
+      const db = environment.authenticatedContext(uid).firestore();
+      await assertSucceeds(getDoc(doc(db, path)));
+      await assertSucceeds(getDocs(collection(db, `${parent}/comments`)));
+      await assertFails(setDoc(doc(db, path), { body: "Overwrite" }));
+      await assertFails(deleteDoc(doc(db, path)));
+    }
+    await assertFails(
+      getDoc(
+        doc(environment.authenticatedContext("outsider").firestore(), path),
+      ),
+    );
+    await assertFails(
+      getDoc(doc(environment.unauthenticatedContext().firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), `${workspace}/members/member`));
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("member").firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), `${workspace}/members/member`), {
+        role: "member",
+        displayName: "Member",
+      });
+    });
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), parent), { deleting: true });
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("member").firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), parent));
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("owner").firestore(), path)),
+    );
+  }
+});

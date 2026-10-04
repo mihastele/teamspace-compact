@@ -10,8 +10,9 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
-import { collection, getFirestore, onSnapshot } from "firebase/firestore";
-import type { Attachment, Member, Note, Task, Workspace, PageVersion, PageVersionSummary } from "./model";
+import { collection, getFirestore, onSnapshot, query, orderBy, limit, documentId } from "firebase/firestore";
+import type { Attachment, Member, Note, Task, Workspace, PageVersion, PageVersionSummary, ConversationComment } from "./model";
+import { commentWindow, postPreviewComment, deletePreviewComment, type PreviewComment, type ConversationParent, type CommentPacket } from "./conversations";
 import { checkpointLocalPage, nameLocalVersion, restoreLocalPage, visibleVersions, reconcilePageSnapshots, type LocalPageHistory } from "./page-history";
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
@@ -75,7 +76,7 @@ const demoTasks: Task[] = [
     position: 2,
   },
 ];
-type Preview = { tasks: Task[]; notes: Note[]; histories?: Record<string, LocalPageHistory> };
+type Preview = { tasks: Task[]; notes: Note[]; histories?: Record<string, LocalPageHistory>; conversations?: Record<string, PreviewComment[]> };
 export type DocumentPresence = {
   id: string;
   displayName: string;
@@ -111,6 +112,10 @@ export function useTeamspace() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [watchEpoch, setWatchEpoch] = useState(0);
   const preview = useRef<Preview>({ tasks: demoTasks, notes: [] });
+  const commentObservers = useRef(new Set<{
+    parentType: ConversationParent; parentId: string;
+    next: (rows: ConversationComment[]) => void; fail: (error: Error) => void;
+  }>());
   const ready = useRef(false);
   const noteObservers = useRef(
     new Set<{
@@ -130,6 +135,14 @@ export function useTeamspace() {
         : "Something went wrong. Please try again.";
     setError(message);
     return new Error(message);
+  }, []);
+  const notifyPreviewComments = useCallback(() => {
+    for (const observer of commentObservers.current) {
+      const parents = observer.parentType === "note" ? preview.current.notes : preview.current.tasks;
+      if (!parents.some(item => item.id === observer.parentId))
+        observer.fail(new Error("This page or task was removed. Your message draft is kept locally."));
+      else observer.next(commentWindow(preview.current.conversations?.[`${observer.parentType}:${observer.parentId}`] ?? []));
+    }
   }, []);
   const api = useCallback(
     async (
@@ -207,6 +220,7 @@ export function useTeamspace() {
           );
         }
         ready.current = true;
+        notifyPreviewComments();
       });
       return () => {
         cancelled = true;
@@ -235,7 +249,7 @@ export function useTeamspace() {
           });
       } else setLoading(false);
     });
-  }, [loadWorkspaces, report]);
+  }, [loadWorkspaces, report, notifyPreviewComments]);
   useEffect(() => {
     if (!configured || !user || !workspace) return;
     const db = getFirestore(getApp());
@@ -325,6 +339,10 @@ export function useTeamspace() {
     preview.current = next;
     setTasks(next.tasks);
     setNotes(next.notes);
+    notifyPreviewComments();
+  }
+  function hasPreviewParent(type: ConversationParent, id: string) {
+    return (type === "note" ? preview.current.notes : preview.current.tasks).some(item => item.id === id);
   }
   async function action<T>(fn: () => Promise<T>): Promise<T> {
     try {
@@ -355,6 +373,58 @@ export function useTeamspace() {
     notes,
     members,
     attachments,
+    subscribeComments: (parentType: ConversationParent, parentId: string, next: (rows: ConversationComment[]) => void, fail: (error: Error) => void) => {
+      let active = true;
+      if (!configured) {
+        const observer = { parentType, parentId, next, fail };
+        commentObservers.current.add(observer);
+        queueMicrotask(() => { if (active && ready.current) notifyPreviewComments(); });
+        return () => { active = false; commentObservers.current.delete(observer); };
+      }
+      if (!user) throw new Error("Sign in to open a conversation.");
+      const boundUid = user.uid;
+      const un = onSnapshot(query(
+        collection(getFirestore(getApp()), `${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`),
+        orderBy("createdAt", "desc"), orderBy(documentId(), "desc"), limit(50),
+      ), snapshot => {
+        if (!active || getAuth(getApp()).currentUser?.uid !== boundUid) return;
+        next(snapshot.docs.map(row => {
+          const value = row.data();
+          return { id: row.id, body: value.body, authorId: value.authorId, authorName: value.authorName,
+            createdAt: value.createdAt?.toMillis?.() ?? 0, deleted: value.deleted === true, mentions: value.mentions ?? [] } as ConversationComment;
+        }).reverse());
+      }, error => { if (active && getAuth(getApp()).currentUser?.uid === boundUid) fail(error); });
+      return () => { active = false; un(); };
+    },
+    postComment: async (parentType: ConversationParent, parentId: string, packet: CommentPacket): Promise<ConversationComment> => {
+      if (!configured) {
+        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        const key = `${parentType}:${parentId}`;
+        // Hashing yields asynchronously; serialize preview comment writes against latest state.
+        const rows = await postPreviewComment(preview.current.conversations?.[key] ?? [], packet, members, Date.now());
+        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        const current = preview.current.conversations?.[key] ?? [];
+        const appended = rows.find(item => item.operationId === packet.operationId)!;
+        const duplicate = current.find(item => item.operationId === packet.operationId);
+        if (duplicate && duplicate.digest !== appended.digest) throw new Error("A message request identity cannot be reused.");
+        const merged = duplicate ? current : [...current, appended];
+        persist({ ...preview.current, conversations: { ...preview.current.conversations, [key]: merged } });
+        return duplicate ?? appended;
+      }
+      if (!user) throw new Error("Sign in to send a message.");
+      const data = await api(`${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`, "POST", packet, user.uid);
+      return data.comment as ConversationComment;
+    },
+    deleteComment: async (parentType: ConversationParent, parentId: string, commentId: string) => {
+      if (!configured) {
+        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        const key = `${parentType}:${parentId}`;
+        persist({ ...preview.current, conversations: { ...preview.current.conversations, [key]: deletePreviewComment(preview.current.conversations?.[key] ?? [], commentId) } });
+        return;
+      }
+      if (!user) throw new Error("Sign in to delete a message.");
+      await api(`${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments/${commentId}`, "DELETE", undefined, user.uid);
+    },
     restartSubscriptions: () => setWatchEpoch((epoch) => epoch + 1),
     listPageHistory: async (noteId: string, before?: number) => {
       if (!configured) {
@@ -615,6 +685,7 @@ export function useTeamspace() {
           persist({
             ...preview.current,
             tasks: preview.current.tasks.filter((t) => t.id !== id),
+            conversations: Object.fromEntries(Object.entries(preview.current.conversations ?? {}).filter(([key]) => key !== `task:${id}`)),
           });
           return;
         }
@@ -682,6 +753,7 @@ export function useTeamspace() {
             ...preview.current,
             notes: preview.current.notes.filter((n) => n.id !== id),
             histories: Object.fromEntries(Object.entries(preview.current.histories ?? {}).filter(([noteId]) => noteId !== id)),
+            conversations: Object.fromEntries(Object.entries(preview.current.conversations ?? {}).filter(([key]) => key !== `note:${id}`)),
           });
           return;
         }
