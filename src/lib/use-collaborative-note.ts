@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { useTeamspace, DocumentPresence } from "./client";
 import {
   CollaborationController,
@@ -9,6 +9,7 @@ import {
 import { indexedRecoveryStore } from "./collaboration-store";
 import type { NoteContent } from "./model";
 import { decodeDocument, readContent } from "./collaboration-model";
+import { linkableTypes } from "./linked-content";
 
 type Api = ReturnType<typeof useTeamspace>;
 const initialView: CollaborationView = {
@@ -348,7 +349,7 @@ export function useCollaborativeNote({
     };
   }, [enabled, noteId, uid, workspaceId, key, restart]);
   const view = state.key === key && enabled ? state.view : initialView;
-  return {
+  return useMemo(() => ({
     ...view,
     presence: enabled && presence.key === key ? presence.rows : [],
     archivedRecoveryContent:
@@ -362,6 +363,12 @@ export function useCollaborativeNote({
     change: (next: NoteContent, base?: NoteContent) => {
       if (enabled && controller.current?.key === key)
         controller.current.instance.change(next, base);
+    },
+    changeChecked: (next: NoteContent, base?: NoteContent, requiredBlockId?: string) => {
+      if (requiredBlockId && !controller.current?.instance.getSnapshot().content?.blocks.some(block => block.id === requiredBlockId && linkableTypes.has(block.type)))
+        throw new Error("The original block was deleted or changed. Keep your text before reloading.");
+      if (!enabled || controller.current?.key !== key || !controller.current.instance.change(next, base))
+        throw new Error(controller.current?.instance.getSnapshot().error || "The source is not editable. Keep your text and retry synchronization.");
     },
     retry: () => {
       if (!enabled) return;
@@ -380,5 +387,5 @@ export function useCollaborativeNote({
       if (enabled && controller.current?.key === key)
         controller.current.instance.redo();
     },
-  };
+  }), [view, enabled, presence, key, archivedRecovery, archiveError]);
 }

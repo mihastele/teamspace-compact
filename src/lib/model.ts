@@ -7,6 +7,15 @@ export type BoardProperty = {
   revision: number;
 };
 export type PropertyValue = string | string[] | null;
+export type BoardView = {
+  name: string;
+  query: string;
+  status: "all" | Status;
+  assignee: string;
+  deadline: "all" | "overdue" | "today" | "week" | "undated";
+  sort: "position" | "title" | "dueDate";
+};
+export type BlockSource = { noteId: string; blockId: string };
 export type Task = {
   id: string;
   title: string;
@@ -29,10 +38,13 @@ export type NoteBlock = {
     | "code"
     | "divider"
     | "markdown"
-    | "board";
+    | "board"
+    | "synced";
   text: string;
   level?: 1 | 2 | 3 | 4 | 5 | 6;
   checked?: boolean;
+  boardView?: BoardView;
+  source?: BlockSource;
 };
 export type NoteContent = { blocks: NoteBlock[] };
 export type Note = {

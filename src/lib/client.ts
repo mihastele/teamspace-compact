@@ -1073,7 +1073,7 @@ export function useTeamspace() {
                 ? (note.parentId ?? null)
                 : (existing?.parentId ?? null),
             title: note.title,
-            content: note.content,
+            content: { blocks: note.content.blocks.map(block => ({ ...block, id: block.id ?? crypto.randomUUID() })) },
             revision: (existing?.revision ?? 0) + 1,
           };
           assertNoteParent(

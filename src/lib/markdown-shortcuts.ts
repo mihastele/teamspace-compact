@@ -37,7 +37,9 @@ export function blockMarkdown(block: NoteBlock): string {
     case "divider":
       return "---";
     case "board":
-      return "[Shared workspace board]";
+      return block.boardView ? `[Shared workspace board: ${block.boardView.name.replace(/[\r\n\[\]]/g, " ")}]\n\nView settings: ${JSON.stringify(block.boardView)}` : "[Shared workspace board]";
+    case "synced":
+      return `[Synced block: note ${block.source?.noteId ?? "unavailable"}, block ${block.source?.blockId ?? "unavailable"}]`;
     case "code": {
       const runs = block.text.match(/`+/g) ?? [];
       const fence = "`".repeat(

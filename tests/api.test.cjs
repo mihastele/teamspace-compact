@@ -78,6 +78,7 @@ async function api(uid, method, path, input, storageOverride = storage) {
 }
 const prefix = "workspaces/alpha";
 require('./board-property-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
+require('./linked-content-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 
 test("workspace admins manage ordinary members but cannot elevate themselves or remove owners/admins", async () => {
   assert.equal((await api("member", "PATCH", `${prefix}/members/member`, {role:"admin"})).status,403);

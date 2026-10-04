@@ -287,7 +287,8 @@ export class CollaborationController {
       .catch((error) => this.fail(error, true));
   };
   change = (next: NoteContent, base?: NoteContent) => {
-    if (!this.ready || this.disposed || this.blocked) return;
+    if (!this.ready || this.disposed || this.blocked) return false;
+    let accepted = true;
     try {
       const current = readContent(this.doc);
       const captured = base && this.baselines.get(base);
@@ -315,9 +316,11 @@ export class CollaborationController {
       } else applyEditorContent(this.doc, current, next);
     } catch (error) {
       this.fail(error);
+      accepted = false;
     }
     this.refreshUndoScope();
     this.publish();
+    return accepted;
   };
   private travelHistory(direction: "undo" | "redo") {
     if (!this.ready || this.blocked || this.disposed) return;

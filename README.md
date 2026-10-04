@@ -318,3 +318,13 @@ Mentions identify current workspace members and render as safe labels; they do n
 Deploy the rules/index configuration in `migrations/006-conversations.md` before the updated API/client. Conversation reads require current membership and a live parent; browser writes remain denied. Trusted mutations validate author identity, mentions, bounds and rate limits. Browser interaction and authenticated two-user acceptance remain required release checks.
 
   docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build
+
+## Linked boards and synced content
+
+Use `/kanban` in any note, then **Edit linked view** to save its name, task search, status, assignee, deadline and sorting. Each embed has independent settings and shares the same workspace tasks. **Current viewer** shows each reader their own assigned tasks. Task edits update every board; removing a view leaves tasks intact.
+
+Use `/synced` or **Synced content** in the block menu to choose a saved text block from this workspace. If needed, **Prepare stable source blocks** assigns its stable identity. Editing a linked block edits the original and all its linked locations. **Open original** opens the source note; **Make independent** copies its current content into an ordinary block.
+
+Sources can be paragraphs, headings, lists, checklists, quotes, code or Markdown. Boards, dividers and other synced references cannot be sources. Deleted sources show unavailable and keep their reference. Each page supports 100 links from 20 source notes. Configured saved sources synchronize through their existing journals; preview source edits use revision-checked saves, while self-links in preview stay in the current note draft until Save. Unfinished composition and failed drafts show recovery controls; download them before leaving. Linked source controllers stay open until the destination page closes so pending recovery remains accessible.
+
+Page history and Markdown downloads retain reference IDs and view settings. Restoring a linked page leaves source content and board tasks unchanged; export the original separately for its text. Deploy the updated client and trusted API together as documented in [migration 010](migrations/010-linked-content.md). No new SQL migration or live database backfill is needed. Browser/IME/mobile and authenticated two-user acceptance remain open checks.

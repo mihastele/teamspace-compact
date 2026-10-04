@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useTeamspace } from "@/lib/client";
 import { useCollaborativeNote } from "@/lib/use-collaborative-note";
-import type { Task, NoteContent, Attachment } from "@/lib/model";
+import type { Task, NoteContent, Attachment, BoardView } from "@/lib/model";
 import {
   flattenNoteTree,
   filterVisibleNoteTree,
@@ -31,6 +31,9 @@ import TaskCalendar from "./components/TaskCalendar";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
 import { changedPropertyValues } from "@/lib/board-properties";
+import { defaultBoardView, linkedBoardTasks } from "@/lib/linked-content";
+import LinkedBoardSettings from "./components/LinkedBoardSettings";
+import { SyncedContentScope } from "./components/SyncedContent";
 import {
   deadlineState,
   matchesDeadline,
@@ -493,11 +496,13 @@ function WorkspaceBoard({
   shown,
   onTask,
   filtered = false,
+  view,
 }: {
   api: Api;
   shown: Task[];
   onTask: (task: Partial<Task>) => void;
   filtered?: boolean;
+  view?: BoardView;
 }) {
   const today = useLocalDay();
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
@@ -558,7 +563,7 @@ function WorkspaceBoard({
         filterControl.current?.focus();
     }
   }
-  const visible = shown.filter((task) =>
+  const visible = linkedBoardTasks(shown, view ?? defaultBoardView, api.user?.uid ?? "preview", today).filter((task) =>
     matchesDeadline(task, deadlineFilter, today),
   );
   return (
@@ -646,11 +651,6 @@ function WorkspaceBoard({
             </h2>
             {visible
               .filter((t) => t.status === c.id)
-              .sort(
-                (a, b) =>
-                  a.position - b.position ||
-                  (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-              )
               .map((t) => {
                 const assignee = api.members.find((m) => m.id === t.assigneeId);
                 const date = t.dueDate
@@ -787,6 +787,7 @@ function Notes({
   const selected = selection.id;
   const [commentRisk, setCommentRisk] = useState({ key: "", risk: false });
   function selectNote(id: string | null, newParentId: string | null = null) {
+    if (linkedRisk.key === key && linkedRisk.risk && !confirm("Linked edits are still syncing or have a preserved draft. Finish composing and download any failed linked draft before leaving. Switch pages anyway?")) return;
     if (
       commentRisk.key === key &&
       commentRisk.risk &&
@@ -870,6 +871,8 @@ function Notes({
     key: "",
     pending: false,
   });
+  const [linkedRisk, setLinkedRisk] = useState({ key: "", risk: false });
+  const reportLinkedRisk = useCallback((risk: boolean) => setLinkedRisk({ key, risk }), [key]);
   const composingNote =
     compositionDraft.key === key && compositionDraft.pending;
   const cached = drafts[key];
@@ -937,7 +940,7 @@ function Notes({
   const historyBlockedReason =
     api.loading || !remote
       ? "Wait until the current saved page has loaded."
-      : dirty || composingNote
+      : dirty || composingNote || (linkedRisk.key === key && linkedRisk.risk)
         ? "Save your title and location, and finish editing before saving or restoring a version. Your draft is preserved."
         : draft.state === "Saving"
           ? "Wait for the current save to finish."
@@ -951,6 +954,7 @@ function Notes({
               ? "Wait for acknowledged synchronization, or recover pending edits before saving or restoring a version."
               : null;
   const anyDirty =
+    (linkedRisk.key === key && linkedRisk.risk) ||
     (commentRisk.key === key && commentRisk.risk) ||
     compositionDraft.pending ||
     collaboration.pending ||
@@ -1735,15 +1739,25 @@ function Notes({
           disabled={api.loading || draft.state === "Saving"}
           onChange={(e) => update({ title: e.target.value })}
         />
+        <SyncedContentScope key={`${api.user?.uid ?? "preview"}:${key}`} api={api} noteId={selected} content={displayedContent}
+          main={liveEnabled ? collaboration : null}
+          onChangeMain={(content, base) => liveEnabled ? changeLiveContent(content, base) : update({ content })}
+          onOpen={id => selectNote(id)} onRiskChange={reportLinkedRisk}>
         <BlockEditor
           key={key}
-          renderBoard={() => (
+          api={api}
+          renderBoard={(block, onViewChange, disabled) => (
+            <>
+            <LinkedBoardSettings view={block.boardView} members={api.members} disabled={disabled} onApply={onViewChange} />
             <WorkspaceBoard
-              key={api.workspace?.id}
+              key={`${api.workspace?.id}:${block.id ?? "board"}`}
               api={api}
               shown={api.tasks}
               onTask={onTask}
+              view={block.boardView}
+              filtered={Boolean(block.boardView)}
             />
+            </>
           )}
           value={displayedContent}
           onCompositionPendingChange={(pending) =>
@@ -1771,6 +1785,7 @@ function Notes({
             selected && remote ? () => selectNote(null, selected) : undefined
           }
         />
+        </SyncedContentScope>
         {selected && (
           <div className={s.subnoteSection}>
             <div className={s.subnoteHeading}>

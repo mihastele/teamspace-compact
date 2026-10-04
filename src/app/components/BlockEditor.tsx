@@ -10,7 +10,10 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { NoteContent } from "@/lib/model";
+import type { BlockSource, BoardView, NoteContent } from "@/lib/model";
+import type { useTeamspace } from "@/lib/client";
+import { validateLinkedContentLimits } from "@/lib/linked-content";
+import { SyncedBlock, SyncedSourcePicker, useSyncedBlockGuard } from "./SyncedContent";
 import { markdownShortcut } from "@/lib/markdown-shortcuts";
 import { duplicateBlock } from "@/lib/note-blocks";
 import {
@@ -45,7 +48,8 @@ export type BlockEditorProps = {
   disabled?: boolean;
   onCompositionPendingChange?: (pending: boolean) => void;
   onAddSubnote?: () => void;
-  renderBoard?: () => ReactNode;
+  api?: ReturnType<typeof useTeamspace>;
+  renderBoard?: (block: Block, onViewChange: (next: BoardView, baseline: BoardView | undefined) => void, disabled: boolean) => ReactNode;
   collaborativeHistory?: {
     undo: () => void;
     redo: () => void;
@@ -111,7 +115,7 @@ const commands: Command[] = [
   },
   {
     type: "board",
-    label: "Kanban board",
+    label: "Kanban / linked board",
     description: "Embed the live shared workspace board",
     symbol: "▥",
   },
@@ -122,7 +126,14 @@ const commands: Command[] = [
     symbol: "▤",
   },
 ];
+commands.push({ type: "synced", label: "Synced content", description: "Link a saved block; edit the original from here", symbol: "↔" });
 const emptyBlock = (): Block => ({ type: "paragraph", text: "" });
+function BoardContent({ block, renderBoard, onViewChange, disabled }: {
+  block: Block; renderBoard: BlockEditorProps["renderBoard"]; disabled: boolean;
+  onViewChange: (next: BoardView, baseline: BoardView | undefined) => void;
+}) {
+  return <>{renderBoard?.(block, onViewChange, disabled)}</>;
+}
 
 export default function BlockEditor({
   value,
@@ -130,10 +141,13 @@ export default function BlockEditor({
   disabled = false,
   onCompositionPendingChange,
   onAddSubnote,
+  api,
   renderBoard,
   collaborativeHistory,
 }: BlockEditorProps) {
   const blocks = value.blocks.length ? value.blocks : [emptyBlock()];
+  const syncedGuard = useSyncedBlockGuard();
+  const [linkTarget, setLinkTarget] = useState<{ index: number; source: "slash" | "plus"; baseline: Block } | null>(null);
   const blockKey = (index: number) => blocks[index]?.id || `legacy:${index}`;
   const [storedHistory, setHistory] = useState(() => createHistory(value));
   // A remote reload replaces content rather than letting local undo cross that boundary.
@@ -245,6 +259,8 @@ export default function BlockEditor({
     base?: NoteContent,
   ) {
     if (disabled) return false;
+    try { validateLinkedContentLimits({ blocks: next }); }
+    catch (error) { setFeedback((error as Error).message); return false; }
     if (next.length > 1000) {
       setFeedback(
         "A note can hold up to 1,000 blocks. Your current text is preserved.",
@@ -273,7 +289,7 @@ export default function BlockEditor({
     setFeedback("");
     const content = {
       blocks: (next.length ? next : [emptyBlock()]).map((block) =>
-        collaborativeHistory && !block.id
+        !block.id
           ? { ...block, id: crypto.randomUUID() }
           : block,
       ),
@@ -323,6 +339,10 @@ export default function BlockEditor({
     if (!menu || disabled) return;
     const { index, source } = menu;
     const next = blocks.map((block) => ({ ...block }));
+    if (command.type === "synced") {
+      if (!api) { setFeedback("Open a workspace note before linking saved content."); return; }
+      setLinkTarget({ index, source, baseline: blocks[index] }); setMenu(null); return;
+    }
     if (command.type === "subnote") {
       if (!onAddSubnote) {
         setFeedback("Save this note before adding a subnote.");
@@ -487,7 +507,7 @@ export default function BlockEditor({
         );
       } else if (
         index > 0 &&
-        !["board", "divider"].includes(blocks[index - 1].type)
+        !["board", "divider", "synced"].includes(blocks[index - 1].type)
       ) {
         event.preventDefault();
         const next = blocks.map((block) => ({ ...block }));
@@ -540,6 +560,7 @@ export default function BlockEditor({
       setMenu(null);
   }
   function remove(index: number) {
+    if (syncedGuard(blocks[index])) { setFeedback("Finish composing and synchronize linked edits before removing this link."); return; }
     const next = blocks.filter((_, i) => i !== index);
     const target = Math.max(0, index - 1);
     if (commit(next, { index: target, offset: next[target]?.text.length || 0 }))
@@ -572,7 +593,7 @@ export default function BlockEditor({
           (!event.ctrlKey && !event.metaKey)
         )
           return;
-        if ((event.target as HTMLElement).closest(`.${styles.embeddedBoard}`))
+        if ((event.target as HTMLElement).closest(`.${styles.embeddedBoard}, [data-synced-editor]`))
           return;
         const key = event.key.toLowerCase();
         if (key === "z" || (key === "y" && !event.metaKey)) {
@@ -666,7 +687,7 @@ export default function BlockEditor({
                   Block type
                   <select
                     value={block.type}
-                    disabled={disabled}
+                    disabled={disabled || syncedGuard(block)}
                     aria-label={`Block ${index + 1} type`}
                     onChange={(event) => {
                       const next = blocks.map((item, i) =>
@@ -693,7 +714,7 @@ export default function BlockEditor({
                     <option value="quote">Quote</option>
                     <option value="code">Code</option>
                     <option value="markdown">Markdown</option>
-                    {["board", "divider"].includes(block.type) && (
+                    {["board", "divider", "synced"].includes(block.type) && (
                       <option value={block.type}>{block.type}</option>
                     )}
                   </select>
@@ -746,7 +767,7 @@ export default function BlockEditor({
                 <button
                   type="button"
                   className={styles.delete}
-                  disabled={disabled}
+                  disabled={disabled || syncedGuard(block)}
                   onClick={() => remove(index)}
                 >
                   Delete block
@@ -805,12 +826,18 @@ export default function BlockEditor({
           )}
           {block.type === "board" ? (
             <div className={styles.embeddedBoard}>
-              {renderBoard?.()}
+              <BoardContent block={block} renderBoard={renderBoard} onViewChange={(boardView, baseline) => {
+                if (disabled) throw new Error("Wait until the note is editable.");
+                if (JSON.stringify(block.boardView) !== JSON.stringify(baseline)) throw new Error("This linked view changed. Reopen settings to review the latest version.");
+                if (!commit(blocks.map((item, i) => i === index ? { ...item, boardView } : item))) throw new Error("The view could not be applied. Your settings are still here.");
+              }} disabled={disabled} />
               <small>
                 Changes here update the shared workspace board. Removing this
                 block keeps its tasks.
               </small>
             </div>
+          ) : block.type === "synced" ? (
+            <SyncedBlock block={block} disabled={disabled} onDetach={replacement => commit(blocks.map((item, i) => i === index ? replacement : item))} />
           ) : block.type === "divider" ? (
             <hr className={styles.divider} />
           ) : (
@@ -978,6 +1005,16 @@ export default function BlockEditor({
           )}
         </div>
       ))}
+      {linkTarget && api && <SyncedSourcePicker api={api} close={() => setLinkTarget(null)} onChoose={(source: BlockSource) => {
+        if (disabled) throw new Error("Wait until the note is editable.");
+        const index = linkTarget.baseline.id ? blocks.findIndex(block => block.id === linkTarget.baseline.id) : linkTarget.index;
+        if (index < 0 || JSON.stringify(blocks[index]) !== JSON.stringify(linkTarget.baseline)) throw new Error("The insertion block changed. Close and reopen the picker before inserting.");
+        const next = [...blocks];
+        const reference: Block = { ...(next[index].id ? { id: next[index].id } : {}), type: "synced", text: "", source };
+        if (linkTarget.source === "slash" || !next[index].text) next[index] = reference;
+        else next.splice(index + 1, 0, { ...reference, id: undefined });
+        if (!commit(next)) throw new Error("The link could not be inserted. The current note is preserved.");
+      }} />}
       <button
         type="button"
         className={styles.bottomAdd}

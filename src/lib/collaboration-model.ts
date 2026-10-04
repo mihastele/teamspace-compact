@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import { generateKeyBetween } from "fractional-indexing";
 import type { NoteBlock, NoteContent } from "./model";
+import { validateBoardView, validateBlockSource, validateLinkedContentLimits } from "./linked-content";
 
 export const LOCAL_ORIGIN = Symbol("local-editor");
 export const REMOTE_ORIGIN = Symbol("remote-server");
@@ -18,6 +19,7 @@ const TYPES = new Set([
   "divider",
   "markdown",
   "board",
+  "synced",
 ]);
 
 export function toBase64(value: Uint8Array): string {
@@ -89,11 +91,13 @@ function rankBetween(
 
 function blockFormat(
   block: NoteBlock,
-): Pick<NoteBlock, "type" | "level" | "checked"> {
+): Pick<NoteBlock, "type" | "level" | "checked" | "boardView" | "source"> {
   return {
     type: block.type,
     ...(block.level !== undefined ? { level: block.level } : {}),
     ...(block.checked !== undefined ? { checked: block.checked } : {}),
+    ...(block.boardView !== undefined ? { boardView: block.boardView } : {}),
+    ...(block.source !== undefined ? { source: block.source } : {}),
   };
 }
 
@@ -152,7 +156,7 @@ export function readContent(doc: Y.Doc): NoteContent {
         id,
         ...(meta.get("format") as Pick<
           NoteBlock,
-          "type" | "level" | "checked"
+          "type" | "level" | "checked" | "boardView" | "source"
         >),
         text: (value.get("text") as Y.Text).toString(),
       };
@@ -303,10 +307,7 @@ function applyEditorIntent(
       if (!previous) throw new Error("An existing block cannot be recreated.");
       const meta = existing.get("meta") as Y.Map<unknown>;
       if (
-        ["type", "level", "checked"].some(
-          (key) =>
-            previous[key as keyof NoteBlock] !== block[key as keyof NoteBlock],
-        )
+        JSON.stringify(blockFormat(previous)) !== JSON.stringify(blockFormat(block))
       )
         meta.set("format", blockFormat(block));
       if (ranks.has(id)) meta.set("rank", ranks.get(id)!);
@@ -407,7 +408,7 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
       typeof format !== "object" ||
       Array.isArray(format) ||
       Object.keys(format).some(
-        (key) => !["type", "level", "checked"].includes(key),
+        (key) => !["type", "level", "checked", "boardView", "source"].includes(key),
       )
     )
       throw new Error("Invalid block format.");
@@ -440,13 +441,23 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
       (format.type !== "todo" || typeof format.checked !== "boolean")
     )
       throw new Error("Invalid checklist state.");
+    if (format.boardView !== undefined) {
+      if (format.type !== "board") throw new Error("Only board blocks have view settings.");
+      validateBoardView(format.boardView);
+    }
+    if (format.source !== undefined) {
+      if (format.type !== "synced") throw new Error("Only synced blocks have sources.");
+      validateBlockSource(format.source);
+    }
+    if (format.type === "synced" && !format.source) throw new Error("A synced block requires a source.");
     if (
       text.length > 20000 ||
-      (["board", "divider"].includes(format.type) && text.length)
+      (["board", "divider", "synced"].includes(format.type) && text.length)
     )
       throw new Error("Invalid block text length.");
   }
   const content = readContent(doc);
+  validateLinkedContentLimits(content);
   if (
     content.blocks.length > 1000 ||
     content.blocks.reduce((sum, block) => sum + block.text.length, 0) > 100000

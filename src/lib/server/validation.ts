@@ -1,5 +1,6 @@
 import type { NoteBlock } from "../model";
 import { propertyValuePatch } from "../board-properties";
+import { validateBoardView, validateBlockSource, validateLinkedContentLimits } from "../linked-content";
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -126,7 +127,7 @@ export function noteContent(value: unknown) {
   let length = 0;
   const ids = new Set<string>();
   const blocks = data.blocks.map((value) => {
-    const block = object(value, ["id", "type", "text", "level", "checked"]);
+    const block = object(value, ["id", "type", "text", "level", "checked", "boardView", "source"]);
     if (
       ![
         "paragraph",
@@ -139,6 +140,7 @@ export function noteContent(value: unknown) {
         "divider",
         "markdown",
         "board",
+        "synced",
       ].includes(block.type as string)
     )
       throw new ApiError(400, "invalid_input", "Invalid block type.");
@@ -181,11 +183,22 @@ export function noteContent(value: unknown) {
         );
       result.checked = block.checked;
     }
-    if (["board", "divider"].includes(result.type) && content)
+    try {
+      if (block.boardView !== undefined) {
+        if (block.type !== "board") throw new Error("Only a board block has view settings.");
+        result.boardView = validateBoardView(block.boardView);
+      }
+      if (block.source !== undefined) {
+        if (block.type !== "synced") throw new Error("Only a synced block has a source.");
+        result.source = validateBlockSource(block.source);
+      }
+      if (block.type === "synced" && !result.source) throw new Error("A synced block requires a source.");
+    } catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
+    if (["board", "divider", "synced"].includes(result.type) && content)
       throw new ApiError(
         400,
         "invalid_input",
-        "Board and divider blocks do not contain text.",
+        "Board, divider and synced blocks do not contain text.",
       );
     return result;
   });
@@ -195,5 +208,7 @@ export function noteContent(value: unknown) {
       "invalid_input",
       "Note exceeds 100,000 characters.",
     );
+  try { validateLinkedContentLimits({ blocks }); }
+  catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
   return { blocks };
 }

@@ -85,6 +85,7 @@ async function api(uid, method, path, input) {
 }
 const value = async path => (await db.doc(path).get()).data();
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
+require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
   const id=randomUUID();
   assert.equal((await api(member,'PUT',`${prefix}/boardProperties/${id}`,{name:'Priority',type:'text',options:[],expectedRevision:0})).status,201);
