@@ -24,6 +24,7 @@ import { blockMarkdown } from "@/lib/markdown-shortcuts";
 import { exportNoteMarkdown } from "@/lib/note-export";
 import { matchNote } from "@/lib/note-search";
 import SetupGuide from "./components/SetupGuide";
+import { PageHistoryAction } from "./components/PageHistory";
 import {
   deadlineState,
   matchesDeadline,
@@ -862,6 +863,23 @@ function Notes({
       (draft.metadataBaseline ||
         JSON.stringify([remote?.title, remote?.parentId]))
     : baseline(draft.title, draft.content, draft.parentId) !== draft.baseline;
+  const currentHistoryScope = `${api.user?.uid || "preview"}:${key}`;
+  const historyBlockedReason =
+    api.loading || !remote
+      ? "Wait until the current saved page has loaded."
+      : dirty || composingNote
+        ? "Save your title and location, and finish editing before saving or restoring a version. Your draft is preserved."
+        : draft.state === "Saving"
+          ? "Wait for the current save to finish."
+          : draft.error || draft.state === "Failed"
+            ? "Resolve the failed save before saving or restoring a version."
+            : liveEnabled &&
+                (!collaboration.ready ||
+                  collaboration.pending ||
+                  collaboration.error ||
+                  collaboration.status !== "Saved")
+              ? "Wait for acknowledged synchronization, or recover pending edits before saving or restoring a version."
+              : null;
   const anyDirty =
     compositionDraft.pending ||
     collaboration.pending ||
@@ -966,13 +984,13 @@ function Notes({
       },
     }));
   }
-  function downloadMarkdown() {
+  function downloadMarkdown(archived?: NoteContent) {
     const link = document.createElement("a");
     let url: string | undefined;
     try {
       const exported = exportNoteMarkdown(
-        draft.title,
-        collaboration.recoveryContent ?? displayedContent,
+        archived ? `${draft.title} — local archived recovery` : draft.title,
+        archived ?? collaboration.recoveryContent ?? displayedContent,
       );
       url = URL.createObjectURL(
         new Blob([exported.markdown], { type: "text/markdown;charset=utf-8" }),
@@ -1401,11 +1419,29 @@ function Notes({
           <button
             className={s.secondary}
             disabled={api.loading}
-            onClick={downloadMarkdown}
+            onClick={() => downloadMarkdown()}
             title="Download current note text, including unsaved edits. Board embeds are references; attachments and subnotes are not included."
           >
             Download Markdown
           </button>
+          {selected && remote && (
+            <PageHistoryAction
+              key={currentHistoryScope}
+              className={s.secondary}
+              disabled={api.loading || draft.state === "Saving"}
+              api={api}
+              note={remote}
+              blockedReason={historyBlockedReason}
+              onRestored={() => {
+                setDrafts((previous) => {
+                  const next = { ...previous };
+                  delete next[key];
+                  return next;
+                });
+                collaboration.retry();
+              }}
+            />
+          )}
           {
             <button
               className={s.secondary}
@@ -1488,6 +1524,46 @@ function Notes({
               Retry synchronization
             </button>
             <span>Use Download Markdown to keep a recovery copy.</span>
+            {collaboration.generationChanged && collaboration.pending && (
+              <button
+                className={s.secondary}
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Keep pending old-version recovery locally and reload the restored page? The pending old version will remain in this browser and will not be merged into the restored page. Download a Markdown copy first if you need it elsewhere.",
+                    )
+                  ) {
+                    void collaboration.discardRecoveryAndRetry();
+                  }
+                }}
+              >
+                Keep recovery locally &amp; reload
+              </button>
+            )}
+          </div>
+        )}
+        {liveEnabled && collaboration.archivedRecoveryContent && (
+          <div className={s.banner}>
+            <span>
+              A previous local recovery copy is kept in this browser. It is
+              separate from the restored page and server history.
+            </span>
+            <button
+              className={s.secondary}
+              onClick={() =>
+                downloadMarkdown(collaboration.archivedRecoveryContent!)
+              }
+            >
+              Download archived recovery
+            </button>
+          </div>
+        )}
+        {liveEnabled && collaboration.archivedRecoveryError && (
+          <div className={s.banner} role="alert">
+            <span>{collaboration.archivedRecoveryError}</span>
+            <button className={s.secondary} onClick={collaboration.retry}>
+              Retry synchronization
+            </button>
           </div>
         )}
         {children.length > 0 && (

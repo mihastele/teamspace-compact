@@ -1,3 +1,4 @@
+import type { NoteContent } from "./model";
 export type PendingUpdate = {
   operationId: string;
   update: string;
@@ -9,10 +10,14 @@ export type RecoveryRecord = {
   state: string;
   sequence: number;
   pending: PendingUpdate[];
+  archived?: boolean;
+  archivedAt?: number;
 };
 export interface RecoveryStore {
   load(): Promise<RecoveryRecord | null>;
   save(record: RecoveryRecord): Promise<void>;
+  archiveGeneration?(generation: string): Promise<void>;
+  archivedContent?(): Promise<NoteContent | null>;
 }
 
 /** Persisted by account/workspace/note; another signed-in account cannot replay it. */
@@ -53,7 +58,8 @@ export function indexedRecoveryStore(scope: string): RecoveryStore {
       let own = await new Promise<RecoveryRecord | null>((resolve, reject) => {
         const transaction = db.transaction("notes", "readonly");
         const request = transaction.objectStore("notes").get(scope);
-        transaction.oncomplete = () => resolve(request.result ?? null);
+        transaction.oncomplete = () =>
+          resolve(request.result?.archived ? null : (request.result ?? null));
         transaction.onabort = () =>
           reject(new Error("Recovery storage could not be read."));
         transaction.onerror = () =>
@@ -82,7 +88,12 @@ export function indexedRecoveryStore(scope: string): RecoveryStore {
           reject(new Error("Recovery journals could not be inspected."));
       });
       for (const record of records) {
-        if (record.key === scope || !record.value.pending?.length) continue;
+        if (
+          record.key === scope ||
+          record.value.archived ||
+          !record.value.pending?.length
+        )
+          continue;
         await navigator.locks.request(
           `teamspace-recovery:${record.key}`,
           { ifAvailable: true },
@@ -102,6 +113,7 @@ export function indexedRecoveryStore(scope: string): RecoveryStore {
             );
             if (
               !current?.pending.length ||
+              current.archived ||
               (own && own.generation !== current.generation)
             )
               return;
@@ -176,6 +188,98 @@ export function indexedRecoveryStore(scope: string): RecoveryStore {
           );
       });
     },
+    async archiveGeneration(generation) {
+      const db = await database();
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction("notes", "readwrite");
+        const notes = transaction.objectStore("notes");
+        const request = notes.get(scope);
+        const prefix = scope.slice(0, scope.lastIndexOf(":") + 1);
+        const cursorRequest = notes.openCursor(
+          IDBKeyRange.bound(prefix, `${prefix}\uffff`),
+        );
+        let value: RecoveryRecord | undefined;
+        let scanned = false;
+        let stamp = Date.now();
+        const archive = () => {
+          if (!scanned || !value) return;
+          notes.put(
+            { ...value, archived: true, archivedAt: stamp },
+            `${scope}:archive:${crypto.randomUUID()}`,
+          );
+          notes.delete(scope);
+        };
+        request.onsuccess = () => {
+          value = request.result as RecoveryRecord | undefined;
+          if (!value || value.archived || value.generation !== generation) {
+            transaction.abort();
+            return;
+          }
+          archive();
+        };
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (cursor) {
+            const record = cursor.value as RecoveryRecord;
+            if (record.archived)
+              stamp = Math.max(stamp, (record.archivedAt ?? 0) + 1);
+            cursor.continue();
+          } else {
+            scanned = true;
+            archive();
+          }
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () =>
+          reject(
+            new Error(
+              "Local recovery could not be archived. Its active journal has been retained.",
+            ),
+          );
+        transaction.onerror = () =>
+          reject(
+            new Error(
+              "Local recovery could not be archived. Its active journal has been retained.",
+            ),
+          );
+      });
+    },
+    async archivedContent() {
+      const db = await database();
+      const prefix = scope.slice(0, scope.lastIndexOf(":") + 1);
+      const record = await new Promise<RecoveryRecord | null>(
+        (resolve, reject) => {
+          let latest: RecoveryRecord | null = null;
+          const transaction = db.transaction("notes", "readonly");
+          const request = transaction
+            .objectStore("notes")
+            .openCursor(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            const value = cursor.value as RecoveryRecord;
+            if (
+              value.archived &&
+              (!latest || (value.archivedAt ?? 0) > (latest.archivedAt ?? 0))
+            )
+              latest = value;
+            cursor.continue();
+          };
+          transaction.oncomplete = () => resolve(latest);
+          transaction.onabort = () =>
+            reject(new Error("Archived recovery could not be read."));
+          transaction.onerror = () =>
+            reject(new Error("Archived recovery could not be read."));
+        },
+      );
+      if (!record) return null;
+      const doc = decodeDocument(record.state);
+      try {
+        return readContent(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
   };
 }
 import * as Y from "yjs";
@@ -185,4 +289,5 @@ import {
   fromBase64,
   REMOTE_ORIGIN,
   validateDocument,
+  readContent,
 } from "./collaboration-model";

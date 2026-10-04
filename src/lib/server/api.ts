@@ -408,6 +408,12 @@ async function mutateNote(
       ancestorId = ancestor.data()?.parentId ?? null;
     }
     const next = (previous?.data()?.revision ?? 0) + 1;
+    if (!Number.isSafeInteger(next) || next > 1000000000)
+      throw new ApiError(
+        409,
+        "state_limit",
+        "This page has reached its version limit.",
+      );
     const value = {
       title,
       ...(content ? { content } : {}),
@@ -417,12 +423,24 @@ async function mutateNote(
       updatedBy: user.uid,
       updatedAt: now(),
     };
+    const history = await captureCheckpoint(
+      tx,
+      ref,
+      { ...previous?.data(), ...value },
+      user,
+    );
     // All structural mutations touch this document. Transaction retries therefore
     // revalidate ancestry against concurrent creates, moves and deletions.
     if (!id || parentId !== previousParent)
       tx.update(workspace, { noteTreeRevision: FieldValue.increment(1) });
-    if (id) tx.update(ref, value);
-    else tx.create(ref, { ...value, createdBy: user.uid, createdAt: now() });
+    if (id) tx.update(ref, { ...value, ...history });
+    else
+      tx.create(ref, {
+        ...value,
+        ...history,
+        createdBy: user.uid,
+        createdAt: now(),
+      });
     return {
       revision: next,
       parentId,
@@ -455,6 +473,285 @@ function noteView(id: string, value: Record<string, unknown>) {
     parentId: value.parentId ?? null,
     ...(value.collab ? { collab: value.collab } : {}),
   };
+}
+
+const HISTORY_INTERVAL = 5 * 60 * 1000;
+const HISTORY_RETENTION = 30 * 24 * 60 * 60 * 1000;
+function historyRecord(
+  value: Record<string, unknown>,
+  user: DecodedIdToken,
+  kind = "checkpoint",
+  name: string | null = null,
+) {
+  return {
+    sourceRevision: value.revision,
+    title: value.title,
+    content: noteContent(value.content),
+    kind,
+    name,
+    capturedAt: now(),
+    capturedBy: user.uid,
+    capturedName:
+      typeof user.name === "string" ? user.name.slice(0, 200) : user.uid,
+    expiresAt:
+      kind === "named"
+        ? null
+        : Timestamp.fromMillis(Date.now() + HISTORY_RETENTION),
+  };
+}
+async function captureCheckpoint(
+  tx: Transaction,
+  ref: DocumentReference,
+  value: Record<string, unknown>,
+  user: DecodedIdToken,
+) {
+  const at = value.historyCheckpointAt as Timestamp | undefined;
+  if (at && Date.now() - at.toMillis() < HISTORY_INTERVAL) return {};
+  const version = ref.collection("historyVersions").doc(`r${value.revision}`);
+  const existing = await tx.get(version);
+  if (!existing.exists) tx.create(version, historyRecord(value, user));
+  return { historyCheckpointAt: now() };
+}
+function historyView(id: string, value: Record<string, unknown>, full = false) {
+  return {
+    id,
+    sourceRevision: value.sourceRevision,
+    title: value.title,
+    kind: value.kind,
+    name: value.name,
+    capturedAt: (value.capturedAt as Timestamp).toMillis(),
+    capturedBy: value.capturedBy,
+    capturedName: value.capturedName,
+    expiresAt: value.expiresAt
+      ? (value.expiresAt as Timestamp).toMillis()
+      : null,
+    ...(full ? { content: value.content } : {}),
+  };
+}
+function historyExpired(value: Record<string, unknown>) {
+  return (
+    value.expiresAt instanceof Timestamp &&
+    value.expiresAt.toMillis() <= Date.now()
+  );
+}
+function versionIdentifier(value: unknown) {
+  const id = identifier(value);
+  if (!/^r[1-9][0-9]{0,9}$/.test(id))
+    throw new ApiError(400, "invalid_input", "Invalid history version.");
+  return id;
+}
+async function pageHistory(
+  db: Firestore,
+  workspace: DocumentReference,
+  user: DecodedIdToken,
+  id: string,
+  request: Request,
+  input?: unknown,
+) {
+  const ref = workspace.collection("notes").doc(id);
+  const params = new URL(request.url).searchParams;
+  if (request.method === "POST") {
+    await rateLimit(db, user.uid, "history_name", 10);
+    const data = object(input, ["expectedRevision", "name"]);
+    const revision = integer(
+      data.expectedRevision,
+      "Expected revision",
+      1,
+      1000000000,
+    );
+    const name = text(data.name, "Version name", 100);
+    const result = await db.runTransaction(async (tx) => {
+      await member(tx, workspace, user.uid);
+      const [note, version] = await Promise.all([
+        tx.get(ref),
+        tx.get(ref.collection("historyVersions").doc(`r${revision}`)),
+      ]);
+      if (!note.exists) throw new ApiError(404, "not_found", "Note not found.");
+      if (note.data()!.deleting)
+        throw new ApiError(409, "deleting", "This note is being deleted.");
+      if (version.exists && version.data()!.kind === "named") {
+        if (version.data()!.name !== name)
+          throw new ApiError(
+            409,
+            "version_named",
+            "This version already has a different name.",
+          );
+        return version.ref;
+      }
+      if (note.data()!.revision !== revision)
+        throw new ApiError(
+          409,
+          "revision_conflict",
+          "Save and reload the latest page before naming a version.",
+        );
+      if (version.exists)
+        tx.update(version.ref, { kind: "named", name, expiresAt: null });
+      else
+        tx.create(
+          version.ref,
+          historyRecord(note.data()!, user, "named", name),
+        );
+      return version.ref;
+    });
+    // Return immutable identity rather than a second, unauthorised content read.
+    return json({ versionId: result.id });
+  }
+  const versionId = params.get("version");
+  const beforeValue = params.get("before");
+  const before =
+    beforeValue === null
+      ? undefined
+      : integer(Number(beforeValue), "History cursor", 1, 1000000000);
+  return json(
+    await db.runTransaction(async (tx) => {
+      await member(tx, workspace, user.uid);
+      const note = await tx.get(ref);
+      if (!note.exists) throw new ApiError(404, "not_found", "Note not found.");
+      if (note.data()!.deleting)
+        throw new ApiError(409, "deleting", "This note is being deleted.");
+      if (versionId) {
+        const version = await tx.get(
+          ref.collection("historyVersions").doc(versionIdentifier(versionId)),
+        );
+        if (!version.exists || historyExpired(version.data()!))
+          throw new ApiError(
+            404,
+            "not_found",
+            "History version no longer available.",
+          );
+        return { version: historyView(version.id, version.data()!, true) };
+      }
+      let query = ref
+        .collection("historyVersions")
+        .orderBy("sourceRevision", "desc")
+        .limit(21)
+        .select(
+          "sourceRevision",
+          "title",
+          "kind",
+          "name",
+          "capturedAt",
+          "capturedBy",
+          "capturedName",
+          "expiresAt",
+        );
+      if (before !== undefined)
+        query = query.where("sourceRevision", "<", before);
+      const result = await tx.get(query);
+      const page = result.docs.slice(0, 20);
+      return {
+        versions: page
+          .filter((v) => !historyExpired(v.data()))
+          .map((v) => historyView(v.id, v.data())),
+        nextBefore:
+          result.size > 20 ? page[page.length - 1].data().sourceRevision : null,
+      };
+    }),
+  );
+}
+async function restoreHistory(
+  db: Firestore,
+  workspace: DocumentReference,
+  user: DecodedIdToken,
+  id: string,
+  input: unknown,
+) {
+  await rateLimit(db, user.uid, "history_restore", 10);
+  const data = object(input, ["versionId", "expectedRevision", "operationId"]);
+  const versionId = versionIdentifier(data.versionId);
+  const expected = integer(
+    data.expectedRevision,
+    "Expected revision",
+    1,
+    999999999,
+  );
+  const operationId = uuid(data.operationId);
+  const digest = hash(JSON.stringify([versionId, expected]));
+  const ref = workspace.collection("notes").doc(id);
+  const receipt = ref
+    .collection("historyRestores")
+    .doc(hash(`${user.uid}:${operationId}`));
+  const saved = await db.runTransaction(async (tx) => {
+    await member(tx, workspace, user.uid);
+    const [note, prior] = await Promise.all([tx.get(ref), tx.get(receipt)]);
+    if (!note.exists) throw new ApiError(404, "not_found", "Note not found.");
+    const value = note.data()!;
+    if (value.deleting)
+      throw new ApiError(409, "deleting", "This note is being deleted.");
+    if (prior.exists) {
+      if (prior.data()!.digest !== digest)
+        throw new ApiError(
+          409,
+          "operation_conflict",
+          "An operation ID cannot be reused.",
+        );
+      return noteView(id, value);
+    }
+    if (value.revision !== expected)
+      throw new ApiError(
+        409,
+        "revision_conflict",
+        "The page changed. Review its latest version before restoring.",
+      );
+    const [version, backup] = await Promise.all([
+      tx.get(ref.collection("historyVersions").doc(versionId)),
+      tx.get(ref.collection("historyVersions").doc(`r${value.revision}`)),
+    ]);
+    if (!version.exists || historyExpired(version.data()!))
+      throw new ApiError(
+        404,
+        "not_found",
+        "History version no longer available.",
+      );
+    const doc = initializeDocument(noteContent(version.data()!.content));
+    try {
+      validateDocument(doc);
+      const collab = {
+        version: 1,
+        generation: randomUUID(),
+        state: encodeDocument(doc),
+        sequence: 0,
+      };
+      const next = {
+        ...value,
+        title: text(version.data()!.title, "Note title", 200),
+        content: readContent(doc),
+        collab,
+        revision: value.revision + 1,
+        metadataRevision: (value.metadataRevision ?? value.revision) + 1,
+      };
+      assertCheckpointSize(next.content, collab);
+      if (!backup.exists)
+        tx.create(backup.ref, historyRecord(value, user, "before_restore"));
+      else if (backup.data()!.kind !== "named")
+        // Renew recovery retention without replacing the immutable snapshot.
+        tx.update(backup.ref, {
+          kind: "before_restore",
+          expiresAt: Timestamp.fromMillis(Date.now() + HISTORY_RETENTION),
+        });
+      tx.update(ref, {
+        title: next.title,
+        content: next.content,
+        collab,
+        revision: next.revision,
+        metadataRevision: next.metadataRevision,
+        historyCheckpointAt: now(),
+        updatedBy: user.uid,
+        updatedAt: now(),
+      });
+      tx.create(receipt, {
+        uid: user.uid,
+        operationId,
+        digest,
+        restoredRevision: next.revision,
+        committedAt: now(),
+      });
+      return noteView(id, next);
+    } finally {
+      doc.destroy();
+    }
+  });
+  return json({ note: saved, operationId });
 }
 
 async function collaborationOperation(
@@ -609,7 +906,14 @@ async function collaborationOperation(
       };
       const content = noteContent(readContent(doc));
       assertCheckpointSize(content, collab);
+      const history = await captureCheckpoint(
+        tx,
+        ref,
+        { ...value, content, revision: value.revision + 1 },
+        user,
+      );
       tx.update(ref, {
+        ...history,
         collab,
         content,
         revision: value.revision + 1,
@@ -1226,6 +1530,8 @@ async function deleteParent(
     // Keep the fenced parent until cleanup succeeds so a failed delete can retry.
     await db.recursiveDelete(ref.collection("collaborationReceipts"));
     await db.recursiveDelete(ref.collection("presence"));
+    await db.recursiveDelete(ref.collection("historyVersions"));
+    await db.recursiveDelete(ref.collection("historyRestores"));
   }
   await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
@@ -1283,6 +1589,23 @@ export async function handleTrustedApi(
       throw new ApiError(404, "not_found", "Endpoint not found.");
     if (resource === "tasks" || resource === "notes") {
       if (resource === "notes" && itemId && action) {
+        if (action === "history" && ["GET", "POST"].includes(method))
+          return await pageHistory(
+            db,
+            workspace,
+            user,
+            itemId,
+            request,
+            method === "POST" ? await body(request) : undefined,
+          );
+        if (action === "restore" && method === "POST")
+          return await restoreHistory(
+            db,
+            workspace,
+            user,
+            itemId,
+            await body(request),
+          );
         if (method === "POST" && ["collaboration", "updates"].includes(action))
           return await collaborationOperation(
             db,

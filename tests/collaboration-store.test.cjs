@@ -123,3 +123,70 @@ test("a different document generation is retained separately instead of discarde
     old,
   );
 });
+
+test("generation archive atomically retains pending work and is never reclaimed as active edits", async () => {
+  setup();
+  const value = record();
+  const store = indexedRecoveryStore("alice:alpha:note:session");
+  await store.save(value);
+  await store.archiveGeneration(value.generation);
+  assert.equal(await store.load(), null);
+  const fresh = indexedRecoveryStore("alice:alpha:note:new-session");
+  assert.equal(await fresh.load(), null);
+  assert.equal((await fresh.archivedContent()).blocks[0].text, "Local work");
+  assert.equal(
+    await indexedRecoveryStore("bob:alpha:note:new-session").archivedContent(),
+    null,
+  );
+  assert.equal(
+    await indexedRecoveryStore(
+      "alice:other:note:new-session",
+    ).archivedContent(),
+    null,
+  );
+});
+
+test("archiving a mismatched generation rejects without deleting or replacing its active journal", async () => {
+  setup();
+  const value = record();
+  const store = indexedRecoveryStore("alice:alpha:note:session");
+  await store.save(value);
+  await assert.rejects(
+    store.archiveGeneration(crypto.randomUUID()),
+    /retained/,
+  );
+  assert.deepEqual(await store.load(), value);
+  assert.equal(await store.archivedContent(), null);
+  await assert.rejects(
+    indexedRecoveryStore("alice:alpha:other:empty").archiveGeneration(
+      value.generation,
+    ),
+    /retained/,
+  );
+});
+
+test("archived content selects the latest local archive even with equal wall clocks while active new-generation state stays separate", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
+  setup();
+  const store = indexedRecoveryStore("alice:alpha:note:session");
+  const old = record();
+  await store.save(old);
+  await store.archiveGeneration(old.generation);
+  const newer = record();
+  const doc = decodeDocument(newer.state);
+  const before = readContent(doc),
+    next = structuredClone(before);
+  next.blocks[0].text = "Latest archive";
+  applyEditorContent(doc, before, next);
+  newer.state = encodeDocument(doc);
+  doc.destroy();
+  await store.save(newer);
+  await store.archiveGeneration(newer.generation);
+  const active = record();
+  await store.save(active);
+  assert.equal(
+    (await store.archivedContent()).blocks[0].text,
+    "Latest archive",
+  );
+  assert.deepEqual(await store.load(), active);
+});

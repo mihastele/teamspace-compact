@@ -166,3 +166,11 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Every main/embedded board card has a native keyboard/touch Status control outside its task-details button. Show Moving while pending, announce acknowledged moves and expose retry on failure. Prevent duplicate in-flight moves within a board view and disable dragging the pending card.
 - Quick moves and drag submit status-only trusted patches, preserving independent concurrent task-field edits. Never recreate missing tasks. Restore stable board-control focus after keyboard moves without stealing focus from another active control.
 - Task dialogs save only edited fields; unchanged stale fields cannot replace independent teammate updates. Same-field task conflicts follow server transaction commit order; no CRDT task-field merging is claimed.
+
+### Page history and restore — 2026-10-04
+
+- Automatic checkpoints capture saved activity at most every five minutes and expire after 30 days; permanent named snapshots remain until page deletion. Expiry is enforced before eventual TTL cleanup. History lists are paginated summaries with selected content fetched separately.
+- Restore title/content only, preserving location, children, attachments and board tasks. Require the reviewed revision and a payload-bound operation UUID, retain a pre-restore backup atomically, and acknowledge duplicate retries without applying twice.
+- A restore uses a fresh Yjs generation. Reject stale-generation edits, retain local pending work for Markdown recovery, and offer atomic device-local archival before reloading synchronization. Remote events never write local edits back.
+- History/receipts remain private to trusted member-authorized APIs. Naming and restoring are rate limited. Page deletion fences writes and removes all versions/receipts; migration 005 documents rollout and export/deletion. Local preview mirrors visible behavior with atomic browser persistence and device-local labeling.
+- Automated concurrency/recovery/security tests are required; live two-user restore, IME, modal focus, downloads and mobile acceptance remain external verification gates.

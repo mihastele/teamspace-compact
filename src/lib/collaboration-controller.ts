@@ -27,6 +27,7 @@ export type CollaborationView = {
   canRedo: boolean;
   readOnly: boolean;
   recoveryContent: NoteContent | null;
+  generationChanged: boolean;
 };
 export interface CollaborationTransport {
   subscribe(
@@ -47,6 +48,9 @@ export class CollaborationController {
   private pending: PendingUpdate[] = [];
   private sequence: number;
   private generation: string;
+  private highestRevision: number;
+  private generationChanged = false;
+  private recoveryGeneration: string | null = null;
   private disposed = false;
   private ready = false;
   private online = true;
@@ -74,6 +78,7 @@ export class CollaborationController {
     this.doc = decodeDocument(initial.collab.state);
     this.sequence = initial.collab.sequence;
     this.generation = initial.collab.generation;
+    this.highestRevision = initial.revision;
     this.undoManager = new Y.UndoManager(getTextTypes(this.doc), {
       trackedOrigins: new Set([LOCAL_ORIGIN]),
       captureTimeout: 750,
@@ -88,9 +93,28 @@ export class CollaborationController {
       canRedo: false,
       readOnly: true,
       recoveryContent: null,
+      generationChanged: false,
     };
   }
   getSnapshot = () => this.view;
+  getRecoveryGeneration = () => this.recoveryGeneration;
+  ensureRecoveryDurable = async () => {
+    if (this.disposed) throw new Error("Recovery session has already closed.");
+    // Freeze local actions while a reload/archive durability gate is in flight.
+    // Otherwise a later keystroke could get ahead of the journal before disposal.
+    this.blocked = true;
+    this.publish();
+    // A mismatch found during start belongs to the existing old journal, not
+    // this controller's freshly opened replacement-generation document.
+    if (this.recoveryGeneration && this.recoveryGeneration !== this.generation)
+      return;
+    try {
+      await this.serialize(() => this.persist());
+    } catch (error) {
+      this.fail(error, true);
+      throw error;
+    }
+  };
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -119,6 +143,7 @@ export class CollaborationController {
       canRedo: !!this.undoManager.redoStack.length,
       readOnly: !this.ready || this.blocked,
       recoveryContent: this.recoveryContent,
+      generationChanged: this.generationChanged,
     };
     this.listeners.forEach((listener) => listener());
   }
@@ -172,10 +197,13 @@ export class CollaborationController {
           }
         }
         if (recovered.generation !== this.generation) {
-          if (recovered.pending.length)
+          if (recovered.pending.length) {
+            this.generationChanged = true;
+            this.recoveryGeneration = recovered.generation;
             throw new Error(
               "This document generation changed. Pending edits cannot be applied to a different document; keep this browser's recovery data.",
             );
+          }
         } else {
           const recovery = decodeDocument(recovered.state);
           try {
@@ -326,11 +354,18 @@ export class CollaborationController {
   receive(note: Note) {
     if (this.disposed) return;
     try {
-      if (!note.collab && note.revision <= this.initial.revision) return;
-      if (!note.collab || note.collab.generation !== this.generation)
+      // Generation decisions use monotonic server revisions, never arrival order.
+      if (note.revision <= this.highestRevision) return;
+      this.highestRevision = note.revision;
+      if (!note.collab || note.collab.generation !== this.generation) {
+        this.generationChanged = true;
+        this.recoveryGeneration = this.generation;
+        if (this.pending.length || !this.durable)
+          this.recoveryContent = readContent(this.doc);
         throw new Error(
           "The document generation changed. Export local work before reloading.",
         );
+      }
       if (note.collab.sequence <= this.sequence) return;
       this.mergeValidated(fromBase64(note.collab.state), REMOTE_ORIGIN);
       this.sequence = note.collab.sequence;
@@ -458,6 +493,12 @@ export class CollaborationController {
       this.error = null;
     } catch (error) {
       const status = (error as { status?: number })?.status;
+      if ((error as { code?: string })?.code === "generation_conflict") {
+        this.generationChanged = true;
+        this.recoveryGeneration = this.generation;
+        if (this.pending.length || !this.durable)
+          this.recoveryContent = readContent(this.doc);
+      }
       const permanent =
         status !== undefined &&
         status >= 400 &&
@@ -476,6 +517,7 @@ export class CollaborationController {
     }
   }
   retry = () => {
+    if (this.generationChanged) return;
     this.blocked = false;
     this.error = null;
     if (this.timer) {

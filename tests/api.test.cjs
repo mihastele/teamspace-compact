@@ -62,14 +62,302 @@ async function api(uid, method, path, input, storageOverride = storage) {
     headers: { "Content-Type": "application/json" },
     body: input === undefined ? undefined : JSON.stringify(input),
   });
-  const response = await handleTrustedApi(request, path.split("/"), {
-    db,
-    storage: storageOverride,
-    user: { uid, name: uid },
-  });
+  const response = await handleTrustedApi(
+    request,
+    path.split("?")[0].split("/"),
+    {
+      db,
+      storage: storageOverride,
+      user: { uid, name: uid },
+    },
+  );
   return { status: response.status, data: await response.json() };
 }
 const prefix = "workspaces/alpha";
+
+test("history checkpoints capture initial saved state and five-minute cadence with immutable naming", async () => {
+  const created = await api("member", "POST", `${prefix}/notes`, {
+    title: "Start",
+    content: { blocks: [] },
+  });
+  assert.equal(created.status, 201);
+  const path = `${prefix}/notes/${created.data.note.id}`;
+  assert.equal(
+    (await api("owner", "GET", `${path}/history`)).data.versions[0]
+      .sourceRevision,
+    1,
+  );
+  await api("member", "PATCH", path, {
+    title: "Quick",
+    content: { blocks: [] },
+    expectedRevision: 1,
+  });
+  assert.equal(
+    (await api("owner", "GET", `${path}/history`)).data.versions.length,
+    1,
+  );
+  await db
+    .doc(path)
+    .update({ historyCheckpointAt: Timestamp.fromMillis(Date.now() - 300001) });
+  await api("owner", "PATCH", path, {
+    title: "Checkpoint",
+    content: { blocks: [{ type: "paragraph", text: "Saved" }] },
+    expectedRevision: 2,
+  });
+  const list = await api("member", "GET", `${path}/history`);
+  assert.deepEqual(
+    list.data.versions.map((v) => v.sourceRevision),
+    [3, 1],
+  );
+  assert.ok(!Object.hasOwn(list.data.versions[0], "content"));
+  assert.equal(
+    (
+      await api("member", "POST", `${path}/history`, {
+        expectedRevision: 3,
+        name: "Release",
+      })
+    ).status,
+    200,
+  );
+  await api("member", "PATCH", path, {
+    title: "Newer",
+    content: { blocks: [] },
+    expectedRevision: 3,
+  });
+  assert.equal(
+    (
+      await api("member", "POST", `${path}/history`, {
+        expectedRevision: 3,
+        name: "Release",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await api("owner", "POST", `${path}/history`, {
+        expectedRevision: 3,
+        name: "Different",
+      })
+    ).status,
+    409,
+  );
+  const version = (await api("member", "GET", `${path}/history?version=r3`))
+    .data.version;
+  assert.equal(version.title, "Checkpoint");
+  assert.equal(version.kind, "named");
+  assert.equal(version.expiresAt, null);
+  assert.equal(version.content.blocks[0].text, "Saved");
+});
+
+test("history API hides expired snapshots before TTL deletion and paginates bounded scans", async () => {
+  const path = `${prefix}/notes/note`;
+  await Promise.all(
+    Array.from({ length: 23 }, (_, i) =>
+      db.doc(`${path}/historyVersions/r${i + 1}`).set({
+        sourceRevision: i + 1,
+        title: "Old",
+        content: { blocks: [] },
+        kind: "checkpoint",
+        name: null,
+        capturedAt: Timestamp.now(),
+        capturedBy: "member",
+        capturedName: "Member",
+        expiresAt: Timestamp.fromMillis(Date.now() - 1),
+      }),
+    ),
+  );
+  const page = await api("member", "GET", `${path}/history`);
+  assert.equal(page.status, 200);
+  assert.deepEqual(page.data.versions, []);
+  assert.equal(page.data.nextBefore, 4);
+  assert.equal(
+    (await api("member", "GET", `${path}/history?before=4`)).data.nextBefore,
+    null,
+  );
+  assert.equal(
+    (await api("member", "GET", `${path}/history?version=r23`)).status,
+    404,
+  );
+  assert.equal(
+    (
+      await api("member", "POST", `${path}/restore`, {
+        versionId: "r23",
+        expectedRevision: 1,
+        operationId: randomUUID(),
+      })
+    ).status,
+    404,
+  );
+  assert.equal((await currentNote()).revision, 1);
+});
+
+test("restore preserves hierarchy attachments and tasks; backs up current state and fences stale generations", async () => {
+  const note = await promoted();
+  const path = `${prefix}/notes/note`;
+  await api("member", "POST", `${path}/history`, {
+    expectedRevision: note.revision,
+    name: "Original",
+  });
+  await db.doc(path).update({ historyCheckpointAt: Timestamp.now() });
+  const edit = editOperation(note, (c) => {
+    c.blocks[0].text = "Changed";
+  });
+  assert.equal((await sendOperation("member", edit)).status, 200);
+  edit.doc.destroy();
+  await db.doc(path).update({ parentId: "parent" });
+  await db.doc(`${prefix}/notes/child`).set({
+    parentId: "note",
+    title: "Child",
+    content: { blocks: [] },
+    revision: 1,
+  });
+  await db
+    .doc(`${prefix}/attachments/file`)
+    .set({ parentType: "note", parentId: "note", status: "ready" });
+  const current = await currentNote();
+  const operationId = randomUUID();
+  const request = {
+    versionId: `r${note.revision}`,
+    expectedRevision: current.revision,
+    operationId,
+  };
+  const response = await api("owner", "POST", `${path}/restore`, request);
+  assert.equal(response.status, 200);
+  const restored = response.data.note;
+  assert.equal(restored.parentId, "parent");
+  assert.equal(restored.content.blocks[0].text, "Alpha");
+  assert.notEqual(restored.collab.generation, note.collab.generation);
+  assert.equal(restored.collab.sequence, 0);
+  const backup = (
+    await api("member", "GET", `${path}/history?version=r${current.revision}`)
+  ).data.version;
+  assert.equal(backup.content.blocks[0].text, "Changed");
+  assert.equal(backup.kind, "before_restore");
+  assert.ok((await db.doc(`${prefix}/attachments/file`).get()).exists);
+  assert.equal(
+    (await db.doc(`${prefix}/notes/child`).get()).data().parentId,
+    "note",
+  );
+  assert.equal(
+    (await db.doc(`${prefix}/tasks/task`).get()).data().title,
+    "Original",
+  );
+  const stale = editOperation(note, (c) => {
+    c.blocks[1].text = "Stale";
+  });
+  assert.equal((await sendOperation("member", stale)).status, 409);
+  stale.doc.destroy();
+  const newer = editOperation(restored, (c) => {
+    c.blocks[1].text = "After restore";
+  });
+  assert.equal((await sendOperation("member", newer)).status, 200);
+  newer.doc.destroy();
+  const replay = await api("owner", "POST", `${path}/restore`, request);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.note.content.blocks[1].text, "After restore");
+  assert.equal(replay.data.note.revision, restored.revision + 1);
+  assert.equal(
+    (
+      await api("owner", "POST", `${path}/restore`, {
+        ...request,
+        versionId: `r${current.revision}`,
+      })
+    ).status,
+    409,
+  );
+});
+
+test("competing restores use global CAS and cannot overwrite concurrent acknowledged work", async () => {
+  const path = `${prefix}/notes/note`;
+  await api("member", "POST", `${path}/history`, {
+    expectedRevision: 1,
+    name: "Named",
+  });
+  const responses = await Promise.all(
+    ["member", "owner"].map((uid) =>
+      api(uid, "POST", `${path}/restore`, {
+        versionId: "r1",
+        expectedRevision: 1,
+        operationId: randomUUID(),
+      }),
+    ),
+  );
+  assert.deepEqual(responses.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await currentNote()).revision, 2);
+  assert.equal((await db.collection(`${path}/historyRestores`).get()).size, 1);
+  assert.equal(
+    (await db.doc(`${path}/historyVersions/r1`).get()).data().expiresAt,
+    null,
+  );
+});
+
+test("history authorization is rechecked and fenced deletion removes snapshots and restore receipts", async () => {
+  const path = `${prefix}/notes/note`;
+  await api("member", "POST", `${path}/history`, {
+    expectedRevision: 1,
+    name: "Named",
+  });
+  for (const [method, suffix, input] of [
+    ["GET", "history"],
+    ["GET", "history?version=r1"],
+    ["POST", "history", { expectedRevision: 1, name: "Attack" }],
+    [
+      "POST",
+      "restore",
+      { expectedRevision: 1, versionId: "r1", operationId: randomUUID() },
+    ],
+  ])
+    assert.equal(
+      (await api("outsider", method, `${path}/${suffix}`, input)).status,
+      403,
+    );
+  await api("owner", "POST", `${path}/restore`, {
+    expectedRevision: 1,
+    versionId: "r1",
+    operationId: randomUUID(),
+  });
+  await db.doc(`${prefix}/members/member`).delete();
+  assert.equal((await api("member", "GET", `${path}/history`)).status, 403);
+  assert.equal((await api("owner", "DELETE", path)).status, 200);
+  assert.equal((await db.collection(`${path}/historyVersions`).get()).size, 0);
+  assert.equal((await db.collection(`${path}/historyRestores`).get()).size, 0);
+  assert.equal((await api("owner", "GET", `${path}/history`)).status, 404);
+});
+
+test("collaborative content and metadata saves checkpoint their acknowledged materialized state", async () => {
+  const note = await promoted();
+  const path = `${prefix}/notes/note`;
+  const edit = editOperation(note, (content) => {
+    content.blocks[0].text = "Collaborative checkpoint";
+  });
+  const response = await sendOperation("member", edit);
+  edit.doc.destroy();
+  assert.equal(response.status, 200);
+  const revision = response.data.note.revision;
+  assert.equal(
+    (await api("owner", "GET", `${path}/history?version=r${revision}`)).data
+      .version.content.blocks[0].text,
+    "Collaborative checkpoint",
+  );
+  await db
+    .doc(path)
+    .update({ historyCheckpointAt: Timestamp.fromMillis(Date.now() - 300001) });
+  const metadata = await api("owner", "PATCH", `${path}/metadata`, {
+    title: "Renamed",
+    expectedRevision: note.metadataRevision,
+  });
+  assert.equal(metadata.status, 200);
+  const version = (
+    await api(
+      "member",
+      "GET",
+      `${path}/history?version=r${metadata.data.note.revision}`,
+    )
+  ).data.version;
+  assert.equal(version.title, "Renamed");
+  assert.equal(version.content.blocks[0].text, "Collaborative checkpoint");
+});
 
 test("nonmembers cannot mutate content or manage workspace membership", async () => {
   for (const [method, path, body] of [

@@ -19,6 +19,17 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "historyVersions",
+      "fieldPath": "content",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "historyVersions",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "presence",
       "fieldPath": "expiresAt",
       "ttl": true,

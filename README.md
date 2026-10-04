@@ -23,7 +23,7 @@ In local preview, use **Set up your workspace** to open the five-step setup guid
 4. Deploy rules/indexes: `npx firebase deploy --only firestore:rules,firestore:indexes,storage --project YOUR_PROJECT_ID`. All direct writes are denied. Only workspace members can read workspace content. Trusted server handlers validate and authorize every write.
 5. Replace the example origins in `storage.cors.example.json`; apply with `gcloud storage buckets update gs://YOUR_BUCKET --cors-file=storage.cors.example.json`.
 6. Configure a bucket lifecycle rule deleting objects under `staging/` after one day, to clean abandoned/recreated signed uploads.
-7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. Ready attachments have no expiry. TTL is eventual; expired invites and request counters are checked synchronously by the application.
+7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. `presence.expiresAt` cleans up viewing leases; `historyVersions.expiresAt` removes automatic versions after 30 days. Ready attachments and named versions have no expiry. TTL is eventual; expiration is also enforced by the application.
 
 ### User sign-in and optional 2FA
 
@@ -100,3 +100,13 @@ Collaborative Undo/Redo affects local text only; structural actions do not use s
 Deploy `migrations/004-realtime-collaboration.md` rules/index changes, presence expiry TTL and trusted routes before the updated client. No live database was migrated during development. Promoted documents reject old whole-content saves; rolling back clients alone does not restore legacy editing. Checkpoints/materialized content are atomically merged, bounded and subject to document contention; this implementation targets small teams, with explicit 64KB update/350KB checkpoint limits rather than unlimited history. Conversion to a textless board/divider concurrent with typing may require explicit recovery.
 
 See `.agentic/COLLABORATION-VERIFICATION.md` for invariants, adversarial fixes and test coverage. Authenticated two-browser caret/IME/mobile and deployed acceptance remain open; this is not a production-release claim. Pending edits cleared from browser storage cannot be recovered unless already acknowledged by the server.
+
+## Page history and restore
+
+Saved pages have a History action with dated version previews and Markdown downloads. Automatic checkpoints capture the first saved state and then saved activity at most every five minutes; they remain available for 30 days. Save version keeps a named snapshot permanently until page deletion. One name is allowed per saved revision. Local preview offers the same controls, with history stored only in this browser.
+
+Restore requires a clean, acknowledged page and confirmation. It restores title/content while preserving location, children, attachments and shared board tasks, and keeps a backup of the saved page first. Concurrent changes invalidate the reviewed revision; refresh the review instead of overwriting them. An uncertain restore response offers an identical idempotent retry.
+
+A restore starts a fresh collaboration generation. Other viewers reload synchronization with Retry. Pending edits from the old generation stay blocked and downloadable; Keep recovery locally & reload archives them atomically in this browser before reopening the restored page. Download archived recovery exports the most recent local archive. Archives are not cloud versions and are lost if browser data is cleared; closed stale journals may need separate recovery when reopened.
+
+Deploy the additive schema/index/TTL configuration described in `migrations/005-page-history.md` before using the updated client. Version reads and restores are member-authorized trusted transactions; direct SDK access remains denied. Named versions and retry receipts grow until page deletion. Full workspace export and browser interaction acceptance remain open features/checks.

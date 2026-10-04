@@ -372,7 +372,112 @@ test("generation conflict exposes the actual unsent recovery copy", async () => 
     "Recover original work",
   );
   assert.equal(store.record.pending.length, 1);
+  assert.equal(reopened.getSnapshot().generationChanged, true);
+  assert.equal(reopened.getRecoveryGeneration(), store.record.generation);
   await reopened.dispose();
+});
+
+test("newer restore generation fences pending edits and older snapshots cannot unfence it", async () => {
+  const s = server(),
+    store = memoryStore();
+  const a = new CollaborationController(s.note(), s.transport(), store);
+  await a.start();
+  a.setOnline(false);
+  edit(a, 0, "Unsent local work");
+  await drain();
+  const original = s.note();
+  const restored = {
+    ...original,
+    revision: original.revision + 2,
+    collab: { ...original.collab, generation: crypto.randomUUID() },
+  };
+  a.receive(restored);
+  assert.equal(a.getSnapshot().generationChanged, true);
+  assert.equal(a.getSnapshot().readOnly, true);
+  assert.equal(
+    a.getSnapshot().recoveryContent.blocks[0].text,
+    "Unsent local work",
+  );
+  assert.equal(a.getRecoveryGeneration(), original.collab.generation);
+  a.receive(original);
+  a.retry();
+  assert.equal(a.getSnapshot().readOnly, true);
+  assert.equal(a.getSnapshot().content.blocks[0].text, "Unsent local work");
+  await a.dispose();
+  assert.equal(store.record.pending.length, 1);
+});
+
+test("clean viewers detect restore without reporting unsaved work and ignore stale generation snapshots", async () => {
+  const s = server(),
+    a = new CollaborationController(s.note(), s.transport(), memoryStore());
+  await a.start();
+  const stale = {
+    ...s.note(),
+    collab: { ...s.note().collab, generation: crypto.randomUUID() },
+  };
+  a.receive(stale);
+  assert.equal(a.getSnapshot().generationChanged, false);
+  const restored = { ...stale, revision: stale.revision + 1 };
+  a.receive(restored);
+  assert.equal(a.getSnapshot().generationChanged, true);
+  assert.equal(a.getSnapshot().pending, false);
+  assert.equal(a.getSnapshot().recoveryContent, null);
+  await a.dispose();
+});
+
+test("recovery archival durability retries failed writes without replacing an older-generation journal", async () => {
+  const s = server(),
+    store = memoryStore();
+  const a = new CollaborationController(s.note(), s.transport(), store);
+  await a.start();
+  a.setOnline(false);
+  store.failing = true;
+  edit(a, 0, "Must survive archival");
+  await drain();
+  await assert.rejects(a.ensureRecoveryDurable(), /Storage unavailable/);
+  store.failing = false;
+  await a.ensureRecoveryDurable();
+  assert.equal(
+    readContent(decodeDocument(store.record.state)).blocks[0].text,
+    "Must survive archival",
+  );
+  await a.dispose();
+  const replacement = s.note();
+  replacement.collab.generation = crypto.randomUUID();
+  const reopened = new CollaborationController(
+    replacement,
+    s.transport(),
+    store,
+  );
+  await reopened.start();
+  const saved = structuredClone(store.record);
+  await reopened.ensureRecoveryDurable();
+  assert.deepEqual(store.record, saved);
+  await reopened.dispose();
+});
+
+test("recovery durability gate freezes later edits until reload so journal remains complete", async () => {
+  const s = server(), store = memoryStore();
+  const a = new CollaborationController(s.note(), s.transport(), store);
+  await a.start();
+  a.setOnline(false);
+  edit(a, 0, "Before reload");
+  await drain();
+  const original = store.save.bind(store);
+  let release;
+  store.save = async record => {
+    await new Promise(resolve => { release = resolve; });
+    await original(record);
+  };
+  const durability = a.ensureRecoveryDurable();
+  await drain();
+  assert.equal(a.getSnapshot().readOnly, true);
+  edit(a, 0, "Late keystroke must not be accepted");
+  release();
+  await durability;
+  assert.equal(a.getSnapshot().content.blocks[0].text, "Before reload");
+  assert.equal(readContent(decodeDocument(store.record.state)).blocks[0].text, "Before reload");
+  await a.dispose();
 });
 
 test("disposal waits for already queued recovery writes before releasing journal ownership", async () => {

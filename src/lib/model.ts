@@ -40,6 +40,18 @@ export type Note = {
     sequence: number;
   };
 };
+export type PageVersionSummary = {
+  id: string;
+  sourceRevision: number;
+  title: string;
+  kind: "checkpoint" | "named" | "before_restore";
+  name: string | null;
+  capturedAt: number;
+  capturedBy: string;
+  capturedName: string;
+  expiresAt: number | null;
+};
+export type PageVersion = PageVersionSummary & { content: NoteContent };
 export type Member = {
   id: string;
   displayName: string;

@@ -11,7 +11,8 @@ import {
   type User,
 } from "firebase/auth";
 import { collection, getFirestore, onSnapshot } from "firebase/firestore";
-import type { Attachment, Member, Note, Task, Workspace } from "./model";
+import type { Attachment, Member, Note, Task, Workspace, PageVersion, PageVersionSummary } from "./model";
+import { checkpointLocalPage, nameLocalVersion, restoreLocalPage, visibleVersions, reconcilePageSnapshots, type LocalPageHistory } from "./page-history";
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
 import { updateTaskStatus } from "./task-status";
@@ -74,7 +75,7 @@ const demoTasks: Task[] = [
     position: 2,
   },
 ];
-type Preview = { tasks: Task[]; notes: Note[] };
+type Preview = { tasks: Task[]; notes: Note[]; histories?: Record<string, LocalPageHistory> };
 export type DocumentPresence = {
   id: string;
   displayName: string;
@@ -245,7 +246,7 @@ export function useTeamspace() {
         collection(db, `workspaces/${workspace.id}/${name}`),
         (snapshot) => {
           if (!active) return;
-          set(
+          let rows =
             snapshot.docs
               .filter(
                 (doc) =>
@@ -261,32 +262,26 @@ export function useTeamspace() {
                       : {}),
                     id: doc.id,
                   }) as T,
-              ),
-          );
-          if (name === "notes")
+              );
+          if (name === "notes") {
+            rows = reconcilePageSnapshots(
+              noteSnapshot.current?.workspaceId === workspace.id ? noteSnapshot.current.rows : [],
+              rows as Note[],
+            ) as T[];
             noteSnapshot.current = {
               workspaceId: workspace.id,
-              rows: snapshot.docs.map(
-                (document) =>
-                  ({
-                    ...document.data(),
-                    id: document.id,
-                    parentId: document.data().parentId ?? null,
-                  }) as Note,
-              ),
+              rows: rows as Note[],
             };
+          }
+          set(rows);
           if (name === "notes")
             for (const observer of noteObservers.current) {
               if (observer.workspaceId !== workspace.id) continue;
-              const document = snapshot.docs.find(
+              const document = (rows as Note[]).find(
                 (item) => item.id === observer.noteId,
               );
-              if (document && !document.data().deleting)
-                observer.next({
-                  ...document.data(),
-                  id: document.id,
-                  parentId: document.data().parentId ?? null,
-                } as Note);
+              if (document && !(document as Note & { deleting?: boolean }).deleting)
+                observer.next(document);
               else
                 observer.fail(
                   new RequestError(
@@ -361,6 +356,56 @@ export function useTeamspace() {
     members,
     attachments,
     restartSubscriptions: () => setWatchEpoch((epoch) => epoch + 1),
+    listPageHistory: async (noteId: string, before?: number) => {
+      if (!configured) {
+        if (!preview.current.notes.some(note => note.id === noteId)) throw new Error("The page no longer exists.");
+        const rows = visibleVersions(preview.current.histories?.[noteId], Date.now()).filter(version => before === undefined || version.sourceRevision < before);
+        return { versions: rows.slice(0, 20).map(({ content, ...summary }) => { void content; return summary; }), nextBefore: rows.length > 20 ? rows[19].sourceRevision : null };
+      }
+      return await api(`${path()}/notes/${noteId}/history${before === undefined ? "" : `?before=${before}`}`, "GET", undefined, user?.uid) as { versions: PageVersionSummary[]; nextBefore: number | null };
+    },
+    getPageVersion: async (noteId: string, versionId: string): Promise<PageVersion> => {
+      if (!configured) {
+        if (!preview.current.notes.some(note => note.id === noteId)) throw new Error("The page no longer exists.");
+        const version = visibleVersions(preview.current.histories?.[noteId], Date.now()).find(item => item.id === versionId);
+        if (!version) throw new Error("This version is missing or expired.");
+        return structuredClone(version);
+      }
+      const data = await api(`${path()}/notes/${noteId}/history?version=${encodeURIComponent(versionId)}`, "GET", undefined, user?.uid);
+      return data.version as PageVersion;
+    },
+    savePageVersion: async (noteId: string, expectedRevision: number, name: string): Promise<PageVersion> => {
+      if (!configured) {
+        const note = preview.current.notes.find(item => item.id === noteId);
+        if (!note) throw new Error("The page no longer exists.");
+        const history = nameLocalVersion(preview.current.histories?.[noteId], note, expectedRevision, name, Date.now());
+        persist({ ...preview.current, histories: { ...preview.current.histories, [noteId]: history } });
+        return structuredClone(history.versions.find(version => version.sourceRevision === expectedRevision)!);
+      }
+      const data = await api(`${path()}/notes/${noteId}/history`, "POST", { expectedRevision, name }, user?.uid);
+      const full = await api(`${path()}/notes/${noteId}/history?version=${encodeURIComponent(data.versionId)}`, "GET", undefined, user?.uid);
+      return full.version as PageVersion;
+    },
+    restorePageVersion: async (noteId: string, versionId: string, expectedRevision: number, operationId: string): Promise<Note> => {
+      if (!configured) {
+        const note = preview.current.notes.find(item => item.id === noteId);
+        if (!note) throw new Error("The page no longer exists.");
+        const restored = restoreLocalPage(preview.current.histories?.[noteId], note, versionId, expectedRevision, operationId, Date.now());
+        persist({ ...preview.current, notes: preview.current.notes.map(item => item.id === noteId ? restored.note : item), histories: { ...preview.current.histories, [noteId]: restored.history } });
+        return restored.note;
+      }
+      const boundWorkspace = workspace?.id;
+      const boundUid = user?.uid;
+      const data = await api(`${path()}/notes/${noteId}/restore`, "POST", { versionId, expectedRevision, operationId }, boundUid);
+      const note = data.note as Note;
+      const current = noteSnapshot.current;
+      if (current && getAuth(getApp()).currentUser?.uid === boundUid && current.workspaceId === boundWorkspace) {
+        const rows = current.rows.map(item => item.id === noteId && note.revision > item.revision ? note : item);
+        noteSnapshot.current = { ...current, rows };
+        setNotes(rows);
+      }
+      return note;
+    },
     initializeCollaboration: async (noteId: string) => {
       if (!configured || !user) return unavailable();
       const data = await api(
@@ -614,6 +659,7 @@ export function useTeamspace() {
               ...preview.current.notes.filter((n) => n.id !== item.id),
               item,
             ],
+            histories: { ...preview.current.histories, [item.id]: checkpointLocalPage(preview.current.histories?.[item.id], item, Date.now()) },
           });
           return item;
         }
@@ -635,6 +681,7 @@ export function useTeamspace() {
           persist({
             ...preview.current,
             notes: preview.current.notes.filter((n) => n.id !== id),
+            histories: Object.fromEntries(Object.entries(preview.current.histories ?? {}).filter(([noteId]) => noteId !== id)),
           });
           return;
         }

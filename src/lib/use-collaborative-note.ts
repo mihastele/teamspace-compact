@@ -21,6 +21,7 @@ const initialView: CollaborationView = {
   canRedo: false,
   readOnly: true,
   recoveryContent: null,
+  generationChanged: false,
 };
 
 export function useCollaborativeNote({
@@ -38,6 +39,8 @@ export function useCollaborativeNote({
   const controller = useRef<{
     key: string;
     instance: CollaborationController;
+    archiveRecovery: () => Promise<void>;
+    retryRecovery: () => Promise<void>;
   } | null>(null);
   const [state, setState] = useState<{ key: string; view: CollaborationView }>({
     key: "",
@@ -48,6 +51,11 @@ export function useCollaborativeNote({
     rows: DocumentPresence[];
   }>({ key: "", rows: [] });
   const [restart, setRestart] = useState(0);
+  const [archivedRecovery, setArchivedRecovery] = useState<{
+    key: string;
+    content: NoteContent | null;
+  }>({ key: "", content: null });
+  const [archiveError, setArchiveError] = useState({ key: "", message: "" });
   const key = `${uid}:${workspaceId}:${noteId}`;
   useEffect(() => {
     apiRef.current = api;
@@ -64,6 +72,11 @@ export function useCollaborativeNote({
     let rows: DocumentPresence[] = [];
     let releaseLock: (() => void) | undefined;
     let sessionId: string | undefined;
+    let archiving: Promise<void> | undefined;
+    let retrying: Promise<void> | undefined;
+    let stopped: Promise<void> | undefined;
+    const stopController = () =>
+      (stopped ??= instance?.dispose() ?? Promise.resolve());
     const release = new Promise<void>((resolve) => {
       releaseLock = resolve;
     });
@@ -91,6 +104,21 @@ export function useCollaborativeNote({
       if (cancelled) return;
       const scope = `${uid}:${workspaceId}:${noteId}:${sessionId}`;
       const store = indexedRecoveryStore(scope);
+      try {
+        const archivedContent = (await store.archivedContent?.()) ?? null;
+        if (cancelled) return;
+        setArchivedRecovery({ key, content: archivedContent });
+        setArchiveError({ key, message: "" });
+      } catch {
+        if (cancelled) return;
+        // An unavailable archive must not prevent the live page from opening.
+        // Retain any in-memory copy until its durable archive can be read again.
+        setArchiveError({
+          key,
+          message:
+            "Archived local recovery could not be read. Keep this browser’s data and retry synchronization; the live page is unaffected.",
+        });
+      }
       let note;
       try {
         note = await boundApi.initializeCollaboration(noteId!);
@@ -128,7 +156,104 @@ export function useCollaborativeNote({
         },
         store,
       );
-      controller.current = { key, instance };
+      const archiveRecovery = () => {
+        if (archiving) return archiving;
+        if (retrying) return retrying;
+        if (cancelled || !instance || controller.current?.instance !== instance)
+          return Promise.resolve();
+        const captured = instance;
+        const view = captured.getSnapshot();
+        const generation = captured.getRecoveryGeneration();
+        if (!view.generationChanged || !view.pending || !generation)
+          return Promise.resolve();
+        const operation = async () => {
+          try {
+            if (!store.archiveGeneration || !store.archivedContent)
+              throw new Error(
+                "This browser cannot archive recovery safely. Download Markdown and retry.",
+              );
+            setState({
+              key,
+              view: {
+                ...view,
+                readOnly: true,
+                status: "Syncing…",
+                error: null,
+              },
+            });
+            unsubscribeView?.();
+            // Stop all writers and drain queued durability work before moving the journal.
+            // The effect's writer lock stays held through this complete operation.
+            if (!stopped) await captured.ensureRecoveryDurable();
+            await stopController();
+            await store.archiveGeneration(generation);
+            if (cancelled || controller.current?.instance !== captured) return;
+            // Archive commit is durable already. A subsequent read failure must not
+            // cause a second move of an active journal which no longer exists.
+            setArchivedRecovery({
+              key,
+              content: view.recoveryContent ?? view.content,
+            });
+            boundApi.restartSubscriptions();
+            setRestart((value) => value + 1);
+          } catch (error) {
+            if (!cancelled && controller.current?.instance === captured)
+              setState({
+                key,
+                view: {
+                  ...view,
+                  readOnly: true,
+                  status: "Sync failed",
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Recovery could not be archived. Your local work is retained; download Markdown and retry.",
+                },
+              });
+          } finally {
+            archiving = undefined;
+          }
+        };
+        archiving = operation();
+        return archiving;
+      };
+      const retryRecovery = () => {
+        if (archiving) return archiving;
+        if (retrying) return retrying;
+        if (cancelled || !instance || controller.current?.instance !== instance)
+          return Promise.resolve();
+        const captured = instance;
+        const view = captured.getSnapshot();
+        const operation = async () => {
+          try {
+            // A failed IndexedDB save may leave the controller ahead of its journal.
+            // Never rebuild that controller until its latest pending work is durable.
+            if (view.pending && !stopped)
+              await captured.ensureRecoveryDurable();
+            if (cancelled || controller.current?.instance !== captured) return;
+            boundApi.restartSubscriptions();
+            setRestart((value) => value + 1);
+          } catch (error) {
+            if (!cancelled && controller.current?.instance === captured)
+              setState({
+                key,
+                view: {
+                  ...captured.getSnapshot(),
+                  status: "Sync failed",
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Local work could not be preserved. Download Markdown before leaving, then retry.",
+                },
+              });
+          } finally {
+            retrying = undefined;
+          }
+        };
+        retrying = operation();
+        return retrying;
+      };
+      controller.current = { key, instance, archiveRecovery, retryRecovery };
       unsubscribeView = instance.subscribe(() => {
         if (!cancelled) setState({ key, view: instance!.getSnapshot() });
       });
@@ -211,9 +336,13 @@ export function useCollaborativeNote({
       if (expiryTimer) clearInterval(expiryTimer);
       window.removeEventListener("online", connectivity);
       window.removeEventListener("offline", connectivity);
-      const stopped = instance?.dispose() ?? Promise.resolve();
+      const drained = stopController();
       if (controller.current?.instance === instance) controller.current = null;
-      void stopped.finally(() => releaseLock?.());
+      void Promise.all([
+        drained,
+        archiving ?? Promise.resolve(),
+        retrying ?? Promise.resolve(),
+      ]).finally(() => releaseLock?.());
       if (sessionId)
         void boundApi.leavePresence(noteId, sessionId).catch(() => {});
     };
@@ -222,12 +351,24 @@ export function useCollaborativeNote({
   return {
     ...view,
     presence: enabled && presence.key === key ? presence.rows : [],
+    archivedRecoveryContent:
+      enabled && archivedRecovery.key === key ? archivedRecovery.content : null,
+    archivedRecoveryError:
+      enabled && archiveError.key === key ? archiveError.message : null,
+    discardRecoveryAndRetry: () => {
+      if (!enabled || controller.current?.key !== key) return Promise.resolve();
+      return controller.current.archiveRecovery();
+    },
     change: (next: NoteContent, base?: NoteContent) => {
       if (enabled && controller.current?.key === key)
         controller.current.instance.change(next, base);
     },
     retry: () => {
       if (!enabled) return;
+      if (controller.current?.key === key) {
+        void controller.current.retryRecovery();
+        return;
+      }
       apiRef.current.restartSubscriptions();
       setRestart((value) => value + 1);
     },
