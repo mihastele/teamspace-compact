@@ -11,6 +11,8 @@ Module._load = function (id, ...args) {
   return id === "server-only" ? {} : originalLoad.call(this, id, ...args);
 };
 const { handleTrustedApi } = require("../.test-build/server/api.js");
+const { firebaseDocumentStore } = require("../.test-build/server/document-store.js");
+const { guardedDocumentStore } = require("../.test-build/server/auth-policy.js");
 Module._load = originalLoad;
 
 let app, db, storage;
@@ -74,6 +76,22 @@ async function api(uid, method, path, input, storageOverride = storage) {
   return { status: response.status, data: await response.json() };
 }
 const prefix = "workspaces/alpha";
+test('Firebase transactions serialize durable writes with email policy changes', async () => {
+  await db.doc('security/policy').set({emailConfirmationRequired:false});
+  const portable=firebaseDocumentStore(db), guarded=guardedDocumentStore(portable,false,false);
+  let release,read;const gate=new Promise(resolve=>{release=resolve;});const ready=new Promise(resolve=>{read=resolve;});
+  const operation=guarded.runTransaction(async tx=>{await tx.get(portable.doc(`${prefix}/tasks/task`));read();await gate;tx.update(portable.doc(`${prefix}/tasks/task`),{title:'Authorized before tightening'});});
+  await ready;
+  // Firestore locks transaction reads. Release the pending writer while its queued
+  // policy update is competing, then verify later transactions obey the new policy.
+  const tightening=db.doc('security/policy').set({emailConfirmationRequired:true});
+  release();
+  const [written,published]=await Promise.allSettled([operation,tightening]);
+  assert.equal(published.status,'fulfilled');
+  if(written.status==='rejected')assert.equal(written.reason.code,'policy_mismatch');
+  await assert.rejects(guarded.runTransaction(async tx=>tx.update(portable.doc(`${prefix}/tasks/task`),{title:'Denied'})),error=>error.code==='policy_mismatch');
+  assert.equal((await db.doc(`${prefix}/tasks/task`).get()).data().title,written.status==='fulfilled'?'Authorized before tightening':'Original');
+});
 
 test("conversations preserve concurrent posts and acknowledge exact retry identities", async () => {
   const path = `${prefix}/notes/note/comments`;

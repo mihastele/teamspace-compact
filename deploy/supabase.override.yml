@@ -1,0 +1,51 @@
+# This override is loaded together with the pinned upstream Compose file.
+services:
+  api-gw:
+    ports: !override
+      - "127.0.0.1:${API_GW_HTTP_PORT:-8000}:8000/tcp"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Generate JWT_SECRET before starting Supabase}
+      ANON_KEY: ${ANON_KEY:?Generate ANON_KEY before starting Supabase}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?Generate SERVICE_ROLE_KEY before starting Supabase}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?Set a strong dashboard password}
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate POSTGRES_PASSWORD before starting Supabase}
+      JWT_SECRET: ${JWT_SECRET:?Generate JWT_SECRET before starting Supabase}
+  supavisor:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION:-6543}:6543"
+    environment:
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}
+      VAULT_ENC_KEY: ${VAULT_ENC_KEY:?Generate VAULT_ENC_KEY before starting Supabase}
+  realtime:
+    environment:
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?Generate REALTIME_DB_ENC_KEY before starting Supabase}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}
+  meta:
+    environment:
+      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?Generate PG_META_CRYPTO_KEY before starting Supabase}
+  storage:
+    environment:
+      S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID:?Generate S3_PROTOCOL_ACCESS_KEY_ID before starting Supabase}
+      S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET:?Generate S3_PROTOCOL_ACCESS_KEY_SECRET before starting Supabase}
+  auth:
+    environment:
+      EMAIL_CONFIRMATION_REQUIRED: ${EMAIL_CONFIRMATION_REQUIRED:-true}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${PASSWORD_AUTH_ENABLED:-true}
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_AUTH_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
+      GOTRUE_MFA_TOTP_ENROLL_ENABLED: "false"
+      GOTRUE_MFA_TOTP_VERIFY_ENABLED: "false"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$EMAIL_CONFIRMATION_REQUIRED" in
+          true) export GOTRUE_MAILER_AUTOCONFIRM=false ;;
+          false) export GOTRUE_MAILER_AUTOCONFIRM=true ;;
+          *) echo "EMAIL_CONFIRMATION_REQUIRED must be true or false" >&2; exit 1 ;;
+        esac
+        exec auth

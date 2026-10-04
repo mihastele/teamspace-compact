@@ -25,5 +25,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:rules
+      - run: npm run test:supabase
+      - run: node scripts/prepare-supabase.mjs
+      - run: node scripts/check-supabase-compose.mjs
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build

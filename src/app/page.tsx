@@ -26,6 +26,7 @@ import { matchNote } from "@/lib/note-search";
 import SetupGuide from "./components/SetupGuide";
 import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
+import AuthPanel from "./components/AuthPanel";
 import {
   deadlineState,
   matchesDeadline,
@@ -2015,14 +2016,12 @@ function WorkspaceSetup({ api }: { api: Api }) {
           for your team.
         </p>
         {(error || api.error) && <ErrorMessage message={error || api.error!} />}{" "}
-        {!api.user ? (
-          <button
-            className={s.primary}
-            disabled={busy || api.loading}
-            onClick={() => void run(api.signIn)}
-          >
-            {busy ? "Signing in…" : "Continue with Google"}
-          </button>
+        {!api.user ||
+        api.needsEmailConfirmation ||
+        api.passwordRecovery ||
+        api.authConfigurationError ||
+        !api.authConfiguration ? (
+          <AuthPanel api={api} />
         ) : (
           <>
             <form
@@ -2263,7 +2262,14 @@ export default function Home() {
         </div>
       </div>
     );
-  if (!api.workspace || (api.configured && !api.user))
+  if (
+    !api.workspace ||
+    (api.configured &&
+      (!api.user ||
+        api.needsEmailConfirmation ||
+        api.passwordRecovery ||
+        api.authConfigurationError))
+  )
     return <WorkspaceSetup api={api} />;
   const shown = api.tasks.filter(
     (t) =>

@@ -1,4 +1,10 @@
 import type { NextConfig } from "next";
+import { isPrivilegedSupabaseKey } from "./src/lib/public-key";
+
+const browserKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (isPrivilegedSupabaseKey(browserKey) || (browserKey && browserKey === process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY must contain a public key. A server key cannot be bundled in the browser.");
+}
 
 const nextConfig: NextConfig = {
   async headers() {

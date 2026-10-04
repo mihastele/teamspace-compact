@@ -27,6 +27,21 @@ import {
 } from "firebase/storage";
 
 let environment;
+test('email confirmation policy protects direct reads and defaults to required', async () => {
+  const unconfirmed = environment.authenticatedContext('member', { email_verified: false }).firestore();
+  const confirmed = environment.authenticatedContext('member', { email_verified: true }).firestore();
+  const target = doc(unconfirmed, `${workspace}/notes/note`);
+  await assertSucceeds(getDoc(target));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'security/policy'), { emailConfirmationRequired: true });
+  });
+  await assertFails(getDoc(target));
+  await assertSucceeds(getDoc(doc(confirmed, `${workspace}/notes/note`)));
+  await assertFails(setDoc(doc(unconfirmed, 'security/policy'), { emailConfirmationRequired: false }));
+  await environment.withSecurityRulesDisabled(async context => { await deleteDoc(doc(context.firestore(), 'security/policy')); });
+  await assertFails(getDoc(target));
+  await assertSucceeds(getDoc(doc(confirmed, `${workspace}/notes/note`)));
+});
 setLogLevel("silent");
 const workspace = "workspaces/alpha";
 const documents = [
@@ -68,6 +83,7 @@ beforeEach(async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     await Promise.all([
+      setDoc(doc(db, 'security/policy'), { emailConfirmationRequired: false }),
       setDoc(doc(db, workspace), { name: "Alpha", ownerId: "owner" }),
       setDoc(doc(db, `${workspace}/members/owner`), { role: "owner" }),
       setDoc(doc(db, `${workspace}/members/member`), { role: "member" }),

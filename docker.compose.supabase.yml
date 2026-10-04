@@ -1,0 +1,11 @@
+# Prepare the pinned upstream configuration with: node scripts/prepare-supabase.mjs
+# Copy .env.supabase.example to .env.supabase and configure secrets first.
+# Start: docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d
+# Never use `down --volumes` on a database whose data you want to keep.
+name: teamspace-supabase
+include:
+  - path:
+      - ./.supabase/upstream/docker/docker-compose.yml
+      - ./deploy/supabase.override.yml
+    project_directory: ./.supabase/upstream/docker
+    env_file: ${SUPABASE_COMPOSE_ENV_FILE:-./.env.supabase}

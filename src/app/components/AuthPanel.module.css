@@ -1,0 +1,99 @@
+.panel {
+  margin-top: 24px;
+  text-align: left;
+}
+.panel h2 {
+  font-size: 20px;
+  color: #314761;
+  margin: 0 0 12px;
+}
+.panel p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #718198;
+  margin: 10px 0 16px;
+}
+.panel form {
+  display: grid;
+  gap: 14px;
+}
+.panel label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #496383;
+  font-weight: 600;
+}
+.panel input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dce4ef;
+  border-radius: 8px;
+  background: white;
+  color: #314761;
+  font-size: 14px;
+}
+.panel button {
+  padding: 11px 15px;
+  border: 1px solid #dce4ef;
+  border-radius: 8px;
+  color: #496383;
+  background: #f5f7fb;
+  font-size: 12px;
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.panel .primary {
+  background: #315dcc;
+  border-color: #315dcc;
+  color: white;
+  font-weight: 600;
+}
+.panel .google {
+  width: 100%;
+  background: white;
+  font-weight: 600;
+}
+.links,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.links button {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: #5276b9;
+  font-size: 11px;
+}
+.links button + button {
+  margin-left: auto;
+}
+.separator {
+  text-align: center;
+  font-size: 11px;
+  color: #8190a7;
+  margin: 20px 0 12px;
+}
+.panel .error {
+  color: #a2463c;
+  background: #fff1ef;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.panel .notice {
+  background: #f0f5ff;
+  color: #5276b9;
+  border-radius: 8px;
+  padding: 12px;
+}
+.panel button:focus-visible,
+.panel input:focus-visible {
+  outline: 3px solid #6687f2;
+  outline-offset: 2px;
+}

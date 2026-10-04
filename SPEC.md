@@ -7,9 +7,9 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 ## Agreed stack
 
 - Next.js App Router, React, TypeScript; deploy to Vercel.
-- Firebase Authentication: Google sign-in.
-- Cloud Firestore: workspaces, membership, tasks, notes, attachment metadata.
-- Firebase Storage: private attachments. Requires Blaze billing.
+- Authentication: email/password registration/login with optional Google OAuth, on the deployment's selected Firebase or Supabase backend.
+- Durable data: Cloud Firestore, or Supabase PostgreSQL with transactional document records, membership RLS and guarded live subscriptions.
+- Private attachments: Firebase Storage (requires Blaze billing), or private Supabase Storage.
 - No MinIO or separate object-storage server.
 - Plain CSS for the first slice; reusable design tokens and components.
 
@@ -27,12 +27,12 @@ Custom databases, AI, notifications, public publishing and complex role hierarch
 
 ## Main screens and behavior
 
-- Sign-in: Google button; actionable authentication errors.
+- Sign-in: classic registration/login, verification/resend and password reset, plus optional Google; actionable authentication errors.
 - Workspace: sidebar with workspace name, Board, Notes, and Members.
 - Board: three columns, task count, Add task. Card shows title, assignee, due date. Detail editor holds description and attachments. Drag moves a card; a status selector provides keyboard/touch fallback.
 - Notes: expandable document tree, root/subnote creation, clickable breadcrumbs, and parent selection to move notes; visible synchronization status for live content and separate title/location save status. New/local-preview notes use explicit Save; configured saved notes synchronize text and blocks automatically. If the remote revision changes while editing, keep the local draft and offer reload/copy instead of overwriting. Clean notes reflect saved teammate changes. Parent moves and title changes use independent metadata revision checks. Move/delete child notes before deleting their parent; no implicit cascading deletion.
 - Members: member list and invite link. Owner can revoke an invite or remove a member. Members can leave; the last owner cannot leave without transferring ownership.
-- Missing Firebase configuration: clearly labeled local prototype. No claim of shared data or authenticated access.
+- Missing backend configuration: clearly labeled local prototype. No claim of shared data or authenticated access.
 
 ## Design
 
@@ -154,7 +154,7 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Local preview offers a floating setup button and five-step accessible modal guide, with browser setting presence indicators and an empty environment template. No credentials are collected or persisted; no cloud provisioning or preview-data import occurs.
 - Distinguish workspace ownership from project administration and provider enablement from implemented MFA enrollment. Explain restart/redeployment and mark launch checks as manual, rather than claiming successful configuration.
-- User login setup means Google OAuth through Firebase Authentication. Include provider enablement, authorized domains and sign-in verification in the Sign-in & workspace step. Keep 2FA guidance collapsed and optional by default; future enrollment is opt-in, and no app-level MFA requirement is introduced.
+- User login supports email/password and optional Google OAuth on the selected backend. Include provider enablement, confirmation policy, authorized domains and sign-in verification in the Sign-in & workspace step. Keep 2FA guidance collapsed and optional by default; future enrollment is opt-in, and no app-level MFA requirement is introduced.
 
 ### Board deadline focus — 2026-10-04
 
@@ -182,3 +182,12 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Posting is optimistic, acknowledged explicitly and idempotent by authenticated UID plus operation UUID. Persist exact body/identity before sending; uncertain responses retain that request across refresh. Fence same-account draft writers across tabs. Storage failure keeps recovery visible and blocks transmission until durable.
 - Default-deny browser writes remain; reads require membership and a live parent. Server transactions validate bounds, author, mentions and posting/deletion rate limits. Tombstones erase message text/mentions and prevent stale duplicate resurrection. Conversation storage is removed through fenced parent deletion and remains intact during page restore.
 - Migration 006 documents additive schema, indexing, access control, retention/export/deletion and rollback. Older-message pagination, editing, moderation, notifications and block anchors remain later features. Browser interaction/real two-user acceptance remains an external gate.
+
+## Alternative backend and classic login
+
+- The administrator selects one backend per deployment using matching BACKEND_PROVIDER and NEXT_PUBLIC_BACKEND_PROVIDER values. Switching providers does not transfer existing accounts/content/files.
+- Preserve the same trusted authorization, transactional collaboration, history, conversations, attachment validation and recovery behavior for Firebase and Supabase.
+- Support email/password registration, login, verification/resend and reset. GOOGLE_AUTH_ENABLED makes Google optional; PASSWORD_AUTH_ENABLED controls classic login.
+- EMAIL_CONFIRMATION_REQUIRED is a strict boolean, default true. Publish the matching database read policy; enforce it on direct reads and trusted API requests.
+- Supply docker.compose.supabase.yml, .env.supabase.example, pinned upstream preparation, fresh credential generation, schema migration and expiry/staging cleanup instructions. Never expose server keys through the setup guide or client variables.
+- Keep app-level 2FA optional and enrollment disabled until its future flow is implemented.

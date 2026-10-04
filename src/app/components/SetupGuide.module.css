@@ -278,3 +278,13 @@
     display: none;
   }
 }
+.providerChoices {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.providerChoices button[aria-pressed="true"] {
+  border-color: #315dcc;
+  background: #edf2ff;
+  color: #315dcc;
+}

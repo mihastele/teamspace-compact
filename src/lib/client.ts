@@ -1,47 +1,58 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApp, getApps, initializeApp } from "firebase/app";
 import {
-  getAuth,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  type User,
-} from "firebase/auth";
-import { collection, getFirestore, onSnapshot, query, orderBy, limit, documentId } from "firebase/firestore";
-import type { Attachment, Member, Note, Task, Workspace, PageVersion, PageVersionSummary, ConversationComment } from "./model";
-import { commentWindow, postPreviewComment, deletePreviewComment, type PreviewComment, type ConversationParent, type CommentPacket } from "./conversations";
-import { checkpointLocalPage, nameLocalVersion, restoreLocalPage, visibleVersions, reconcilePageSnapshots, type LocalPageHistory } from "./page-history";
+  browserConfigured as configured,
+  browserProvider,
+  currentBrowserUser,
+  browserAccessToken,
+  observeBrowserAuth,
+  loadAuthConfiguration,
+  browserSignIn,
+  browserRegister,
+  browserGoogleSignIn,
+  browserSignOut,
+  browserResendConfirmation,
+  browserRefreshConfirmation,
+  browserResetPassword,
+  browserCompletePasswordReset,
+  subscribeBrowserCollection,
+  timestampMillis,
+  type BrowserUser,
+  type AuthConfiguration,
+} from "./browser-backend";
+export { browserConfigurationStatus } from "./browser-backend";
+import type {
+  Attachment,
+  Member,
+  Note,
+  Task,
+  Workspace,
+  PageVersion,
+  PageVersionSummary,
+  ConversationComment,
+} from "./model";
+import {
+  commentWindow,
+  postPreviewComment,
+  deletePreviewComment,
+  type PreviewComment,
+  type ConversationParent,
+  type CommentPacket,
+} from "./conversations";
+import {
+  checkpointLocalPage,
+  nameLocalVersion,
+  restoreLocalPage,
+  visibleVersions,
+  reconcilePageSnapshots,
+  type LocalPageHistory,
+} from "./page-history";
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
 import { updateTaskStatus } from "./task-status";
+import { terminalSnapshotReadFailure } from "./browser-sync";
 
-const config = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-const configured = Object.values(config).every(Boolean);
-export const browserConfigurationStatus = [
-  { name: "NEXT_PUBLIC_FIREBASE_API_KEY", present: Boolean(config.apiKey) },
-  {
-    name: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
-    present: Boolean(config.authDomain),
-  },
-  {
-    name: "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
-    present: Boolean(config.projectId),
-  },
-  {
-    name: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
-    present: Boolean(config.storageBucket),
-  },
-  { name: "NEXT_PUBLIC_FIREBASE_APP_ID", present: Boolean(config.appId) },
-];
 const demoWorkspace: Workspace = {
   id: "preview",
   name: "Campus collective",
@@ -76,7 +87,12 @@ const demoTasks: Task[] = [
     position: 2,
   },
 ];
-type Preview = { tasks: Task[]; notes: Note[]; histories?: Record<string, LocalPageHistory>; conversations?: Record<string, PreviewComment[]> };
+type Preview = {
+  tasks: Task[];
+  notes: Note[];
+  histories?: Record<string, LocalPageHistory>;
+  conversations?: Record<string, PreviewComment[]>;
+};
 export type DocumentPresence = {
   id: string;
   displayName: string;
@@ -93,7 +109,16 @@ export class RequestError extends Error {
   }
 }
 export function useTeamspace() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<BrowserUser | null>(null);
+  const [authConfiguration, setAuthConfiguration] =
+    useState<AuthConfiguration | null>(null);
+  const [authConfigurationError, setAuthConfigurationError] = useState<
+    string | null
+  >(null);
+  const [authConfigurationLoading, setAuthConfigurationLoading] =
+    useState(configured);
+  const [authEpoch, setAuthEpoch] = useState(0);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [loading, setLoading] = useState(configured);
   const [error, setError] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>(
@@ -112,10 +137,14 @@ export function useTeamspace() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [watchEpoch, setWatchEpoch] = useState(0);
   const preview = useRef<Preview>({ tasks: demoTasks, notes: [] });
-  const commentObservers = useRef(new Set<{
-    parentType: ConversationParent; parentId: string;
-    next: (rows: ConversationComment[]) => void; fail: (error: Error) => void;
-  }>());
+  const commentObservers = useRef(
+    new Set<{
+      parentType: ConversationParent;
+      parentId: string;
+      next: (rows: ConversationComment[]) => void;
+      fail: (error: Error) => void;
+    }>(),
+  );
   const ready = useRef(false);
   const noteObservers = useRef(
     new Set<{
@@ -138,10 +167,24 @@ export function useTeamspace() {
   }, []);
   const notifyPreviewComments = useCallback(() => {
     for (const observer of commentObservers.current) {
-      const parents = observer.parentType === "note" ? preview.current.notes : preview.current.tasks;
-      if (!parents.some(item => item.id === observer.parentId))
-        observer.fail(new Error("This page or task was removed. Your message draft is kept locally."));
-      else observer.next(commentWindow(preview.current.conversations?.[`${observer.parentType}:${observer.parentId}`] ?? []));
+      const parents =
+        observer.parentType === "note"
+          ? preview.current.notes
+          : preview.current.tasks;
+      if (!parents.some((item) => item.id === observer.parentId))
+        observer.fail(
+          new Error(
+            "This page or task was removed. Your message draft is kept locally.",
+          ),
+        );
+      else
+        observer.next(
+          commentWindow(
+            preview.current.conversations?.[
+              `${observer.parentType}:${observer.parentId}`
+            ] ?? [],
+          ),
+        );
     }
   }, []);
   const api = useCallback(
@@ -151,15 +194,15 @@ export function useTeamspace() {
       body?: unknown,
       expectedUid?: string,
     ) => {
-      const auth = getAuth(getApps().length ? getApp() : initializeApp(config));
-      if (!auth.currentUser) throw new Error("Sign in to continue.");
-      if (expectedUid && auth.currentUser.uid !== expectedUid)
+      const current = currentBrowserUser();
+      if (!current) throw new Error("Sign in to continue.");
+      if (expectedUid && current.uid !== expectedUid)
         throw new RequestError(
           "The signed-in account changed. Reopen this document in the original account to recover its pending edits.",
           401,
           "account_changed",
         );
-      const token = await auth.currentUser.getIdToken();
+      const token = await browserAccessToken(expectedUid || current.uid);
       const response = await fetch(`/api/${path}`, {
         method,
         headers: {
@@ -181,10 +224,9 @@ export function useTeamspace() {
     [],
   );
   const loadWorkspaces = useCallback(async () => {
-    const expectedUid = getAuth(getApp()).currentUser?.uid;
+    const expectedUid = currentBrowserUser()?.uid;
     const data = await api("workspaces", "GET", undefined, expectedUid);
-    if (getAuth(getApp()).currentUser?.uid !== expectedUid)
-      return [] as Workspace[];
+    if (currentBrowserUser()?.uid !== expectedUid) return [] as Workspace[];
     setWorkspaces(data.workspaces);
     setWorkspace(
       (current) =>
@@ -226,60 +268,107 @@ export function useTeamspace() {
         cancelled = true;
       };
     }
-    const app = getApps().length ? getApp() : initializeApp(config);
-    return onAuthStateChanged(getAuth(app), (next) => {
+    return observeBrowserAuth((next, recovering) => {
       setUser(next);
+      setPasswordRecovery(recovering);
       setTasks([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
       setWorkspace(null);
       setWorkspaces([]);
-      if (next) {
-        setLoading(true);
-        loadWorkspaces()
-          .then((rows) => {
-            if (getAuth(app).currentUser?.uid !== next.uid) return;
-            if (!rows.length) setLoading(false);
-          })
-          .catch((e) => {
-            if (getAuth(app).currentUser?.uid !== next.uid) return;
-            report(e);
-            setLoading(false);
-          });
-      } else setLoading(false);
-    });
+      setLoading(Boolean(next));
+    }, report);
   }, [loadWorkspaces, report, notifyPreviewComments]);
   useEffect(() => {
+    if (!configured) return;
+    let cancelled = false;
+    void loadAuthConfiguration()
+      .then((value) => {
+        if (cancelled) return;
+        setAuthConfiguration(value);
+        setAuthConfigurationError(null);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAuthConfiguration(null);
+          setAuthConfigurationError(
+            error instanceof Error
+              ? error.message
+              : "Authentication configuration failed.",
+          );
+          setLoading(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAuthConfigurationLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authEpoch]);
+  useEffect(() => {
+    if (!configured || !user || !authConfiguration) return;
+    let cancelled = false;
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
+      if (
+        passwordRecovery ||
+        (authConfiguration.emailConfirmationRequired && !user.emailVerified)
+      ) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const rows = await loadWorkspaces();
+        if (
+          !cancelled &&
+          currentBrowserUser()?.uid === user.uid &&
+          !rows.length
+        )
+          setLoading(false);
+      } catch (error) {
+        if (!cancelled && currentBrowserUser()?.uid === user.uid) {
+          report(error);
+          setLoading(false);
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, authConfiguration, passwordRecovery, loadWorkspaces, report]);
+  useEffect(() => {
     if (!configured || !user || !workspace) return;
-    const db = getFirestore(getApp());
     const loaded = new Set<string>();
     let active = true;
     const watch = <T>(name: string, set: (rows: T[]) => void) =>
-      onSnapshot(
-        collection(db, `workspaces/${workspace.id}/${name}`),
+      subscribeBrowserCollection(
+        `workspaces/${workspace.id}/${name}`,
         (snapshot) => {
           if (!active) return;
-          let rows =
-            snapshot.docs
-              .filter(
-                (doc) =>
-                  name !== "attachments" ||
-                  ["ready", "deleting"].includes(doc.data().status),
-              )
-              .map(
-                (doc) =>
-                  ({
-                    ...doc.data(),
-                    ...(name === "notes"
-                      ? { parentId: doc.data().parentId ?? null }
-                      : {}),
-                    id: doc.id,
-                  }) as T,
-              );
+          let rows = snapshot
+            .filter(
+              (doc) =>
+                name !== "attachments" ||
+                ["ready", "deleting"].includes(doc.status as string),
+            )
+            .map(
+              (doc) =>
+                ({
+                  ...doc,
+                  ...(name === "notes"
+                    ? { parentId: doc.parentId ?? null }
+                    : {}),
+                  id: doc.id,
+                }) as T,
+            );
           if (name === "notes") {
             rows = reconcilePageSnapshots(
-              noteSnapshot.current?.workspaceId === workspace.id ? noteSnapshot.current.rows : [],
+              noteSnapshot.current?.workspaceId === workspace.id
+                ? noteSnapshot.current.rows
+                : [],
               rows as Note[],
             ) as T[];
             noteSnapshot.current = {
@@ -294,7 +383,10 @@ export function useTeamspace() {
               const document = (rows as Note[]).find(
                 (item) => item.id === observer.noteId,
               );
-              if (document && !(document as Note & { deleting?: boolean }).deleting)
+              if (
+                document &&
+                !(document as Note & { deleting?: boolean }).deleting
+              )
                 observer.next(document);
               else
                 observer.fail(
@@ -310,12 +402,13 @@ export function useTeamspace() {
         },
         (e) => {
           if (!active) return;
-          if (name === "notes")
+          const terminal = browserProvider === "firebase" || terminalSnapshotReadFailure(e);
+          if (terminal && name === "notes")
             for (const observer of noteObservers.current)
               if (observer.workspaceId === workspace.id) observer.fail(e);
           report(e);
           setLoading(false);
-          set([]);
+          if (terminal) set([]);
         },
       );
     const unsubs = [
@@ -342,7 +435,9 @@ export function useTeamspace() {
     notifyPreviewComments();
   }
   function hasPreviewParent(type: ConversationParent, id: string) {
-    return (type === "note" ? preview.current.notes : preview.current.tasks).some(item => item.id === id);
+    return (
+      type === "note" ? preview.current.notes : preview.current.tasks
+    ).some((item) => item.id === id);
   }
   async function action<T>(fn: () => Promise<T>): Promise<T> {
     try {
@@ -357,13 +452,32 @@ export function useTeamspace() {
   }
   async function unavailable(): Promise<never> {
     throw new Error(
-      "This needs a configured Firebase project. Local preview has no shared access or file storage.",
+      "This needs a configured shared backend. Local preview has no shared access or file storage.",
     );
   }
   return {
     configured,
+    provider: browserProvider,
+    authConfiguration,
+    authConfigurationLoading,
+    authConfigurationError,
+    passwordRecovery,
+    needsEmailConfirmation: Boolean(
+      user &&
+      authConfiguration?.emailConfirmationRequired &&
+      !user.emailVerified,
+    ),
+    retryAuthConfiguration: () => {
+      setAuthConfigurationLoading(true);
+      setAuthEpoch((epoch) => epoch + 1);
+    },
     user: user
-      ? { uid: user.uid, displayName: user.displayName ?? "Teammate" }
+      ? {
+          uid: user.uid,
+          displayName: user.displayName ?? "Teammate",
+          email: user.email,
+          emailVerified: user.emailVerified,
+        }
       : null,
     loading,
     error,
@@ -373,104 +487,260 @@ export function useTeamspace() {
     notes,
     members,
     attachments,
-    subscribeComments: (parentType: ConversationParent, parentId: string, next: (rows: ConversationComment[]) => void, fail: (error: Error) => void) => {
+    subscribeComments: (
+      parentType: ConversationParent,
+      parentId: string,
+      next: (rows: ConversationComment[]) => void,
+      fail: (error: Error) => void,
+    ) => {
       let active = true;
       if (!configured) {
         const observer = { parentType, parentId, next, fail };
         commentObservers.current.add(observer);
-        queueMicrotask(() => { if (active && ready.current) notifyPreviewComments(); });
-        return () => { active = false; commentObservers.current.delete(observer); };
+        queueMicrotask(() => {
+          if (active && ready.current) notifyPreviewComments();
+        });
+        return () => {
+          active = false;
+          commentObservers.current.delete(observer);
+        };
       }
       if (!user) throw new Error("Sign in to open a conversation.");
       const boundUid = user.uid;
-      const un = onSnapshot(query(
-        collection(getFirestore(getApp()), `${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`),
-        orderBy("createdAt", "desc"), orderBy(documentId(), "desc"), limit(50),
-      ), snapshot => {
-        if (!active || getAuth(getApp()).currentUser?.uid !== boundUid) return;
-        next(snapshot.docs.map(row => {
-          const value = row.data();
-          return { id: row.id, body: value.body, authorId: value.authorId, authorName: value.authorName,
-            createdAt: value.createdAt?.toMillis?.() ?? 0, deleted: value.deleted === true, mentions: value.mentions ?? [] } as ConversationComment;
-        }).reverse());
-      }, error => { if (active && getAuth(getApp()).currentUser?.uid === boundUid) fail(error); });
-      return () => { active = false; un(); };
+      const un = subscribeBrowserCollection(
+        `${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`,
+        (snapshot) => {
+          if (!active || currentBrowserUser()?.uid !== boundUid) return;
+          next(
+            commentWindow(
+              snapshot.map(
+                (value) =>
+                  ({
+                    ...value,
+                    createdAt: timestampMillis(value.createdAt),
+                    deleted: value.deleted === true,
+                    mentions: value.mentions ?? [],
+                  }) as ConversationComment,
+              ),
+            ),
+          );
+        },
+        (error) => {
+          if (active && currentBrowserUser()?.uid === boundUid) fail(error);
+        },
+        true,
+      );
+      return () => {
+        active = false;
+        un();
+      };
     },
-    postComment: async (parentType: ConversationParent, parentId: string, packet: CommentPacket): Promise<ConversationComment> => {
+    postComment: async (
+      parentType: ConversationParent,
+      parentId: string,
+      packet: CommentPacket,
+    ): Promise<ConversationComment> => {
       if (!configured) {
-        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        if (!hasPreviewParent(parentType, parentId))
+          throw new Error("This page or task no longer exists.");
         const key = `${parentType}:${parentId}`;
         // Hashing yields asynchronously; serialize preview comment writes against latest state.
-        const rows = await postPreviewComment(preview.current.conversations?.[key] ?? [], packet, members, Date.now());
-        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        const rows = await postPreviewComment(
+          preview.current.conversations?.[key] ?? [],
+          packet,
+          members,
+          Date.now(),
+        );
+        if (!hasPreviewParent(parentType, parentId))
+          throw new Error("This page or task no longer exists.");
         const current = preview.current.conversations?.[key] ?? [];
-        const appended = rows.find(item => item.operationId === packet.operationId)!;
-        const duplicate = current.find(item => item.operationId === packet.operationId);
-        if (duplicate && duplicate.digest !== appended.digest) throw new Error("A message request identity cannot be reused.");
+        const appended = rows.find(
+          (item) => item.operationId === packet.operationId,
+        )!;
+        const duplicate = current.find(
+          (item) => item.operationId === packet.operationId,
+        );
+        if (duplicate && duplicate.digest !== appended.digest)
+          throw new Error("A message request identity cannot be reused.");
         const merged = duplicate ? current : [...current, appended];
-        persist({ ...preview.current, conversations: { ...preview.current.conversations, [key]: merged } });
+        persist({
+          ...preview.current,
+          conversations: { ...preview.current.conversations, [key]: merged },
+        });
         return duplicate ?? appended;
       }
       if (!user) throw new Error("Sign in to send a message.");
-      const data = await api(`${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`, "POST", packet, user.uid);
+      const data = await api(
+        `${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments`,
+        "POST",
+        packet,
+        user.uid,
+      );
       return data.comment as ConversationComment;
     },
-    deleteComment: async (parentType: ConversationParent, parentId: string, commentId: string) => {
+    deleteComment: async (
+      parentType: ConversationParent,
+      parentId: string,
+      commentId: string,
+    ) => {
       if (!configured) {
-        if (!hasPreviewParent(parentType, parentId)) throw new Error("This page or task no longer exists.");
+        if (!hasPreviewParent(parentType, parentId))
+          throw new Error("This page or task no longer exists.");
         const key = `${parentType}:${parentId}`;
-        persist({ ...preview.current, conversations: { ...preview.current.conversations, [key]: deletePreviewComment(preview.current.conversations?.[key] ?? [], commentId) } });
+        persist({
+          ...preview.current,
+          conversations: {
+            ...preview.current.conversations,
+            [key]: deletePreviewComment(
+              preview.current.conversations?.[key] ?? [],
+              commentId,
+            ),
+          },
+        });
         return;
       }
       if (!user) throw new Error("Sign in to delete a message.");
-      await api(`${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments/${commentId}`, "DELETE", undefined, user.uid);
+      await api(
+        `${path()}/${parentType === "note" ? "notes" : "tasks"}/${parentId}/comments/${commentId}`,
+        "DELETE",
+        undefined,
+        user.uid,
+      );
     },
     restartSubscriptions: () => setWatchEpoch((epoch) => epoch + 1),
     listPageHistory: async (noteId: string, before?: number) => {
       if (!configured) {
-        if (!preview.current.notes.some(note => note.id === noteId)) throw new Error("The page no longer exists.");
-        const rows = visibleVersions(preview.current.histories?.[noteId], Date.now()).filter(version => before === undefined || version.sourceRevision < before);
-        return { versions: rows.slice(0, 20).map(({ content, ...summary }) => { void content; return summary; }), nextBefore: rows.length > 20 ? rows[19].sourceRevision : null };
+        if (!preview.current.notes.some((note) => note.id === noteId))
+          throw new Error("The page no longer exists.");
+        const rows = visibleVersions(
+          preview.current.histories?.[noteId],
+          Date.now(),
+        ).filter(
+          (version) => before === undefined || version.sourceRevision < before,
+        );
+        return {
+          versions: rows.slice(0, 20).map(({ content, ...summary }) => {
+            void content;
+            return summary;
+          }),
+          nextBefore: rows.length > 20 ? rows[19].sourceRevision : null,
+        };
       }
-      return await api(`${path()}/notes/${noteId}/history${before === undefined ? "" : `?before=${before}`}`, "GET", undefined, user?.uid) as { versions: PageVersionSummary[]; nextBefore: number | null };
+      return (await api(
+        `${path()}/notes/${noteId}/history${before === undefined ? "" : `?before=${before}`}`,
+        "GET",
+        undefined,
+        user?.uid,
+      )) as { versions: PageVersionSummary[]; nextBefore: number | null };
     },
-    getPageVersion: async (noteId: string, versionId: string): Promise<PageVersion> => {
+    getPageVersion: async (
+      noteId: string,
+      versionId: string,
+    ): Promise<PageVersion> => {
       if (!configured) {
-        if (!preview.current.notes.some(note => note.id === noteId)) throw new Error("The page no longer exists.");
-        const version = visibleVersions(preview.current.histories?.[noteId], Date.now()).find(item => item.id === versionId);
+        if (!preview.current.notes.some((note) => note.id === noteId))
+          throw new Error("The page no longer exists.");
+        const version = visibleVersions(
+          preview.current.histories?.[noteId],
+          Date.now(),
+        ).find((item) => item.id === versionId);
         if (!version) throw new Error("This version is missing or expired.");
         return structuredClone(version);
       }
-      const data = await api(`${path()}/notes/${noteId}/history?version=${encodeURIComponent(versionId)}`, "GET", undefined, user?.uid);
+      const data = await api(
+        `${path()}/notes/${noteId}/history?version=${encodeURIComponent(versionId)}`,
+        "GET",
+        undefined,
+        user?.uid,
+      );
       return data.version as PageVersion;
     },
-    savePageVersion: async (noteId: string, expectedRevision: number, name: string): Promise<PageVersion> => {
+    savePageVersion: async (
+      noteId: string,
+      expectedRevision: number,
+      name: string,
+    ): Promise<PageVersion> => {
       if (!configured) {
-        const note = preview.current.notes.find(item => item.id === noteId);
+        const note = preview.current.notes.find((item) => item.id === noteId);
         if (!note) throw new Error("The page no longer exists.");
-        const history = nameLocalVersion(preview.current.histories?.[noteId], note, expectedRevision, name, Date.now());
-        persist({ ...preview.current, histories: { ...preview.current.histories, [noteId]: history } });
-        return structuredClone(history.versions.find(version => version.sourceRevision === expectedRevision)!);
+        const history = nameLocalVersion(
+          preview.current.histories?.[noteId],
+          note,
+          expectedRevision,
+          name,
+          Date.now(),
+        );
+        persist({
+          ...preview.current,
+          histories: { ...preview.current.histories, [noteId]: history },
+        });
+        return structuredClone(
+          history.versions.find(
+            (version) => version.sourceRevision === expectedRevision,
+          )!,
+        );
       }
-      const data = await api(`${path()}/notes/${noteId}/history`, "POST", { expectedRevision, name }, user?.uid);
-      const full = await api(`${path()}/notes/${noteId}/history?version=${encodeURIComponent(data.versionId)}`, "GET", undefined, user?.uid);
+      const data = await api(
+        `${path()}/notes/${noteId}/history`,
+        "POST",
+        { expectedRevision, name },
+        user?.uid,
+      );
+      const full = await api(
+        `${path()}/notes/${noteId}/history?version=${encodeURIComponent(data.versionId)}`,
+        "GET",
+        undefined,
+        user?.uid,
+      );
       return full.version as PageVersion;
     },
-    restorePageVersion: async (noteId: string, versionId: string, expectedRevision: number, operationId: string): Promise<Note> => {
+    restorePageVersion: async (
+      noteId: string,
+      versionId: string,
+      expectedRevision: number,
+      operationId: string,
+    ): Promise<Note> => {
       if (!configured) {
-        const note = preview.current.notes.find(item => item.id === noteId);
+        const note = preview.current.notes.find((item) => item.id === noteId);
         if (!note) throw new Error("The page no longer exists.");
-        const restored = restoreLocalPage(preview.current.histories?.[noteId], note, versionId, expectedRevision, operationId, Date.now());
-        persist({ ...preview.current, notes: preview.current.notes.map(item => item.id === noteId ? restored.note : item), histories: { ...preview.current.histories, [noteId]: restored.history } });
+        const restored = restoreLocalPage(
+          preview.current.histories?.[noteId],
+          note,
+          versionId,
+          expectedRevision,
+          operationId,
+          Date.now(),
+        );
+        persist({
+          ...preview.current,
+          notes: preview.current.notes.map((item) =>
+            item.id === noteId ? restored.note : item,
+          ),
+          histories: {
+            ...preview.current.histories,
+            [noteId]: restored.history,
+          },
+        });
         return restored.note;
       }
       const boundWorkspace = workspace?.id;
       const boundUid = user?.uid;
-      const data = await api(`${path()}/notes/${noteId}/restore`, "POST", { versionId, expectedRevision, operationId }, boundUid);
+      const data = await api(
+        `${path()}/notes/${noteId}/restore`,
+        "POST",
+        { versionId, expectedRevision, operationId },
+        boundUid,
+      );
       const note = data.note as Note;
       const current = noteSnapshot.current;
-      if (current && getAuth(getApp()).currentUser?.uid === boundUid && current.workspaceId === boundWorkspace) {
-        const rows = current.rows.map(item => item.id === noteId && note.revision > item.revision ? note : item);
+      if (
+        current &&
+        currentBrowserUser()?.uid === boundUid &&
+        current.workspaceId === boundWorkspace
+      ) {
+        const rows = current.rows.map((item) =>
+          item.id === noteId && note.revision > item.revision ? note : item,
+        );
         noteSnapshot.current = { ...current, rows };
         setNotes(rows);
       }
@@ -544,17 +814,15 @@ export function useTeamspace() {
       next: (rows: DocumentPresence[]) => void,
       fail: (error: Error) => void,
     ) => {
-      const db = getFirestore(getApp());
       let active = true;
-      const unsubscribe = onSnapshot(
-        collection(db, `${path()}/notes/${noteId}/presence`),
+      const unsubscribe = subscribeBrowserCollection(
+        `${path()}/notes/${noteId}/presence`,
         (snapshot) => {
           if (!active) return;
           next(
-            snapshot.docs.map((document) => ({
-              id: document.id,
-              ...document.data(),
-              expiresAt: document.data().expiresAt?.toMillis?.() ?? 0,
+            snapshot.map((document) => ({
+              ...document,
+              expiresAt: timestampMillis(document.expiresAt),
             })) as DocumentPresence[],
           );
         },
@@ -588,10 +856,36 @@ export function useTeamspace() {
     clearError: () => setError(null),
     signIn: () =>
       action(async () => {
-        const app = getApps().length ? getApp() : initializeApp(config);
-        await signInWithPopup(getAuth(app), new GoogleAuthProvider());
+        if (!authConfiguration?.googleAuthEnabled)
+          throw new Error("Google sign-in is disabled for this deployment.");
+        await browserGoogleSignIn();
       }),
-    signOut: () => action(() => firebaseSignOut(getAuth(getApp()))),
+    signInEmail: (email: string, password: string) =>
+      action(async () => {
+        if (!authConfiguration?.passwordAuthEnabled)
+          throw new Error("Email sign-in is disabled for this deployment.");
+        await browserSignIn(email, password);
+      }),
+    registerEmail: (email: string, password: string, displayName: string) =>
+      action(async () => {
+        if (!authConfiguration?.passwordAuthEnabled)
+          throw new Error(
+            "Email registration is disabled for this deployment.",
+          );
+        return await browserRegister(
+          email,
+          password,
+          displayName,
+          authConfiguration.emailConfirmationRequired,
+        );
+      }),
+    resendConfirmation: (email: string) =>
+      action(() => browserResendConfirmation(email)),
+    refreshConfirmation: () => action(() => browserRefreshConfirmation()),
+    resetPassword: (email: string) => action(() => browserResetPassword(email)),
+    completePasswordReset: (password: string, code?: string) =>
+      action(() => browserCompletePasswordReset(password, code)),
+    signOut: () => action(() => browserSignOut()),
     selectWorkspace: (id: string) => {
       setTasks([]);
       setNotes([]);
@@ -685,7 +979,11 @@ export function useTeamspace() {
           persist({
             ...preview.current,
             tasks: preview.current.tasks.filter((t) => t.id !== id),
-            conversations: Object.fromEntries(Object.entries(preview.current.conversations ?? {}).filter(([key]) => key !== `task:${id}`)),
+            conversations: Object.fromEntries(
+              Object.entries(preview.current.conversations ?? {}).filter(
+                ([key]) => key !== `task:${id}`,
+              ),
+            ),
           });
           return;
         }
@@ -730,7 +1028,14 @@ export function useTeamspace() {
               ...preview.current.notes.filter((n) => n.id !== item.id),
               item,
             ],
-            histories: { ...preview.current.histories, [item.id]: checkpointLocalPage(preview.current.histories?.[item.id], item, Date.now()) },
+            histories: {
+              ...preview.current.histories,
+              [item.id]: checkpointLocalPage(
+                preview.current.histories?.[item.id],
+                item,
+                Date.now(),
+              ),
+            },
           });
           return item;
         }
@@ -752,8 +1057,16 @@ export function useTeamspace() {
           persist({
             ...preview.current,
             notes: preview.current.notes.filter((n) => n.id !== id),
-            histories: Object.fromEntries(Object.entries(preview.current.histories ?? {}).filter(([noteId]) => noteId !== id)),
-            conversations: Object.fromEntries(Object.entries(preview.current.conversations ?? {}).filter(([key]) => key !== `note:${id}`)),
+            histories: Object.fromEntries(
+              Object.entries(preview.current.histories ?? {}).filter(
+                ([noteId]) => noteId !== id,
+              ),
+            ),
+            conversations: Object.fromEntries(
+              Object.entries(preview.current.conversations ?? {}).filter(
+                ([key]) => key !== `note:${id}`,
+              ),
+            ),
           });
           return;
         }

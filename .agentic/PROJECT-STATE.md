@@ -6,24 +6,25 @@
 | --- | --- | --- |
 | Project | Teamspace | 2026-10-03 |
 | Frontend | Next.js 16 / React 19 / TypeScript / plain CSS | 2026-10-03 |
-| Backend | Firebase Admin trusted route handlers | 2026-10-03 |
-| Database | Cloud Firestore | 2026-10-03 |
-| Object storage | Private Firebase Storage | 2026-10-03 |
+| Backend | Shared trusted route handlers; deployment selects Firebase Admin or Supabase | 2026-10-04 |
+| Database | Cloud Firestore or Supabase PostgreSQL transactional document store | 2026-10-04 |
+| Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
 | Hosting target | Vercel | 2026-10-03 |
 | License | Not yet selected | 2026-10-03 |
 | Git workflow | User authorized committing completed changes and pushing the current branch to origin; no force pushes | 2026-10-04 |
-| Authentication policy | Google OAuth via Firebase; 2FA optional by default, enrollment/challenge UI not yet implemented | 2026-10-04 |
+| Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Secrets location | Server environment only; local .env.local gitignored | 2026-10-03 |
-| Current milestone | Milestones 1–5 plus bounded collaboration, recovery, history and page/task conversations implemented/tested; browser acceptance open; Milestone 6 live release blocked | 2026-10-04 |
+| Current milestone | Milestones 1–5 plus collaboration, recovery, history, conversations and alternative backend/password auth implemented/tested; browser acceptance open; Milestone 6 live release blocked | 2026-10-04 |
 
 ## Open decisions and release gates
 
 - RESOLVED (page history): user chose five-minute checkpoints retained for 30 days plus permanent named versions, and title/content-only restore preserving location, children, attachments and board tasks.
 - RESOLVED (comments/mentions): user chose page/task conversations for now; individual block anchors are deferred until client demand justifies them.
+- RESOLVED (backend/auth): one backend per deployment; EMAIL_CONFIRMATION_REQUIRED is selected through a strict boolean environment variable, not a fixed verification policy.
 
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
-- BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
-- PASSED: 113 unit/model/controller/IndexedDB/editor-helper/task/history/conversation cases plus 11 authorization rules suites and 45 trusted Firestore API cases (169 total) pass; final lint/typecheck/build pass. Rich editor/history/conversation/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
+- BLOCKED: no configured shared backend provided. Live authentication/email delivery, deployment, signed uploads and two-user acceptance need Firebase or Supabase provisioning. Supabase requires auth-policy publication and an hourly expiry/staging cleanup job.
+- PASSED: 126 unit/model/controller/store/editor/auth-config/provider/storage cases, 12 authorization rules suites, 46 trusted Firestore API cases and 12 real PostgreSQL integration cases (196 total); lint/typecheck/build pass. Firebase and Supabase build selections and Compose config validated. Live rich editor/auth/history/conversation/embedded-board interactions and full self-hosted stack acceptance remain OPEN.
 - Confirm deployed authorized domains, Storage CORS and billing, then complete two-user acceptance from SPEC.md.
 - RELEASE REVIEW: runtime npm audit reports 2 moderate findings (gaxios/uuid); full dependency tree reports 16 findings (5 moderate, 11 high), with high findings confined to development tooling. No forced major upgrades were applied. gaxios uses uuid.v4(), whereas the reported uuid advisory concerns buffer handling in v3/v5/v6; this limits observed exposure but is not a blanket security clearance.
 - OPEN TEST GAP: no persisted automated browser suite; desktop/mobile/manual browser checks cover local mode only. Real Google ID-token verification, deployed signed URL/CORS behavior and two-user UI acceptance remain external checks. Attachment API tests use an in-memory bucket with real Firestore transactions and real image decoding, not live GCS.
@@ -268,3 +269,23 @@
 ### FAILED — 2026-10-04: conversation integration checks corrected
 
 - Initial lint caught render-time ref initialization; initialized draft state directly. Integration typecheck caught recovery callback attached to a native select rather than Conversation; moved it to the intended component. Scoped task risk state and removed unused accidental attachment state. Final lint/typecheck/build pass; no broken or partial migration remains.
+
+### 2026-10-04 — Deployment backend choice and classic email/password authentication
+
+- Implemented the user's choices: one Firebase or Supabase backend per deployment and strict EMAIL_CONFIRMATION_REQUIRED configuration, default true. Email/password registration, login, reset, confirmation and resend now accompany optional Google OAuth. MFA remains optional and not implemented; no enrollment requirement was introduced. Setup guidance, README, SPEC and environment examples changed together.
+- Reused existing trusted business logic through a narrow document/storage port, preserving Yjs, idempotent receipts, history, conversations, generation fences and recovery. Firebase retains native transactions. Supabase uses epoch-checked reads and atomic RPC commits with bounded retries; a global commit lock deliberately favors correctness and maintainability over high-write throughput. Full workspace snapshots and global contention target small workspaces; pagination and partitioned epochs remain documented scale limits. No automatic cross-provider migration.
+- Verified provider tokens and identities on the server. Shared authorization policy is enforced by browser-read rules and reread inside each durable transaction, preventing unconfirmed writes after a policy change. Provider/URL/boolean mismatches fail closed. Build/runtime guards reject privileged Supabase keys in browser configuration. SQL SDK writes are denied; service-role direct table writes are also denied to preserve epoch invariants. Existing Firebase authorization remains enforced.
+- Added a single workspace Realtime invalidation channel with canonical trusted snapshots, reconnect reads and periodic reconciliation. Late responses, document/account switches, duplicate invalidations and slow requests are fenced. Transient failures retain the last snapshot without permanently blocking the editor; revoked access is terminal. Remote snapshots never become local persistence mutations.
+- Private Supabase attachments use direct signed uploads/downloads to avoid Vercel request-body limits. Bucket privacy and the 10 MiB cap are verified; completion checks actual length, type and object identity. Native upload tokens last two hours, a documented difference from Firebase. Uploads remain create-only and download links short-lived.
+- Migration 007 documents schema, RLS, transaction RPCs, private storage, deployment/rollback, maintained TypeScript models and export/deletion behavior. Applied from scratch in isolated PostgreSQL fixtures with authorization checks; no live database was changed. Required hourly pruning removes expired checkpoints, rate records, presence, pending reservations and old staging objects while retaining named versions and durable operation receipts. Administrators must publish the auth policy and schedule cleanup before deployment.
+- Added docker.compose.supabase.yml using the complete official stack pinned to self-hosted/v0.8.2, commit 564eab8ad7840b13324f68b1bfac074ef8d51c21, retaining its Apache-2.0 source license. Generated local environments refuse overwrite and never print credentials. Node crypto creates fresh credentials using the stack's supported legacy HS256 role format, avoiding platform-specific shell tooling. Added exact @supabase/supabase-js 2.117.2 (MIT; current maintenance checked) rather than custom authentication code; lockfile updated. Repository license remains an open release decision.
+- Adversarial review fixed upload response headers, comment/presence response shapes, stale read lifetimes, poll starvation, offline cache clearing, direct-read confirmation bypass, policy-change races, service-role epoch bypass, public/unbounded bucket acceptance and accidental private browser key configuration. Regression cases assert final durable state, retained recovery and denied unauthorized mutations.
+- PASSED: 126 unit/controller/IndexedDB/renderer/configuration/storage/setup cases, 12 Firestore/Storage authorization suites, 46 real Firestore trusted API cases and 12 real PostgreSQL integration cases (196 total). Final lint, standalone typecheck, optimized build and diff check pass. Both provider-selected builds passed; private-browser-key build rejection passed. Pinned stack preparation and Compose configuration validation passed. Runtime audit remains two moderate findings, zero high/critical. CI includes the new PostgreSQL/setup checks; remote CI execution is unverified.
+- OPEN ACCEPTANCE GAP: full GoTrue/PostgREST/Storage stack, live email/SMTP delivery, OAuth callbacks, upload CORS and authenticated two-browser UX acceptance remain unverified. SQL tests use auth/storage fixture schemas and an RPC bridge, not live Supabase services. Existing browser tool security restriction remains respected. No production-readiness claim, production provisioning, secrets in the repo or unrelated rewrite.
+- Previous conversation iteration 70aad24 was pushed. Preparing this verified backend/authentication iteration for commit and push on codex/teamspace-application under the user's ongoing authorization.
+
+### FAILED — 2026-10-04: alternative-backend verification corrections
+
+- Initial stack bootstrap compared an annotated tag object to a commit; corrected to the peeled pinned commit. Initial port/nullability and listener-refactor checks were repaired before the final passing builds.
+- PostgreSQL test bridge initially passed JSON null instead of SQL null; corrected the fixture bridge. A CRDT fixture referenced a legacy block identifier; corrected the fixture. All real database suites reran successfully; no half-migration remains.
+- Delegated agents encountered account usage limits; root completed implementation and verification. Automatic approval review rejected scoped generated-output cleanup; no alternate deletion was attempted, and generated outputs remain ignored. No shared history rewrite or browser-policy bypass.

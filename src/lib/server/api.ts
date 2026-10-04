@@ -13,12 +13,19 @@ import {
 import {
   FieldValue,
   Timestamp,
-  type Firestore,
+  type DocumentStore as Firestore,
   type Transaction,
   type DocumentReference,
-} from "firebase-admin/firestore";
-import type { DecodedIdToken } from "firebase-admin/auth";
-import type { Storage } from "firebase-admin/storage";
+} from "./document-store";
+import type { Firestore as NativeFirestore } from "firebase-admin/firestore";
+import type { Storage as NativeStorage } from "firebase-admin/storage";
+import { firebaseDocumentStore, encodeStoreValue } from "./document-store";
+import type { StoragePort as Storage } from "./storage-port";
+import { backendConfiguration } from "./backend-config";
+import { supabaseAdmin } from "./supabase";
+import { supabaseStorage } from "./supabase-storage";
+import { assertAuthPolicy, guardedDocumentStore } from "./auth-policy";
+type DecodedIdToken = { uid: string; name?: string; picture?: string; email?: string; email_verified?: boolean };
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
 import {
@@ -119,22 +126,43 @@ async function member(
 }
 
 async function authenticate(request: Request) {
-  const { auth, db, storage } = firebaseAdmin();
+  const configuration = backendConfiguration();
+  if (!configuration.configured) throw new ApiError(503, "not_configured", "The selected backend is not configured. Ask the administrator to finish setup.");
   const match = /^Bearer ([^\s]+)$/.exec(
     request.headers.get("authorization") ?? "",
   );
   if (!match)
     throw new ApiError(401, "unauthenticated", "Sign in to continue.");
   let user: DecodedIdToken;
+  let db: Firestore;
+  let storage: Storage;
   try {
-    user = await auth.verifyIdToken(match[1], true);
-  } catch {
+    if (configuration.provider === "supabase") {
+      const backend = supabaseAdmin();
+      const { data, error } = await backend.auth.getUser(match[1]);
+      if (error || !data.user) throw new Error("Invalid user");
+      user = { uid: data.user.id, email: data.user.email, email_verified: !!data.user.email_confirmed_at,
+        name: typeof data.user.user_metadata.display_name === "string" ? data.user.user_metadata.display_name : typeof data.user.user_metadata.full_name === "string" ? data.user.user_metadata.full_name : data.user.email?.split("@")[0],
+        picture: typeof data.user.user_metadata.avatar_url === "string" ? data.user.user_metadata.avatar_url : undefined };
+      db = backend.db;
+      storage = supabaseStorage();
+    } else {
+      const backend = firebaseAdmin();
+      user = await backend.auth.verifyIdToken(match[1], true);
+      db = firebaseDocumentStore(backend.db);
+      storage = backend.storage as unknown as Storage;
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(
       401,
       "unauthenticated",
       "Your session has expired. Sign in again.",
     );
   }
+  const policy = await db.doc("security/policy").get();
+  assertAuthPolicy(policy.data(), configuration.emailConfirmationRequired, !!user.email_verified);
+  db = guardedDocumentStore(db, configuration.emailConfirmationRequired, !!user.email_verified);
   await rateLimit(db, user.uid, "api", 120);
   return { db, storage, user };
 }
@@ -1244,13 +1272,14 @@ async function transferOwner(
 }
 
 function bucket(storage: Storage) {
-  if (!process.env.FIREBASE_STORAGE_BUCKET)
+  const name = backendConfiguration().provider === "supabase" ? process.env.SUPABASE_STORAGE_BUCKET : process.env.FIREBASE_STORAGE_BUCKET;
+  if (!name)
     throw new ApiError(
       503,
       "storage_not_configured",
       "Attachments are not configured. Ask the administrator to finish Storage setup.",
     );
-  return storage.bucket(process.env.FIREBASE_STORAGE_BUCKET);
+  return storage.bucket(name);
 }
 
 function attachmentView(id: string, value: Record<string, unknown>) {
@@ -1372,7 +1401,7 @@ async function attachmentOperation(
       });
     });
     try {
-      const uploadHeaders = {
+      const uploadHeaders = backendConfiguration().provider === "supabase" ? { "Content-Type": contentType, "x-upsert": "false" } : {
         "Content-Type": contentType,
         "x-goog-content-length-range": `${bytes},${bytes}`,
         "x-goog-if-generation-match": "0",
@@ -1381,11 +1410,7 @@ async function attachmentOperation(
         version: "v4",
         action: "write",
         contentType,
-        extensionHeaders: {
-          "x-goog-content-length-range":
-            uploadHeaders["x-goog-content-length-range"],
-          "x-goog-if-generation-match": "0",
-        },
+        extensionHeaders: { "x-goog-content-length-range": `${bytes},${bytes}`, "x-goog-if-generation-match": "0" },
         expires: Date.now() + 15 * 60000,
       });
       return json({ attachmentId: ref.id, uploadUrl, uploadHeaders }, 201);
@@ -1471,7 +1496,8 @@ async function attachmentOperation(
     );
   }
   // Pin the generation so a signed PUT cannot replace bytes between validation and promotion.
-  const generation = Number(metadata.generation);
+  const generation = metadata.generation;
+  if (typeof generation !== "number" && typeof generation !== "string") throw new ApiError(409,"invalid_file","Uploaded file identity is unavailable. Retry the upload.");
   const source = files.file(value.stagingPath, { generation });
   const [bytes] = await source.download();
   if (!validMagic(bytes, value.contentType)) {
@@ -1662,8 +1688,8 @@ async function deleteParent(
 }
 
 export type TrustedApiContext = {
-  db: Firestore;
-  storage: Storage;
+  db: Firestore | NativeFirestore;
+  storage: Storage | NativeStorage;
   user: DecodedIdToken;
 };
 
@@ -1672,6 +1698,7 @@ export async function handleApi(
   path: string[],
 ): Promise<Response> {
   try {
+    if (path.join("/") === "config" && request.method === "GET") return json(backendConfiguration());
     return await handleTrustedApi(request, path, await authenticate(request));
   } catch (error) {
     return apiFailure(error);
@@ -1690,7 +1717,9 @@ export async function handleTrustedApi(
       path.some((part) => !/^[a-zA-Z0-9_-]+$/.test(part) || part.length > 128)
     )
       throw new ApiError(400, "invalid_input", "Invalid path.");
-    const { db, user, storage } = context;
+    const { user } = context;
+    const db = "settings" in context.db ? firebaseDocumentStore(context.db as NativeFirestore) : context.db as Firestore;
+    const storage = context.storage as Storage;
     const method = request.method;
     if (path.length === 1 && path[0] === "workspaces") {
       if (method === "GET") return await workspaceList(db, user.uid);
@@ -1705,7 +1734,27 @@ export async function handleTrustedApi(
     const [, , resource, itemId, action, commentId] = path;
     if (path.length > 6 || (path.length === 6 && action !== "comments"))
       throw new ApiError(404, "not_found", "Endpoint not found.");
+    if (resource === "snapshot" && !itemId && method === "GET") {
+      const result = await db.runTransaction(async tx => {
+        await member(tx,workspace,user.uid);
+        const names = ["tasks","notes","members","attachments"];
+        const collections = await Promise.all(names.map(name => tx.get(workspace.collection(name))));
+        return Object.fromEntries(names.map((name,index) => [name, collections[index].docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))]));
+      });
+      return json(result);
+    }
     if (resource === "tasks" || resource === "notes") {
+      if (itemId && method === "GET" && ["comments","presence"].includes(action)) {
+        const result = await db.runTransaction(async tx => {
+          await member(tx,workspace,user.uid);
+          const parent = await tx.get(workspace.collection(resource).doc(itemId));
+          if (!parent.exists || parent.data()?.deleting) throw new ApiError(404,"not_found","This item no longer exists.");
+          const query = workspace.collection(resource).doc(itemId).collection(action);
+          const items = await tx.get(action === "comments" ? query.orderBy("createdAt","desc").limit(50) : query);
+          return action === "comments" ? {comments:items.docs.map(item => commentView(item.id,item.data()!)).reverse()} : {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
+        });
+        return json(result);
+      }
       if (itemId && action === "comments") {
         if (
           (method === "POST" && path.length === 5) ||

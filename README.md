@@ -1,6 +1,6 @@
 # Teamspace
 
-A college team workspace with a live Kanban board, nested shared notes, explicit conflict-safe note saving and private attachments. Next.js + Google sign-in + Firestore + Firebase Storage; Vercel hosting.
+A college team workspace with a live Kanban board, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel hosting.
 
 ## Run locally
 
@@ -11,23 +11,100 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. Without Firebase configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
+Open http://localhost:3000. Without backend configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
+
+## Choose a backend
+
+Set both `BACKEND_PROVIDER` and `NEXT_PUBLIC_BACKEND_PROVIDER` to `firebase` or
+`supabase`. They must agree; rebuild/redeploy after changing browser variables.
+Every workspace in an installation uses the selected backend. Switching these
+settings does not transfer accounts, files or content from the other backend.
+Use a new installation or an explicitly planned migration for existing data.
+
+`PASSWORD_AUTH_ENABLED=true` enables email/password registration and login.
+`GOOGLE_AUTH_ENABLED=false` hides Google login when OAuth is unwanted. Enable or
+disable the corresponding providers in Firebase/Supabase administration too;
+application flags do not provision external providers. Both flags are strict
+booleans. Enable at least one login method.
+
+`EMAIL_CONFIRMATION_REQUIRED=true` requires confirmed email before accessing
+shared workspaces; `false` permits access immediately after registration when
+the provider's own confirmation setting permits it. The same policy must be
+published into database security configuration, protecting direct reads as well
+as trusted API requests. Follow the provider migration instructions before
+launch. Do not turn off verification just to work around missing email delivery.
+
+### Supabase: managed project
+
+Create a Supabase project. Copy app settings from `.env.supabase.example` into
+`.env.local` or Vercel, setting browser URL/anonymous key and server URL/service
+role key from that same project. Keep the service role key server-only. Apply
+`migrations/007-supabase-backend.sql` using the administrative SQL connection,
+then publish the authentication security policy as described in the migration.
+The application uses a private `teamspace-private` Storage bucket. Configure
+email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
+Google is optional. Configure email delivery for verification and password reset.
+
+### Supabase: self-hosted Docker
+
+Docker Compose **2.24.4+**, Git and Node are required. This downloads the complete
+official Supabase stack pinned to `self-hosted/v0.8.2`, including its database
+initialization and gateway configuration. Supabase runs separately from the
+Next app; start the app normally or deploy it to Vercel.
+
+```sh
+node scripts/prepare-supabase.mjs
+node scripts/supabase-env.mjs
+docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d
+```
+
+The second command creates `.env.supabase` with fresh, aligned keys and refuses
+to overwrite an existing file. It never prints credentials. Before starting,
+edit that gitignored file: configure SMTP and app/Auth/public URLs, then copy
+only the required app variables into `.env.local` or Vercel. The example has
+empty credentials and cannot start as-is. Google OAuth is disabled by default;
+classic email/password login is enabled. `EMAIL_CONFIRMATION_REQUIRED` also
+controls self-hosted Auth's email autoconfirm behavior.
+
+Apply the application SQL migration to the running database; upstream's first
+startup creates Supabase's own schemas, not Teamspace's application tables.
+The Compose override binds API/database ports to localhost. For remote access,
+use a TLS reverse proxy and explicit firewall rules, replace localhost URLs and
+configure allowed redirects. A Vercel deployment needs a reachable HTTPS
+Supabase endpoint. Keep Studio and database administration private.
+
+Validate configuration without starting services or printing secrets:
+`node scripts/check-supabase-compose.mjs`. Never paste the output of ordinary
+`docker compose config` into a public issue because it includes credentials.
+Database/files persist in `.supabase/upstream/docker/volumes` and Docker volumes;
+back up both plus configuration. `down --volumes` and deleting that directory
+can destroy data. Fresh install scripts do not rotate existing keys. Plan key
+rotation and upgrades explicitly; review the pinned upstream license/notices
+and [official self-hosting guidance](https://supabase.com/docs/guides/self-hosting/docker).
 
 ## Firebase setup
 
 In local preview, use **Set up your workspace** to open the five-step setup guide. It shows which browser environment settings are present in the current build, supplies an empty copyable environment template, and explains Firebase/Vercel deployment, workspace ownership and launch checks. Presence of settings does not prove connectivity or correct rules. The guide does not provision resources, collect credentials, enroll MFA or import preview data. Browser configuration changes require restarting locally or redeploying; keep server credentials in the server environment. Authenticator enrollment is a future feature requiring Firebase Authentication with Identity Platform.
 
-1. Create a Firebase project and register a Web app. Enable Authentication > Google. Add localhost and your deployment domain to authorized domains.
+1. Create a Firebase project and register a Web app. Enable Authentication > Email/Password for classic login; enable Google only when wanted. Add localhost and your deployment domain to authorized domains.
 2. Create a Cloud Firestore database and Firebase Storage bucket. Enable the required Storage billing plan; configure budgets and alerts.
 3. Copy `.env.example` to `.env.local`. Populate browser values from Web app settings. Populate server service-account values separately. Never expose server values through NEXT_PUBLIC or commit credentials.
 4. Deploy rules/indexes: `npx firebase deploy --only firestore:rules,firestore:indexes,storage --project YOUR_PROJECT_ID`. All direct writes are denied. Only workspace members can read workspace content. Trusted server handlers validate and authorize every write.
 5. Replace the example origins in `storage.cors.example.json`; apply with `gcloud storage buckets update gs://YOUR_BUCKET --cors-file=storage.cors.example.json`.
 6. Configure a bucket lifecycle rule deleting objects under `staging/` after one day, to clean abandoned/recreated signed uploads.
 7. Deploy TTL policies in `firestore.indexes.json`: `rateLimits.expiresAt` removes short-lived hashed counters and `attachments.expiresAt` clears abandoned pending reservations after 24 hours. `presence.expiresAt` cleans up viewing leases; `historyVersions.expiresAt` removes automatic versions after 30 days. Ready attachments and named versions have no expiry. TTL is eventual; expiration is also enforced by the application.
+8. Publish the confirmation policy with `node --env-file=.env.local scripts/publish-auth-policy.mjs`. Re-publish whenever `EMAIL_CONFIRMATION_REQUIRED` changes. Missing policy requires confirmation; a policy/environment mismatch blocks trusted requests.
 
 ### User sign-in and optional 2FA
 
-Google OAuth through Firebase Authentication is the supported user login. The setup guide's **Sign-in & workspace** step walks through enabling the Google provider, authorizing app domains and testing sign-in before workspace creation. Follow [Firebase's Google sign-in guide](https://firebase.google.com/docs/auth/web/google-signin).
+Email/password registration and login work with either backend. Verification,
+resend and password reset use the provider's Auth service. Configure provider
+password policies, email templates and abuse limits; Firebase administrators
+should enable email enumeration protection. Google OAuth remains optional.
+The setup guide's **Sign-in & workspace** step explains provider setup and
+domain authorization. See [Firebase password authentication](https://firebase.google.com/docs/auth/web/password-auth),
+[Supabase password authentication](https://supabase.com/docs/guides/auth/passwords)
+and [Firebase Google sign-in](https://firebase.google.com/docs/auth/web/google-signin).
 
 Two-factor authentication is **optional by default**, not a prerequisite for workspace setup. Its guidance is collapsed initially. Teamspace does not yet implement authenticator enrollment or second-factor challenges, so leave app-level enrollment disabled until that flow is supported and verified. Future enrollment must be an explicit user choice; Firebase TOTP requires [Authentication with Identity Platform](https://firebase.google.com/docs/auth/web/totp-mfa).
 
@@ -40,6 +117,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run test:rules
+npm run test:supabase
 npm run build
 ```
 
@@ -55,6 +133,13 @@ workaround: set `JAVA_TOOL_OPTIONS` to
 Use a nonexistent directory; see the baseline migration for the reason.
 
 Rules tests use clean isolated emulators under demo-teamspace, never a live database. See migrations/ for schema and export/deletion policies. Before release, use two signed-in users to check live task updates, refresh persistence, simultaneous note-save conflicts, expired/revoked invites, membership removal, outsider SDK denial and private file access. Also check file orientation/transparency/screenshot legibility, cleanup, mobile layout and keyboard dialog use.
+
+Supabase integration tests require Docker. They create and remove their own
+isolated PostgreSQL container, with no exposed port or production credentials.
+They exercise the migration, real RLS/transactions and shared API final states.
+They do not replace live Auth/Storage or two-browser acceptance. Schedule
+`scripts/prune-supabase.mjs` hourly to preserve expiry and staging cleanup; see
+[migration 007](migrations/007-supabase-backend.md) for security policy and setup.
 
 ## Vercel deployment
 
