@@ -1287,3 +1287,7 @@
 .collaborationInfo small {
   flex-basis: 100%;
 }
+
+.previewSurface {
+  padding-bottom: 110px;
+}

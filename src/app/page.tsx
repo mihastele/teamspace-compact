@@ -23,6 +23,7 @@ import BlockEditor from "./components/BlockEditor";
 import { blockMarkdown } from "@/lib/markdown-shortcuts";
 import { exportNoteMarkdown } from "@/lib/note-export";
 import { matchNote } from "@/lib/note-search";
+import SetupGuide from "./components/SetupGuide";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -2057,7 +2058,9 @@ export default function Home() {
             <Avatar name={api.user?.displayName || "You"} />
           </div>
         </header>
-        <div className={s.surface}>
+        <div
+          className={`${s.surface} ${!api.configured ? s.previewSurface : ""}`}
+        >
           {!api.configured && (
             <div className={s.banner}>
               <strong>LOCAL PREVIEW</strong>
@@ -2179,6 +2182,7 @@ export default function Home() {
           </footer>
         </div>
       </main>
+      {!api.configured && <SetupGuide />}
       {task && (
         <TaskDialog api={api} initial={task} close={() => setTask(null)} />
       )}

@@ -182,3 +182,17 @@
 - Working tree was clean; collaboration implementation already committed as 14547d7. Preparing to push that implementation and this documentation checkpoint on codex/teamspace-application to origin.
 - Setup wizard remains a proposal, with guided setup versus automatic cloud provisioning awaiting a scope decision. No wizard implementation or authentication change was made.
 - Documentation-only checkpoint: git diff --check validation; application checks remain the previously recorded 121 passing tests, lint/typecheck/build. No runtime code changed. Existing Firebase provisioning and browser acceptance gates remain open.
+
+### 2026-10-04 — Guided setup iteration
+
+- User authorized choosing features and committing/pushing every iteration. Chose the proposed guided setup slice; automatic cloud provisioning remains out of scope and undecided. Previous implementation and workflow checkpoint were successfully pushed to origin/codex/teamspace-application through da1c1d2.
+- Added a local-preview floating setup button and five-step native modal guide with responsive navigation, heading focus, Escape close and trigger focus restoration. Closing/reopening retains the current step in mounted component state. Reserved page space for the floating action; mobile guide resets its scroll on navigation.
+- Reused the existing Firebase config to show only presence booleans for the five bundled browser settings; no values or server configuration are exposed. Empty environment-template copy has a manual-selection fallback. Clearly distinguishes settings presence from successful connectivity and restart/redeployment from page reload.
+- Guides Firebase, authorized domains, rules/indexes, Storage CORS/lifecycle/TTL and Vercel setup, then existing authenticated workspace creation. Workspace owner is explicitly distinct from Firebase administrator. Explains Identity Platform prerequisite and that MFA enrollment/challenge UI is not implemented. This iteration makes no auth/schema/permissions/data-retention changes, collects no credentials, provisions no resources and does not import preview data.
+- Updated README/SPEC. No new dependency, migration, exotic technology deviation, code TODO, secret or live database change. Official Firebase TOTP documentation checked for prerequisites.
+- PASSED: all 81 unit/model/controller/store/editor-helper tests, lint, standalone typecheck, final optimized production build and git diff --check. Previously validated 9 rules/31 API cases unchanged; not rerun because this slice changes no server/access/schema behavior.
+- OPEN TEST GAP: no automated setup-dialog interaction suite or live keyboard/clipboard/mobile verification. Existing browser-tool restriction remains respected; compilation/tests do not substitute for browser acceptance. No new screenshot or production-readiness claim. Firebase provisioning, deployed two-user collaboration acceptance, repository license and dependency release review remain open.
+
+### FAILED — 2026-10-04: setup guide lint corrected
+
+- Initial lint rejected three unescaped apostrophes in JSX prose. Corrected the text; final lint/typecheck/build pass. No broken state remains.

@@ -1,0 +1,280 @@
+.launcher {
+  position: fixed;
+  right: 24px;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 21px;
+  border: 1px solid #ffffff30;
+  border-radius: 999px;
+  background: #244cb8;
+  color: white;
+  box-shadow: 0 8px 28px #17347030;
+  font-size: 13px;
+  font-weight: 600;
+}
+.launcher:hover {
+  background: #1c3d98;
+}
+.launcher span {
+  font-size: 22px;
+}
+.dialog {
+  padding: 0;
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  border: 1px solid #e1e7f0;
+  border-radius: 20px;
+  color: #263b60;
+  background: white;
+  box-shadow: 0 30px 100px #142c4930;
+}
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dialog::backdrop {
+  background: #172b4b70;
+  backdrop-filter: blur(5px);
+}
+.header {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 25px 30px;
+  border-bottom: 1px solid #e9edf4;
+}
+.header p {
+  margin: 6px 0 0;
+  color: #7b889f;
+  font-size: 13px;
+}
+.eyebrow,
+.stepLabel {
+  color: #5474ba;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+.close {
+  background: #f2f5fa;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  font-size: 22px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  min-height: 0;
+}
+.steps {
+  padding: 24px 12px;
+  background: #f7f9fd;
+  overflow: auto;
+}
+.steps button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 10px;
+  border-radius: 10px;
+  background: transparent;
+  color: #6b7c98;
+  text-align: left;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.steps button span {
+  display: grid;
+  place-items: center;
+  border: 1px solid #d9e1ee;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.steps button[aria-current] {
+  color: #2a50b1;
+  background: #e9effd;
+  font-weight: 600;
+}
+.steps button[aria-current] span {
+  color: white;
+  background: #345bcc;
+  border-color: #345bcc;
+}
+.body {
+  padding: 28px 34px 34px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.body h2 {
+  margin: 10px 0 20px;
+  font-size: 27px;
+  line-height: 1.25;
+  letter-spacing: -0.7px;
+}
+.body h3 {
+  font-size: 16px;
+  margin-top: 26px;
+}
+.body p,
+.body li {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.body p {
+  margin: 12px 0;
+}
+.body ol,
+.body ul {
+  padding-left: 22px;
+}
+.body li {
+  padding-left: 4px;
+  margin-bottom: 10px;
+}
+.body a {
+  display: inline-block;
+  color: #345bcc;
+  font-size: 13px;
+  margin: 10px 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.body code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.body details {
+  margin-top: 16px;
+  font-size: 12px;
+}
+.body summary {
+  cursor: pointer;
+}
+.body pre {
+  padding: 16px;
+  overflow: auto;
+  font-size: 11px;
+  background: #f6f8fc;
+  border-radius: 10px;
+}
+.notice {
+  padding: 15px 18px;
+  border: 1px solid #dde6f6;
+  border-radius: 12px;
+  background: #f4f7fd;
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 22px;
+}
+.checks {
+  border: 1px solid #e1e7f1;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 18px;
+}
+.checks strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.checks div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+.checks span {
+  font-size: 11px;
+  color: #72809a;
+}
+.body .muted {
+  font-size: 11px;
+  color: #6b7c98;
+}
+.footer {
+  flex-shrink: 0;
+  padding: 18px 25px;
+  border-top: 1px solid #e9edf4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.footer > span {
+  color: #8793a7;
+  font-size: 10px;
+}
+.primary,
+.secondary {
+  padding: 11px 16px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.primary {
+  color: white;
+  background: #345bcc;
+}
+.secondary {
+  color: #526582;
+  background: #eef2f8;
+}
+.dialog button:focus-visible,
+.dialog a:focus-visible,
+.dialog summary:focus-visible,
+.launcher:focus-visible {
+  outline: 3px solid #82a5f5;
+  outline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .launcher {
+    right: 16px;
+    padding: 12px 17px;
+    font-size: 12px;
+  }
+  .header {
+    padding: 20px;
+  }
+  .layout {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .steps {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    flex-shrink: 0;
+  }
+  .steps button {
+    width: auto;
+    white-space: nowrap;
+    margin: 0;
+    padding: 8px;
+  }
+  .body {
+    padding: 20px;
+    overflow: visible;
+  }
+  .body h2 {
+    font-size: 24px;
+  }
+  .footer {
+    padding: 15px;
+  }
+  .footer > span {
+    display: none;
+  }
+}

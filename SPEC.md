@@ -149,3 +149,8 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Approximate document-viewing leases expire after 90 seconds and heartbeat every 45 seconds. Browser writes remain denied; trusted API and readable presence enforce membership. Receipts remain private.
 - Updates/checkpoints are bounded (64KB/350KB binary; 800KB combined JSON). This transactional checkpoint foundation targets small team documents and does not claim unlimited history or scale. Migration 004 documents rollout, export/deletion, rules and indexes.
 - Automated final-state/concurrency/recovery/security evidence and known limitations live in .agentic/COLLABORATION-VERIFICATION.md. Authenticated two-browser/IME/mobile/deployed acceptance is still required before this ticket is complete.
+
+### Guided setup — 2026-10-04
+
+- Local preview offers a floating setup button and five-step accessible modal guide, with browser setting presence indicators and an empty environment template. No credentials are collected or persisted; no cloud provisioning or preview-data import occurs.
+- Distinguish workspace ownership from project administration and provider enablement from implemented MFA enrollment. Explain restart/redeployment and mark launch checks as manual, rather than claiming successful configuration.

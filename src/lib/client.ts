@@ -23,6 +23,22 @@ const config = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 const configured = Object.values(config).every(Boolean);
+export const browserConfigurationStatus = [
+  { name: "NEXT_PUBLIC_FIREBASE_API_KEY", present: Boolean(config.apiKey) },
+  {
+    name: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+    present: Boolean(config.authDomain),
+  },
+  {
+    name: "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+    present: Boolean(config.projectId),
+  },
+  {
+    name: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+    present: Boolean(config.storageBucket),
+  },
+  { name: "NEXT_PUBLIC_FIREBASE_APP_ID", present: Boolean(config.appId) },
+];
 const demoWorkspace: Workspace = {
   id: "preview",
   name: "Campus collective",
