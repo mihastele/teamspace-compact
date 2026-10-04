@@ -155,3 +155,8 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Local preview offers a floating setup button and five-step accessible modal guide, with browser setting presence indicators and an empty environment template. No credentials are collected or persisted; no cloud provisioning or preview-data import occurs.
 - Distinguish workspace ownership from project administration and provider enablement from implemented MFA enrollment. Explain restart/redeployment and mark launch checks as manual, rather than claiming successful configuration.
 - User login setup means Google OAuth through Firebase Authentication. Include provider enablement, authorized domains and sign-in verification in the Sign-in & workspace step. Keep 2FA guidance collapsed and optional by default; future enrollment is opt-in, and no app-level MFA requirement is introduced.
+
+### Board deadline focus — 2026-10-04
+
+- Main and embedded shared boards offer All tasks, Overdue, Due today, Next 7 days and No due date filters. Focused views exclude completed work, combine with existing search/assignee filtering and show result counts and a clear-filter control. No data/schema change.
+- Today and overdue labels follow the viewer's local calendar day rather than UTC or locale-specific date string formatting. The seven-day window includes today through six calendar days later; refresh labels on day rollover, focus and visibility changes without extra Firebase subscriptions.

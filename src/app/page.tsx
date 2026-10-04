@@ -24,6 +24,12 @@ import { blockMarkdown } from "@/lib/markdown-shortcuts";
 import { exportNoteMarkdown } from "@/lib/note-export";
 import { matchNote } from "@/lib/note-search";
 import SetupGuide from "./components/SetupGuide";
+import {
+  deadlineState,
+  matchesDeadline,
+  type DeadlineFilter,
+} from "@/lib/task-deadlines";
+import { useLocalDay } from "@/lib/use-local-day";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -436,105 +442,151 @@ function WorkspaceBoard({
   onStatus: (task: Task, status: Status) => void;
   filtered?: boolean;
 }) {
+  const today = useLocalDay();
+  const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
+  const visible = shown.filter((task) =>
+    matchesDeadline(task, deadlineFilter, today),
+  );
   return (
-    <div className={s.board}>
-      {columns.map((c) => (
-        <section
-          key={c.id}
-          className={`${s.column} ${s[c.id] || ""}`}
-          aria-label={c.label}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const id = e.dataTransfer.getData("application/x-teamspace-task");
-            const current = api.tasks.find((t) => t.id === id);
-            if (current && current.status !== c.id) onStatus(current, c.id);
-          }}
-        >
-          <h2 className={s.columnHeader}>
-            <span className={s.dot} />
-            {c.label}
-            <span className={s.count}>
-              {shown.filter((t) => t.status === c.id).length}
-            </span>
+    <>
+      <div className={s.deadlineToolbar}>
+        <label>
+          Due date
+          <select
+            value={deadlineFilter}
+            onChange={(event) =>
+              setDeadlineFilter(event.target.value as DeadlineFilter)
+            }
+          >
+            <option value="all">All tasks</option>
+            <option value="overdue">Overdue</option>
+            <option value="today">Due today</option>
+            <option value="week">Next 7 days</option>
+            <option value="undated">No due date</option>
+          </select>
+        </label>
+        <span role="status">
+          {visible.length} of {shown.length} tasks
+          {deadlineFilter !== "all" ? " · Open tasks only" : ""}
+        </span>
+        {deadlineFilter !== "all" && (
+          <button
+            className={s.secondary}
+            onClick={() => setDeadlineFilter("all")}
+          >
+            Clear due-date filter
+          </button>
+        )}
+      </div>
+      <div className={s.board}>
+        {columns.map((c) => (
+          <section
+            key={c.id}
+            className={`${s.column} ${s[c.id] || ""}`}
+            aria-label={c.label}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const id = e.dataTransfer.getData("application/x-teamspace-task");
+              const current = api.tasks.find((t) => t.id === id);
+              if (current && current.status !== c.id) onStatus(current, c.id);
+            }}
+          >
+            <h2 className={s.columnHeader}>
+              <span className={s.dot} />
+              {c.label}
+              <span className={s.count}>
+                {visible.filter((t) => t.status === c.id).length}
+              </span>
+              <button
+                aria-label={`Add task to ${c.label}`}
+                onClick={() => onTask({ status: c.id })}
+              >
+                +
+              </button>
+            </h2>
+            {visible
+              .filter((t) => t.status === c.id)
+              .sort(
+                (a, b) =>
+                  a.position - b.position ||
+                  (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+              )
+              .map((t) => {
+                const assignee = api.members.find((m) => m.id === t.assigneeId);
+                const date = t.dueDate
+                  ? new Date(`${t.dueDate}T12:00:00`)
+                  : null;
+                const deadline = deadlineState(t, today);
+                return (
+                  <button
+                    key={t.id}
+                    className={s.card}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(
+                        "application/x-teamspace-task",
+                        t.id,
+                      );
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onClick={() => onTask(t)}
+                    aria-label={`Edit task: ${t.title}${t.dueDate ? `, due ${t.dueDate}` : ", no due date"}${deadline === "overdue" ? ", overdue" : deadline === "today" ? ", due today" : ""}`}
+                  >
+                    <span className={s.cardTag}>
+                      {t.status === "done" ? "COMPLETED" : "TASK"}
+                    </span>
+                    <h3>{t.title}</h3>
+                    {t.description && <p>{t.description}</p>}
+                    <div className={s.cardFooter}>
+                      <span
+                        className={`${s.due} ${deadline === "overdue" ? s.overdue : deadline === "today" ? s.dueToday : ""}`}
+                      >
+                        {date ? (
+                          <>
+                            <Icon name="calendar" size={12} />
+                            {date.toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                            {deadline === "overdue"
+                              ? " · Overdue"
+                              : deadline === "today"
+                                ? " · Today"
+                                : ""}
+                          </>
+                        ) : (
+                          "No due date"
+                        )}
+                      </span>
+                      {assignee ? (
+                        <Avatar name={assignee.displayName} />
+                      ) : (
+                        <span>Unassigned</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            {!visible.some((t) => t.status === c.id) && (
+              <p className={s.emptyColumn}>
+                {filtered || deadlineFilter !== "all"
+                  ? "No matching tasks."
+                  : c.id === "done"
+                    ? "Small wins go here.\nYou’ve got this."
+                    : "A little room for what’s next."}
+              </p>
+            )}
             <button
-              aria-label={`Add task to ${c.label}`}
+              className={s.addCard}
               onClick={() => onTask({ status: c.id })}
             >
-              +
+              + &nbsp; Add a task
             </button>
-          </h2>
-          {shown
-            .filter((t) => t.status === c.id)
-            .sort((a, b) => a.position - b.position)
-            .map((t) => {
-              const assignee = api.members.find((m) => m.id === t.assigneeId);
-              const date = t.dueDate ? new Date(`${t.dueDate}T12:00:00`) : null;
-              const overdue =
-                date &&
-                t.status !== "done" &&
-                t.dueDate! < new Date().toLocaleDateString("en-CA");
-              return (
-                <button
-                  key={t.id}
-                  className={s.card}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(
-                      "application/x-teamspace-task",
-                      t.id,
-                    );
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => onTask(t)}
-                  aria-label={`Edit task: ${t.title}`}
-                >
-                  <span className={s.cardTag}>
-                    {t.status === "done" ? "COMPLETED" : "TASK"}
-                  </span>
-                  <h3>{t.title}</h3>
-                  {t.description && <p>{t.description}</p>}
-                  <div className={s.cardFooter}>
-                    <span className={`${s.due} ${overdue ? s.overdue : ""}`}>
-                      {date ? (
-                        <>
-                          <Icon name="calendar" size={12} />
-                          {date.toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </>
-                      ) : (
-                        "No due date"
-                      )}
-                    </span>
-                    {assignee ? (
-                      <Avatar name={assignee.displayName} />
-                    ) : (
-                      <span>Unassigned</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          {!shown.some((t) => t.status === c.id) && (
-            <p className={s.emptyColumn}>
-              {filtered
-                ? "No matching tasks."
-                : c.id === "done"
-                  ? "Small wins go here.\nYou’ve got this."
-                  : "A little room for what’s next."}
-            </p>
-          )}
-          <button
-            className={s.addCard}
-            onClick={() => onTask({ status: c.id })}
-          >
-            + &nbsp; Add a task
-          </button>
-        </section>
-      ))}
-    </div>
+          </section>
+        ))}
+      </div>
+    </>
   );
 }
 

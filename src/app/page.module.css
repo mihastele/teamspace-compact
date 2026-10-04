@@ -433,6 +433,8 @@
 }
 .cardFooter {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   align-items: center;
   margin-top: 19px;
@@ -447,11 +449,39 @@
 }
 .due {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
 }
 .overdue {
   color: #bb7559;
+}
+.dueToday {
+  color: #3459c5;
+}
+.deadlineToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+  color: #6d7b91;
+  font-size: 12px;
+}
+.deadlineToolbar label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.deadlineToolbar select {
+  padding: 8px 10px;
+  border: 1px solid #dce3ef;
+  border-radius: 7px;
+  background: white;
+  color: #415577;
+}
+.deadlineToolbar > span {
+  font-size: 11px;
 }
 .addCard {
   width: 100%;

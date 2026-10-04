@@ -83,6 +83,8 @@ Workspace search finds saved note titles and body text, showing a short snippet 
 
 Each block's options menu offers Duplicate block. Copies appear immediately below with their formatting intact. They synchronize automatically in collaborative notes; other notes retain them as drafts until Save. Undo removes the copy. Duplicating a board block adds another view of the same workspace board; it does not copy tasks. Existing note size limits apply.
 
+The main board and embedded boards offer a Due date filter: All tasks, Overdue, Due today, Next 7 days (today plus six days), or No due date. Focused filters show open tasks only; All tasks includes completed work. Filters combine with the main board's search/assignee selection, stay local to each board view, and never alter shared task data. Cards label Today/Overdue using the viewer's local calendar date; day changes reconcile within 30 seconds or when the window regains focus.
+
 ## Real-time notes
 
 With Firebase configured, opening a clean saved note promotes it once to Yjs collaboration. Typing, adding, deleting and moving blocks synchronize automatically; two users can type in the same block. Title/location use their own explicit Save and revision checks. New notes and local preview keep explicit Save. Save or export an existing dirty legacy draft before promotion.
