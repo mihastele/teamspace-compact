@@ -58,6 +58,7 @@ before(async () => {
     create publication supabase_realtime;`);
   await sql(readFileSync('migrations/007-supabase-backend.sql', 'utf8'));
   await sql(readFileSync('migrations/008-workspace-administration.sql', 'utf8'));
+  await sql(readFileSync('migrations/009-board-properties.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -83,6 +84,15 @@ async function api(uid, method, path, input) {
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
+require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
+test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
+  const id=randomUUID();
+  assert.equal((await api(member,'PUT',`${prefix}/boardProperties/${id}`,{name:'Priority',type:'text',options:[],expectedRevision:0})).status,201);
+  const count=async uid=>(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_documents where path='${prefix}/boardProperties/${id}';`)).split('\n').at(-1);
+  assert.equal(await count(member),'1'); assert.equal(await count(outsider),'0');
+  await assert.rejects(sql(`set role authenticated; update public.teamspace_documents set data='{}' where path='${prefix}/boardProperties/${id}';`),/permission denied/);
+  assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"),'t');
+});
 
 test('migration runner applies clean schemas once, guards checksums and keeps bookkeeping private',async()=>{
   const {migrationSQL}=await import('../scripts/migrate-supabase.mjs');
@@ -98,7 +108,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'2');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'3');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);

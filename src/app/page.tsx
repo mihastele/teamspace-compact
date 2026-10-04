@@ -29,6 +29,8 @@ import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
+import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
+import { changedPropertyValues } from "@/lib/board-properties";
 import {
   deadlineState,
   matchesDeadline,
@@ -240,6 +242,7 @@ function TaskDialog({
     status: initial.status || ("todo" as Status),
     assigneeId: initial.assigneeId || "",
     dueDate: initial.dueDate || "",
+    propertyValues: initial.propertyValues ?? {},
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -252,6 +255,7 @@ function TaskDialog({
     dueDate: initial.dueDate || "",
   });
   const changed =
+    Object.keys(changedPropertyValues(initial.propertyValues, draft.propertyValues)).length > 0 ||
     original !==
     JSON.stringify({
       title: draft.title,
@@ -302,9 +306,11 @@ function TaskDialog({
       };
       if (initial.id) {
         const patch = taskEditPatch(initial, edited);
-        if (Object.keys(patch).length)
-          await api.saveTask({ id: initial.id, ...patch });
-      } else await api.saveTask(edited);
+        const propertyValues = changedPropertyValues(initial.propertyValues, draft.propertyValues);
+        const combined = { ...patch, ...(Object.keys(propertyValues).length ? { propertyValues } : {}) };
+        if (Object.keys(combined).length)
+          await api.saveTask({ id: initial.id, ...combined });
+      } else await api.saveTask({ ...edited, propertyValues: draft.propertyValues });
       close();
     } catch (e) {
       setError(
@@ -434,6 +440,8 @@ function TaskDialog({
               onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
             />
           </label>
+          <TaskPropertyInputs properties={api.boardProperties} values={draft.propertyValues} disabled={busy}
+            onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
           {initial.id ? (
             <Attachments api={api} type="task" id={initial.id} />
           ) : (
@@ -585,6 +593,7 @@ function WorkspaceBoard({
           </button>
         )}
       </div>
+      <BoardProperties api={api} />
       <p className={s.moveAnnouncement} role="status">
         {announcement}
       </p>
@@ -672,6 +681,7 @@ function WorkspaceBoard({
                       </span>
                       <h3>{t.title}</h3>
                       {t.description && <p>{t.description}</p>}
+                      <TaskPropertySummary task={t} properties={api.boardProperties} />
                       <div className={s.cardFooter}>
                         <span
                           className={`${s.due} ${deadline === "overdue" ? s.overdue : deadline === "today" ? s.dueToday : ""}`}

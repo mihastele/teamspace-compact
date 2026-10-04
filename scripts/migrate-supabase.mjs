@@ -9,7 +9,7 @@ const literal = value => "'" + value.replace(/'/g, "''") + "'";
 export function migrationSQL() {
   let sql = "\\set ON_ERROR_STOP on\nselect pg_advisory_lock(71649328);\n";
   sql += readFileSync(resolve(root, 'migrations/000-supabase-migration-ledger.sql'), 'utf8') + '\n';
-  for (const name of ['007-supabase-backend.sql', '008-workspace-administration.sql']) {
+  for (const name of ['007-supabase-backend.sql', '008-workspace-administration.sql', '009-board-properties.sql']) {
     const source = readFileSync(resolve(root, 'migrations', name), 'utf8').replace(/\r\n/g, '\n');
     const checksum = createHash('sha256').update(source).digest('hex');
     if (!/commit;\s*$/i.test(source)) throw new Error('Migration must end with COMMIT.');

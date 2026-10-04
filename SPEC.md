@@ -23,7 +23,28 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-Custom databases, AI, notifications, public publishing and complex role hierarchies remain outside scope. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+Multiple independent custom databases, AI, notifications and public publishing remain outside scope. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+
+### Custom board fields
+
+The existing shared workspace board supports up to 32 named Text, Select,
+Multi-select and Date properties, with up to 50 named options per select field.
+Properties are added/renamed through Board → Properties, including note embeds.
+Task details edits values; populated values appear on cards. Stable UUIDs preserve
+selections when field/option names change. Types and existing option IDs cannot
+be replaced or deleted in this increment. Dates are date-only YYYY-MM-DD; the
+calendar still uses the built-in Due date. Text values are bounded at 2,000 characters.
+
+Definitions use expected-revision checks and member-authorized trusted mutations.
+Task patches merge only edited custom keys into current saved values; server
+validation rejects foreign properties/options, duplicates and impossible dates.
+Definitions are at `workspaces/{id}/boardProperties/{uuid}`; task values are an
+optional `propertyValues` map. Member read/server write access applies on both
+providers. Migration 009 and the maintained TypeScript models document the shape.
+Download board JSON exports all saved tasks and definitions; attachments and
+conversations are excluded. Task deletion removes its values. Definitions remain
+for the workspace lifetime; full workspace deletion remains a separate open feature.
+Linked-content block behavior is pending the user's separate scope choice.
 
 ## Main screens and behavior
 

@@ -61,6 +61,7 @@ const documents = [
   workspace,
   `${workspace}/members/member`,
   `${workspace}/tasks/task`,
+  `${workspace}/boardProperties/field`,
   `${workspace}/notes/note`,
   `${workspace}/attachments/file`,
 ];
@@ -104,6 +105,7 @@ beforeEach(async () => {
         title: "Task",
         status: "todo",
       }),
+      setDoc(doc(db, `${workspace}/boardProperties/field`), { name: 'Priority', type: 'select', options: [], revision: 1 }),
       setDoc(doc(db, `${workspace}/notes/note`), {
         title: "Note",
         revision: 1,
@@ -142,7 +144,7 @@ test("members and owners can read each workspace document and subcollection", as
   for (const uid of ["member", "owner"]) {
     const db = environment.authenticatedContext(uid).firestore();
     for (const path of documents) await assertSucceeds(getDoc(doc(db, path)));
-    for (const name of ["members", "tasks", "notes", "attachments"]) {
+    for (const name of ["members", "tasks", "notes", "attachments", "boardProperties"]) {
       await assertSucceeds(getDocs(collection(db, `${workspace}/${name}`)));
     }
   }
@@ -155,7 +157,7 @@ test("anonymous and nonmembers cannot read workspace documents or query content"
   ]) {
     const db = context.firestore();
     for (const path of documents) await assertFails(getDoc(doc(db, path)));
-    for (const name of ["members", "tasks", "notes", "attachments"]) {
+    for (const name of ["members", "tasks", "notes", "attachments", "boardProperties"]) {
       await assertFails(getDocs(collection(db, `${workspace}/${name}`)));
     }
   }

@@ -32,6 +32,8 @@ import type {
   PageVersion,
   PageVersionSummary,
   ConversationComment,
+  BoardProperty,
+  PropertyValue,
 } from "./model";
 import {
   commentWindow,
@@ -52,6 +54,7 @@ import {
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
 import { updateTaskStatus } from "./task-status";
+import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "./board-properties";
 import { terminalSnapshotReadFailure } from "./browser-sync";
 
 const demoWorkspace: Workspace = {
@@ -90,6 +93,7 @@ const demoTasks: Task[] = [
 ];
 type Preview = {
   tasks: Task[];
+  boardProperties?: BoardProperty[];
   notes: Note[];
   histories?: Record<string, LocalPageHistory>;
   conversations?: Record<string, PreviewComment[]>;
@@ -130,6 +134,7 @@ export function useTeamspace() {
     configured ? null : demoWorkspace,
   );
   const [tasks, setTasks] = useState<Task[]>(configured ? [] : demoTasks);
+  const [boardProperties, setBoardProperties] = useState<BoardProperty[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [members, setMembers] = useState<Member[]>(
     configured
@@ -262,6 +267,7 @@ export function useTeamspace() {
               }));
               preview.current = data;
               setTasks(data.tasks);
+              setBoardProperties(data.boardProperties ?? []);
               setNotes(data.notes);
             }
           }
@@ -282,6 +288,7 @@ export function useTeamspace() {
       setRootAccount(null);
       setPasswordRecovery(recovering);
       setTasks([]);
+      setBoardProperties([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -410,7 +417,7 @@ export function useTeamspace() {
                 );
             }
           loaded.add(name);
-          if (loaded.size >= 4) setLoading(false);
+          if (loaded.size >= 5) setLoading(false);
         },
         (e) => {
           if (!active) return;
@@ -425,6 +432,7 @@ export function useTeamspace() {
       );
     const unsubs = [
       watch<Task>("tasks", setTasks),
+      watch<BoardProperty>("boardProperties", setBoardProperties),
       watch<Note>("notes", setNotes),
       watch<Member>("members", setMembers),
       watch<Attachment>("attachments", setAttachments),
@@ -443,6 +451,7 @@ export function useTeamspace() {
     }
     preview.current = next;
     setTasks(next.tasks);
+    setBoardProperties(next.boardProperties ?? []);
     setNotes(next.notes);
     notifyPreviewComments();
   }
@@ -496,6 +505,18 @@ export function useTeamspace() {
     workspace,
     workspaces,
     tasks: tasks.toSorted((a, b) => a.position - b.position),
+    boardProperties: boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    saveBoardProperty: (property: Omit<BoardProperty, "revision">, expectedRevision: number) => action(async () => {
+      const { id, ...input } = property;
+      if (!configured) {
+        const properties = preview.current.boardProperties ?? [];
+        const next = validatePropertyChange(properties, id, expectedRevision, propertyDefinition(input));
+        persist({ ...preview.current, boardProperties: [...properties.filter(item => item.id !== id), next] });
+        return;
+      }
+      if (!user) return unavailable();
+      await api(`${path()}/boardProperties/${id}`, "PUT", { ...input, expectedRevision }, user.uid);
+    }),
     notes,
     members,
     isRootAdmin: Boolean(user && rootAccount === user.uid),
@@ -919,6 +940,7 @@ export function useTeamspace() {
     signOut: () => action(() => browserSignOut()),
     selectWorkspace: (id: string) => {
       setTasks([]);
+      setBoardProperties([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -938,6 +960,7 @@ export function useTeamspace() {
         const data = await api("invites/redeem", "POST", { token });
         await loadWorkspaces();
         setTasks([]);
+        setBoardProperties([]);
         setNotes([]);
         setMembers([]);
         setAttachments([]);
@@ -964,6 +987,10 @@ export function useTeamspace() {
             ...task,
             title: task.title ?? current?.title ?? "",
             id: task.id ?? crypto.randomUUID(),
+            propertyValues: {
+              ...(current?.propertyValues ?? {}),
+              ...validatePropertyValues(task.propertyValues ?? {}, preview.current.boardProperties ?? []),
+            } as Record<string, PropertyValue>,
           };
           persist({
             ...preview.current,
@@ -982,6 +1009,7 @@ export function useTeamspace() {
             "assigneeId",
             "dueDate",
             "position",
+            "propertyValues",
           ]
             .filter((key) => key in task)
             .map((key) => [key, task[key as keyof Task]]),

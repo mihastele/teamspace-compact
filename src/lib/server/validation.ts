@@ -1,4 +1,5 @@
 import type { NoteBlock } from "../model";
+import { propertyValuePatch } from "../board-properties";
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -81,8 +82,13 @@ export function taskInput(
     "assigneeId",
     "dueDate",
     "position",
+    "propertyValues",
   ]);
   const out: Record<string, unknown> = {};
+  if ("propertyValues" in input) {
+    try { out.propertyValues = propertyValuePatch(input.propertyValues); }
+    catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
+  }
   if (!partial || "title" in input) out.title = text(input.title, "Title", 200);
   if (!partial || "description" in input)
     out.description = text(input.description ?? "", "Description", 10000, true);

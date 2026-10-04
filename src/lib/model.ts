@@ -1,4 +1,12 @@
 export type Status = "todo" | "doing" | "done";
+export type BoardProperty = {
+  id: string;
+  name: string;
+  type: "text" | "select" | "multiSelect" | "date";
+  options: { id: string; name: string }[];
+  revision: number;
+};
+export type PropertyValue = string | string[] | null;
 export type Task = {
   id: string;
   title: string;
@@ -7,6 +15,7 @@ export type Task = {
   assigneeId: string | null;
   dueDate: string | null;
   position: number;
+  propertyValues?: Record<string, PropertyValue>;
 };
 export type NoteBlock = {
   id?: string;

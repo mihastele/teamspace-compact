@@ -62,7 +62,7 @@ export function collectionSnapshotRows(route: string, value: unknown): Record<st
     };
     if (route.endsWith("/snapshot")) {
         const base = route.slice(0, -"snapshot".length);
-        return Object.fromEntries(["tasks", "notes", "members", "attachments"].map((name) => [`${base}${name}`, rows(name)]));
+        return Object.fromEntries(["tasks", "notes", "members", "attachments", "boardProperties"].map((name) => [`${base}${name}`, name === "boardProperties" && data[name] === undefined ? [] : rows(name)]));
     }
     const name = route.split("/").at(-1);
     if (name !== "comments" && name !== "presence")

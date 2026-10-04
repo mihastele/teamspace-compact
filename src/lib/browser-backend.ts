@@ -484,7 +484,7 @@ function subscribeSupabaseCollection(
   if (!group) {
     group = hub.makeGroup(route, new Set(
         isWorkspaceCollection
-          ? ["tasks", "notes", "members", "attachments"].map(
+          ? ["tasks", "notes", "members", "attachments", "boardProperties"].map(
               (name) => `workspaces/${workspace}/${name}`,
             )
           : [path],

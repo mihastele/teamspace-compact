@@ -39,6 +39,11 @@ service cloud.firestore {
         }
       }
 
+      match /boardProperties/{propertyId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+
       match /notes/{noteId} {
         allow read: if isMember(workspaceId);
         allow write: if false;

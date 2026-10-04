@@ -88,7 +88,8 @@ Create a Supabase project. Copy app settings from `.env.supabase.example` into
 `.env.local` or Vercel, setting browser URL/anonymous key and server URL/service
 role key from that same project. Keep the service role key server-only. Apply
 `migrations/007-supabase-backend.sql`, followed by
-`migrations/008-workspace-administration.sql`, using the administrative SQL
+`migrations/008-workspace-administration.sql` and
+`migrations/009-board-properties.sql`, using the administrative SQL
 connection, then publish the authentication security policy as described in the migration.
 The application uses a private `teamspace-private` Storage bucket. Configure
 email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
@@ -145,10 +146,28 @@ upgrades**. It serializes runs, records checksums atomically with each migration
 and safely skips completed migrations. A failed migration rolls back; earlier
 completed migrations remain applied. Retry after correcting the failure.
 It refuses an existing application schema without its ledger. For installations
-where 007 was previously applied manually, apply 008 manually following
+where 007 was previously applied manually, apply 008 and then 009 manually following
 [its upgrade guide](migrations/008-workspace-administration.md); do not replay
 007 or delete existing tables to make the runner accept them. See
 [migration bookkeeping](migrations/000-supabase-migration-ledger.md).
+
+### Custom board properties
+
+Open **Properties → Add property** on the main board or any `/kanban` embed.
+Add named Text, Select, Multi-select or Date fields; select fields have configurable
+options. Edit names/options from Properties, and set values in Task details.
+Values appear on cards and share the same saved tasks across every board embed.
+Property edits detect stale revisions; reopen the editor after a conflict to
+review current settings. Task saves send only changed property keys.
+
+Existing property types and option IDs are retained; you can rename fields/options
+and add options, but deletion/type conversion is not included. Limits: 32 fields,
+50 options per field, 2,000 characters per text value. Custom dates are date-only;
+the calendar continues to use the built-in Due date. **Download board JSON**
+exports all saved tasks and field definitions, excluding attachments/conversations.
+For Supabase apply [migration 009](migrations/009-board-properties.md); for Firebase
+deploy the updated Firestore rules before using the updated client. Local preview
+persists the same fields on this device. Browser/two-user acceptance remains open.
 
 The website uses the private Docker gateway for server requests, while browser
 requests and signed attachment links retain the configured public API URL.

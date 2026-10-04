@@ -44,6 +44,12 @@ test('entity snapshots preserve comments/presence and malformed data cannot beco
   assert.throws(() => collectionSnapshotRows('workspaces/w/snapshot', { tasks: [], notes: [], members: [] }));
   assert.throws(() => collectionSnapshotRows('workspaces/w/notes/n/comments', { comments: [{ body: 'missing id' }] }));
 });
+test('shared workspace snapshots deliver custom properties alongside tasks and reject malformed definitions', () => {
+  const property={id:'field',name:'Priority'};
+  const data={tasks:[],notes:[],members:[],attachments:[],boardProperties:[property]};
+  assert.deepEqual(collectionSnapshotRows('workspaces/w/snapshot',data)['workspaces/w/boardProperties'],[property]);
+  assert.throws(()=>collectionSnapshotRows('workspaces/w/snapshot',{...data,boardProperties:[{name:'missing id'}]}));
+});
 test('transient offline and server read failures retain the previous snapshot; revoked access is terminal', () => {
   for(const error of [new TypeError('network lost'),new SnapshotReadError('busy',503),new SnapshotReadError('limited',429)]) assert.equal(terminalSnapshotReadFailure(error),false);
   for(const status of [401,403,404])assert.equal(terminalSnapshotReadFailure(new SnapshotReadError('denied',status)),true);
