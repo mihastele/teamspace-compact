@@ -160,3 +160,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 
 - Main and embedded shared boards offer All tasks, Overdue, Due today, Next 7 days and No due date filters. Focused views exclude completed work, combine with existing search/assignee filtering and show result counts and a clear-filter control. No data/schema change.
 - Today and overdue labels follow the viewer's local calendar day rather than UTC or locale-specific date string formatting. The seven-day window includes today through six calendar days later; refresh labels on day rollover, focus and visibility changes without extra Firebase subscriptions.
+
+### Direct task status controls — 2026-10-04
+
+- Every main/embedded board card has a native keyboard/touch Status control outside its task-details button. Show Moving while pending, announce acknowledged moves and expose retry on failure. Prevent duplicate in-flight moves within a board view and disable dragging the pending card.
+- Quick moves and drag submit status-only trusted patches, preserving independent concurrent task-field edits. Never recreate missing tasks. Restore stable board-control focus after keyboard moves without stealing focus from another active control.
+- Task dialogs save only edited fields; unchanged stale fields cannot replace independent teammate updates. Same-field task conflicts follow server transaction commit order; no CRDT task-field merging is claimed.

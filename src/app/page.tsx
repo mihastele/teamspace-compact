@@ -30,6 +30,7 @@ import {
   type DeadlineFilter,
 } from "@/lib/task-deadlines";
 import { useLocalDay } from "@/lib/use-local-day";
+import { taskEditPatch } from "@/lib/task-status";
 
 type Api = ReturnType<typeof useTeamspace>;
 type View = "board" | "notes" | "members";
@@ -270,12 +271,18 @@ function TaskDialog({
     setBusy(true);
     setError("");
     try {
-      await api.saveTask({
-        ...draft,
+      const edited = {
         title: draft.title.trim(),
+        description: draft.description,
+        status: draft.status,
         assigneeId: draft.assigneeId || null,
         dueDate: draft.dueDate || null,
-      });
+      };
+      if (initial.id) {
+        const patch = taskEditPatch(initial, edited);
+        if (Object.keys(patch).length)
+          await api.saveTask({ id: initial.id, ...patch });
+      } else await api.saveTask(edited);
       close();
     } catch (e) {
       setError(
@@ -433,17 +440,72 @@ function WorkspaceBoard({
   api,
   shown,
   onTask,
-  onStatus,
   filtered = false,
 }: {
   api: Api;
   shown: Task[];
   onTask: (task: Partial<Task>) => void;
-  onStatus: (task: Task, status: Status) => void;
   filtered?: boolean;
 }) {
   const today = useLocalDay();
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
+  const [moving, setMoving] = useState<Record<string, Status>>({});
+  const inFlight = useRef(new Set<string>());
+  const filterControl = useRef<HTMLSelectElement>(null);
+  const [moveError, setMoveError] = useState<{
+    id: string;
+    status: Status;
+    message: string;
+  } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  async function moveTask(
+    task: Task,
+    status: Status,
+    origin?: HTMLSelectElement,
+  ) {
+    if (inFlight.current.has(task.id)) return;
+    setMoveError(null);
+    if (task.status === status) {
+      setAnnouncement(
+        `${task.title} is already in ${columns.find((column) => column.id === status)?.label}.`,
+      );
+      return;
+    }
+    inFlight.current.add(task.id);
+    setMoving((previous) => ({ ...previous, [task.id]: status }));
+    setAnnouncement(`Moving ${task.title}…`);
+    try {
+      await api.setTaskStatus(task.id, status);
+      setAnnouncement(
+        `${task.title} moved to ${columns.find((column) => column.id === status)?.label}.`,
+      );
+    } catch (error) {
+      setAnnouncement("");
+      setMoveError({
+        id: task.id,
+        status,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The task could not be moved. Try again.",
+      });
+    } finally {
+      inFlight.current.delete(task.id);
+      setMoving((previous) => {
+        const next = { ...previous };
+        delete next[task.id];
+        return next;
+      });
+      // Moving a card removes its control from the column. Restore a stable focus
+      // target unless the user has already moved focus to something else.
+      if (
+        origin &&
+        (document.activeElement === origin ||
+          document.activeElement === document.body)
+      )
+        filterControl.current?.focus();
+    }
+  }
   const visible = shown.filter((task) =>
     matchesDeadline(task, deadlineFilter, today),
   );
@@ -453,6 +515,7 @@ function WorkspaceBoard({
         <label>
           Due date
           <select
+            ref={filterControl}
             value={deadlineFilter}
             onChange={(event) =>
               setDeadlineFilter(event.target.value as DeadlineFilter)
@@ -478,6 +541,28 @@ function WorkspaceBoard({
           </button>
         )}
       </div>
+      <p className={s.moveAnnouncement} role="status">
+        {announcement}
+      </p>
+      {moveError && (
+        <div className={s.moveError} role="alert">
+          <span>{moveError.message}</span>
+          <button
+            className={s.secondary}
+            onClick={() => {
+              const current = api.tasks.find(
+                (task) => task.id === moveError.id,
+              );
+              if (current) void moveTask(current, moveError.status);
+              else setMoveError(null);
+            }}
+          >
+            {api.tasks.some((task) => task.id === moveError.id)
+              ? "Retry move"
+              : "Dismiss"}
+          </button>
+        </div>
+      )}
       <div className={s.board}>
         {columns.map((c) => (
           <section
@@ -489,7 +574,8 @@ function WorkspaceBoard({
               e.preventDefault();
               const id = e.dataTransfer.getData("application/x-teamspace-task");
               const current = api.tasks.find((t) => t.id === id);
-              if (current && current.status !== c.id) onStatus(current, c.id);
+              if (current && current.status !== c.id)
+                void moveTask(current, c.id);
             }}
           >
             <h2 className={s.columnHeader}>
@@ -519,53 +605,79 @@ function WorkspaceBoard({
                   : null;
                 const deadline = deadlineState(t, today);
                 return (
-                  <button
+                  <article
                     key={t.id}
                     className={s.card}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData(
-                        "application/x-teamspace-task",
-                        t.id,
-                      );
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onClick={() => onTask(t)}
-                    aria-label={`Edit task: ${t.title}${t.dueDate ? `, due ${t.dueDate}` : ", no due date"}${deadline === "overdue" ? ", overdue" : deadline === "today" ? ", due today" : ""}`}
+                    aria-busy={Boolean(moving[t.id])}
                   >
-                    <span className={s.cardTag}>
-                      {t.status === "done" ? "COMPLETED" : "TASK"}
-                    </span>
-                    <h3>{t.title}</h3>
-                    {t.description && <p>{t.description}</p>}
-                    <div className={s.cardFooter}>
-                      <span
-                        className={`${s.due} ${deadline === "overdue" ? s.overdue : deadline === "today" ? s.dueToday : ""}`}
-                      >
-                        {date ? (
-                          <>
-                            <Icon name="calendar" size={12} />
-                            {date.toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                            {deadline === "overdue"
-                              ? " · Overdue"
-                              : deadline === "today"
-                                ? " · Today"
-                                : ""}
-                          </>
-                        ) : (
-                          "No due date"
-                        )}
+                    <button
+                      className={s.cardOpen}
+                      draggable={!moving[t.id]}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          "application/x-teamspace-task",
+                          t.id,
+                        );
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onClick={() => onTask(t)}
+                      aria-label={`Edit task: ${t.title}${t.dueDate ? `, due ${t.dueDate}` : ", no due date"}${deadline === "overdue" ? ", overdue" : deadline === "today" ? ", due today" : ""}`}
+                    >
+                      <span className={s.cardTag}>
+                        {t.status === "done" ? "COMPLETED" : "TASK"}
                       </span>
-                      {assignee ? (
-                        <Avatar name={assignee.displayName} />
-                      ) : (
-                        <span>Unassigned</span>
-                      )}
+                      <h3>{t.title}</h3>
+                      {t.description && <p>{t.description}</p>}
+                      <div className={s.cardFooter}>
+                        <span
+                          className={`${s.due} ${deadline === "overdue" ? s.overdue : deadline === "today" ? s.dueToday : ""}`}
+                        >
+                          {date ? (
+                            <>
+                              <Icon name="calendar" size={12} />
+                              {date.toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                              {deadline === "overdue"
+                                ? " · Overdue"
+                                : deadline === "today"
+                                  ? " · Today"
+                                  : ""}
+                            </>
+                          ) : (
+                            "No due date"
+                          )}
+                        </span>
+                        {assignee ? (
+                          <Avatar name={assignee.displayName} />
+                        ) : (
+                          <span>Unassigned</span>
+                        )}
+                      </div>
+                    </button>
+                    <div className={s.cardStatus}>
+                      <span>{moving[t.id] ? "Moving…" : "Status"}</span>
+                      <select
+                        aria-label={`Status for ${t.title}`}
+                        value={moving[t.id] ?? t.status}
+                        disabled={Boolean(moving[t.id])}
+                        onChange={(event) =>
+                          void moveTask(
+                            t,
+                            event.target.value as Status,
+                            event.currentTarget,
+                          )
+                        }
+                      >
+                        {columns.map((column) => (
+                          <option key={column.id} value={column.id}>
+                            {column.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </button>
+                  </article>
                 );
               })}
             {!visible.some((t) => t.status === c.id) && (
@@ -607,10 +719,8 @@ function Notes({
   search,
   onDirtyChange,
   onTask,
-  onStatus,
 }: {
   onTask: (task: Partial<Task>) => void;
-  onStatus: (task: Task, status: Status) => void;
   api: Api;
   search: string;
   onDirtyChange: (dirty: boolean) => void;
@@ -1482,10 +1592,10 @@ function Notes({
           key={key}
           renderBoard={() => (
             <WorkspaceBoard
+              key={api.workspace?.id}
               api={api}
               shown={api.tasks}
               onTask={onTask}
-              onStatus={onStatus}
             />
           )}
           value={displayedContent}
@@ -2202,12 +2312,10 @@ export default function Home() {
           )}
           <div hidden={view !== "board"}>
             <WorkspaceBoard
+              key={api.workspace.id}
               api={api}
               shown={shown}
               onTask={setTask}
-              onStatus={(task, status) =>
-                void run(() => api.saveTask({ ...task, status }))
-              }
               filtered={Boolean(search || filter)}
             />
           </div>
@@ -2217,9 +2325,6 @@ export default function Home() {
               search={search}
               onDirtyChange={onDirtyChange}
               onTask={setTask}
-              onStatus={(task, status) =>
-                void run(() => api.saveTask({ ...task, status }))
-              }
             />
           </div>
           {view === "members" && <Members key={api.workspace.id} api={api} />}

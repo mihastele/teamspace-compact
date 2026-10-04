@@ -117,6 +117,50 @@ test("task changes validate assignment and reject immutable-field mass assignmen
   );
 });
 
+test("status-only quick moves preserve concurrent teammate edits", async () => {
+  const before = (await db.doc(`${prefix}/tasks/task`).get()).data();
+  const results = await Promise.all([
+    api("member", "PATCH", `${prefix}/tasks/task`, { status: "doing" }),
+    api("owner", "PATCH", `${prefix}/tasks/task`, {
+      title: "Updated by teammate",
+      description: "Concurrent detail",
+      dueDate: "2026-10-10",
+    }),
+  ]);
+  assert.deepEqual(
+    results.map((result) => result.status),
+    [200, 200],
+  );
+  const final = (await db.doc(`${prefix}/tasks/task`).get()).data();
+  assert.equal(final.status, "doing");
+  assert.equal(final.title, "Updated by teammate");
+  assert.equal(final.description, "Concurrent detail");
+  assert.equal(final.dueDate, "2026-10-10");
+  assert.equal(final.position, before.position);
+  assert.equal(final.createdBy, before.createdBy);
+  assert.equal(
+    (await api("member", "PATCH", `${prefix}/tasks/task`, { status: "doing" }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await db.doc(`${prefix}/tasks/task`).get()).data().description,
+    "Concurrent detail",
+  );
+});
+
+test("quick moves cannot recreate a missing task", async () => {
+  assert.equal(
+    (
+      await api("member", "PATCH", `${prefix}/tasks/deleted`, {
+        status: "done",
+      })
+    ).status,
+    404,
+  );
+  assert.equal((await db.doc(`${prefix}/tasks/deleted`).get()).exists, false);
+});
+
 test("simultaneous note saves choose one winner and retain the winner's revision", async () => {
   const drafts = ["First draft", "Second draft"];
   const results = await Promise.all(

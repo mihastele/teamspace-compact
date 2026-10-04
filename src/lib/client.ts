@@ -14,6 +14,7 @@ import { collection, getFirestore, onSnapshot } from "firebase/firestore";
 import type { Attachment, Member, Note, Task, Workspace } from "./model";
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
+import { updateTaskStatus } from "./task-status";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -503,16 +504,25 @@ export function useTeamspace() {
         setLoading(true);
         setWorkspace(data.workspace);
       }),
-    saveTask: (task: Partial<Task> & { title: string }) =>
+    saveTask: (task: Partial<Task> & ({ id: string } | { title: string })) =>
       action(async () => {
         if (!configured) {
+          const current = task.id
+            ? preview.current.tasks.find((item) => item.id === task.id)
+            : undefined;
+          if (task.id && !current)
+            throw new Error(
+              "This task no longer exists. Your changes have not been saved.",
+            );
           const item = {
             description: "",
             status: "todo" as const,
             assigneeId: null,
             dueDate: null,
             position: preview.current.tasks.length,
+            ...current,
             ...task,
+            title: task.title ?? current?.title ?? "",
             id: task.id ?? crypto.randomUUID(),
           };
           persist({
@@ -541,6 +551,18 @@ export function useTeamspace() {
           task.id ? "PATCH" : "POST",
           body,
         );
+      }),
+    setTaskStatus: (id: string, status: Task["status"]) =>
+      action(async () => {
+        if (!configured) {
+          persist({
+            ...preview.current,
+            tasks: updateTaskStatus(preview.current.tasks, id, status),
+          });
+          return;
+        }
+        if (!user) return unavailable();
+        await api(`${path()}/tasks/${id}`, "PATCH", { status }, user.uid);
       }),
     deleteTask: (id: string) =>
       action(async () => {
