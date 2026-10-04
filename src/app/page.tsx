@@ -29,6 +29,7 @@ import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
 import TaskTable from "./components/TaskTable";
+import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
 import { changedPropertyValues } from "@/lib/board-properties";
@@ -1643,6 +1644,8 @@ function Notes({
             </button>
           </div>
         )}
+        {liveEnabled && selected && api.user && api.workspace && <RecoveryArchives key={`${api.user.uid}:${key}`}
+          scope={`${api.user.uid}:${api.workspace.id}:${selected}:archive-browser`} title={draft.title || "Untitled note"} />}
         {children.length > 0 && (
           <p className={s.hint} style={{ marginBottom: 14 }}>
             This note has {children.length}{" "}

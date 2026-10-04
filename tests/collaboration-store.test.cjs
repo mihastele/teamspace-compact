@@ -190,3 +190,63 @@ test("archived content selects the latest local archive even with equal wall clo
   );
   assert.deepEqual(await store.load(), active);
 });
+
+async function putArchiveRows(entries) {
+  const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('teamspace-collaboration-v1',1);request.onupgradeneeded=()=>request.result.createObjectStore('notes');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+  try {await new Promise((resolve,reject)=>{const transaction=db.transaction('notes','readwrite');for(const [key,value] of entries)transaction.objectStore('notes').put(value,key);transaction.oncomplete=resolve;transaction.onabort=transaction.onerror=()=>reject(transaction.error);});}
+  finally {db.close();}
+}
+
+test('archive browsing pages newest first, survives newer insertions, and never reads or rewrites active journals',async()=>{
+  setup();const store=indexedRecoveryStore('alice:alpha:note:session'),value=record();
+  await putArchiveRows(Array.from({length:25},(_,i)=>[`alice:alpha:note:closed:archive:${String(i).padStart(2,'0')}`,{...value,archived:true,archivedAt:1000+i}]));
+  const active=record();await store.save(active);
+  const first=await store.listArchives();assert.equal(first.archives.length,20);assert.equal(first.archives[0].archivedAt,1024);assert.equal(first.archives[19].archivedAt,1005);assert.ok(first.next);
+  assert.equal('state' in first.archives[0],false);assert.equal('content' in first.archives[0],false);
+  await putArchiveRows([['alice:alpha:note:new:archive:latest',{...value,archived:true,archivedAt:2000}]]);
+  const second=await store.listArchives(first.next);assert.equal(second.archives.length,5);assert.equal(second.next,null);assert.equal(second.archives[0].archivedAt,1004);
+  assert.equal(new Set([...first.archives,...second.archives].map(row=>row.id)).size,25);
+  assert.equal((await store.listArchives()).archives[0].archivedAt,2000);
+  assert.equal((await store.readArchive(second.archives[4].id)).blocks[0].text,'Local work');assert.deepEqual(await store.load(),active);
+  await assert.rejects(store.readArchive('alice:alpha:note:session'),/unavailable/);assert.deepEqual(await store.load(),active);
+});
+
+test('archive IDs and cursors cannot cross account, workspace or note boundaries',async()=>{
+  setup();const value=record();await putArchiveRows([
+    ['alice:alpha:note:one:archive:a',{...value,archived:true,archivedAt:100}],
+    ['bob:alpha:note:one:archive:b',{...value,archived:true,archivedAt:101}],
+    ['alice:other:note:one:archive:c',{...value,archived:true,archivedAt:102}],
+    ['alice:alpha:note-two:one:archive:d',{...value,archived:true,archivedAt:103}],
+  ]);
+  const store=indexedRecoveryStore('alice:alpha:note:browser');assert.equal((await store.listArchives()).archives.length,1);
+  for(const foreign of ['bob:alpha:note:one:archive:b','alice:other:note:one:archive:c','alice:alpha:note-two:one:archive:d']){
+    await assert.rejects(store.readArchive(foreign),/different/);await assert.rejects(store.listArchives({id:foreign,archivedAt:200}),/cursor/);
+  }
+  await assert.rejects(store.listArchives(undefined,0),/size/);await assert.rejects(store.listArchives(undefined,51),/size/);
+  await assert.rejects(store.listArchives({id:'alice:alpha:note:one:archive:a',archivedAt:NaN}),/cursor/);
+});
+
+test('equal archive timestamps use stable key ties and missing timestamps remain accessible',async()=>{
+  setup();const value=record();await putArchiveRows(['a','b','c'].map(id=>[`alice:alpha:note:session:archive:${id}`,{...value,archived:true,archivedAt:1000}]));
+  await putArchiveRows([['alice:alpha:note:session:archive:legacy',{...value,archived:true}]]);
+  const store=indexedRecoveryStore('alice:alpha:note:browser'),first=await store.listArchives(undefined,2),second=await store.listArchives(first.next,2);
+  assert.deepEqual(first.archives.map(row=>row.id.split(':').at(-1)),['c','b']);assert.deepEqual(second.archives.map(row=>row.id.split(':').at(-1)),['a','legacy']);assert.equal(second.next,null);assert.equal(second.archives[1].archivedAt,0);
+});
+
+test('a corrupt newest archive can be listed without decoding and does not hide older recovery',async()=>{
+  setup();const value=record(),good='alice:alpha:note:session:archive:good',bad='alice:alpha:note:session:archive:bad';
+  await putArchiveRows([[good,{...value,archived:true,archivedAt:100}],[bad,{...value,state:'not a checkpoint',archived:true,archivedAt:200}],['alice:alpha:note:session:broken',null]]);
+  const store=indexedRecoveryStore('alice:alpha:note:browser');assert.equal((await store.listArchives()).archives.length,2);
+  await assert.rejects(store.archivedContent());
+  await assert.rejects(store.readArchive(bad));assert.equal((await store.readArchive(good)).blocks[0].text,'Local work');
+  assert.equal((await store.listArchives()).archives.length,2);await assert.rejects(store.readArchive('alice:alpha:note:session:archive:missing'),/unavailable/);
+});
+
+test('malformed archive metadata cannot poison the timestamp of a newly archived generation',async()=>{
+  setup();const value=record(),store=indexedRecoveryStore('alice:alpha:note:session');
+  await putArchiveRows([['alice:alpha:note:old:archive:bad-time',{...value,state:'not a checkpoint',archived:true,archivedAt:Infinity}],['alice:alpha:note:old:invalid',null]]);
+  await store.save(value);await store.archiveGeneration(value.generation);
+  const page=await store.listArchives();assert.equal(page.archives.length,2);assert.ok(page.archives[0].archivedAt>0);assert.ok(Number.isFinite(page.archives[0].archivedAt));assert.equal(page.archives[1].archivedAt,0);
+  assert.equal((await store.readArchive(page.archives[0].id)).blocks[0].text,'Local work');
+  assert.equal((await store.archivedContent()).blocks[0].text,'Local work');
+});

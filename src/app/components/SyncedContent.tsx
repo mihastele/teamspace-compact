@@ -7,6 +7,7 @@ import type { BlockSource, NoteBlock, NoteContent } from "@/lib/model";
 import { detachLinkedBlock, editLinkedSource, linkedSourceIds, linkableTypes, mergePreviewLinkedEdit, sourceBlock } from "@/lib/linked-content";
 import { exportNoteMarkdown } from "@/lib/note-export";
 import MarkdownText from "./MarkdownText";
+import RecoveryArchives from "./RecoveryArchives";
 import s from "./LinkedContent.module.css";
 
 type Api = ReturnType<typeof useTeamspace>;
@@ -91,6 +92,7 @@ function SourceBridge({ api, id, publish }: { api: Api; id: string; publish: (id
     {view.archivedRecoveryContent && <button type="button" onClick={() => { try { download(`${title} — archived linked recovery`, view.archivedRecoveryContent!); } catch { setExportError("Recovery download failed. Keep browser storage and try again."); } }}>Download archived source recovery</button>}
     {exportError && <p role="alert">{exportError}</p>}
     {view.archivedRecoveryError && <p role="alert">{view.archivedRecoveryError}</p>}
+    {api.user && api.workspace && <RecoveryArchives key={`${api.user.uid}:${api.workspace.id}:${id}`} scope={`${api.user.uid}:${api.workspace.id}:${id}:archive-browser`} title={title} />}
   </div> : null;
 }
 
