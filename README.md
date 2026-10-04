@@ -121,7 +121,6 @@ PORT=8080
 WEB_BIND_ADDRESS=127.0.0.1
 SITE_URL=http://localhost:8080
 ADDITIONAL_REDIRECT_URLS=http://localhost:8080
-APP_URL=https://teamspace.example.com
 ```
 
 The site will open at **http://localhost:8080**. `PORT` defaults to `3000` and
@@ -129,11 +128,6 @@ maps the host port to the website's internal port 3000. Supabase's API remains
 on port 8000; `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` identify that public
 API endpoint, not the website. Use your actual HTTPS website domain for Auth
 URLs in production. Restart Auth after changing its URLs.
-
-Set `APP_URL` to define your deployment domain or base URL for shareable invite
-links (e.g. `APP_URL=https://teamspace.example.com`). If unset, invite links fall
-back to `SITE_URL` on Supabase, request host headers behind a reverse proxy,
-or the current browser location when developing locally.
 
 Start the backend first, wait for its services to be ready, then migrate and
 publish the access policy before starting the website:
@@ -303,3 +297,5 @@ If an uncertain retry is rejected after access is removed or the parent is delet
 Mentions identify current workspace members and render as safe labels; they do not send notifications or email in this iteration. Messages are immutable except author deletion, which erases text/mentions and leaves a tombstone to prevent stale retries from resurrecting them. Older messages remain stored but pagination/editing/moderation are later features. Full export is separate; the conversation download covers only the visible latest-50 window.
 
 Deploy the rules/index configuration in `migrations/006-conversations.md` before the updated API/client. Conversation reads require current membership and a live parent; browser writes remain denied. Trusted mutations validate author identity, mentions, bounds and rate limits. Browser interaction and authenticated two-user acceptance remain required release checks.
+
+  docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build
