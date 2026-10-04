@@ -18,6 +18,8 @@
 
 ## Open decisions and release gates
 
+- NEEDS DECISION (page history): automatic five-minute checkpoints with 30-day expiry plus permanent named versions, versus retaining every committed edit indefinitely. Also choose title/content-only restore versus including page location. Native questions opened; no answer received yet.
+
 - NEEDS DECISION: repository license before public distribution. Firebase SDK dependencies are Apache-2.0; emulator CLI is MIT.
 - BLOCKED: no Firebase project configuration provided. Live authentication, deployment, signed uploads, and two-user acceptance need project provisioning.
 - PASSED: 91 unit/model/controller/IndexedDB/editor-helper/task cases plus 9 authorization rules suites and 33 trusted Firestore API cases (133 total) pass; final lint/typecheck/build pass. Rich editor/embedded-board browser interaction checks remain OPEN; earlier desktop/mobile checks covered the previous interface.
@@ -224,3 +226,10 @@
 - PASSED final: 91 unit/model/controller/store/editor-helper/task cases, all 9 rules suites and 33 trusted API cases (133 total), lint, standalone typecheck, optimized production build and git diff --check. Emulator used the documented process-only Windows/Corretto workaround and shut down successfully. Existing default-deny authorization remains verified.
 - OPEN TEST GAP: direct status selection, pending/retry DOM behavior, drag from the revised card, focus restoration and mobile/embedded layout remain browser acceptance checks under the recorded tool restriction. Automated state/transaction tests do not verify those interactions. Deployed two-user collaboration, Firebase provisioning, license and dependency review gates remain open.
 - Previous deadline iteration 55f3cc9 pushed successfully. Preparing this verified iteration for commit/push on codex/teamspace-application per user preference.
+
+### 2026-10-04 — Page history investigation and pending policy choices
+
+- User requested page history/restore first, commit it, then implement comments/mentions. Inspected saved-note/Yjs revision/generation data flow, shared subscriptions, recovery controller, trusted transactions, schema/rules/indexes and fenced recursive deletion. Previous direct-task iteration ac940f5 pushed successfully.
+- Wrote .agentic/PAGE-HISTORY-PLAN.md with immutable snapshots, transactional capture/restore, revision CAS, retry receipts, generation fencing/recovery, membership security, local preview, export/deletion and final-state tests. Retention and restore-location scope are material data/schema decisions; asked two native questions under AGENTS.md's ambiguity/retention rules. No answer received at this checkpoint; dependent implementation has not started.
+- Important recovery finding: current generation changes block the old controller and preserve pending work; restarting accepts a new generation only when the previous journal has no pending operations. History restore needs explicit clean-view reload and dirty-view recovery UX; resetting a generation alone would be incomplete.
+- Documentation-only planning checkpoint. Application/schema/dependencies unchanged; last runtime evidence remains 91 unit cases, 9 rules suites and 33 API cases, lint/typecheck/build. No history feature or comments implemented, no production-readiness claim, no secret or live database change. Next: receive policy choices, implement/test history, commit/push it, then proceed to comments/mentions.
