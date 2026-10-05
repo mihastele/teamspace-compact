@@ -1,0 +1,44 @@
+.calendar { min-width: 0; }
+.controls, .navigation, .options { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.controls { justify-content: space-between; margin-bottom: 12px; }
+.navigation h2 { font-size: 18px; min-width: 150px; text-align: center; }
+.navigation button, .segment button { background: white; border: 1px solid #dfe4ed; border-radius: 7px; padding: 8px 12px; color: #394762; }
+.navigation button:hover, .task:hover { background: #f0f4ff; }
+.options label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #526079; }
+.segment { display: flex; gap: 4px; }
+.segment button[aria-pressed="true"] { background: #e9efff; color: #315ae8; border-color: #a8baf4; }
+.hint { font-size: 12px; line-height: 1.6; color: #65718a; margin: 10px 0; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; }
+.weekdays, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.weekdays { text-align: center; color: #647089; padding: 12px 0; font-size: 12px; }
+.grid { gap: 1px; background: #dfe4ed; border: 1px solid #dfe4ed; border-radius: 10px; overflow: hidden; }
+.day { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 9px; min-width: 0; min-height: 105px; color: #26324a; background: #fff; }
+.day:hover { background: #f1f5ff; }
+.day:focus-visible { outline-offset: -3px; position: relative; }
+.outside { background: #f7f8fb; color: #8490a5; }
+.selected { box-shadow: inset 0 0 0 2px #315ae8; background: #f1f5ff; }
+.dayNumber { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 12px; flex-shrink: 0; }
+.today .dayNumber { color: white; background: #315ae8; }
+.previews { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.previews > span { font-size: 11px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; background: #eaf0ff; border-radius: 4px; padding: 3px 4px; color: #3b5287; }
+.previews small { font-size: 10px; color: #647089; }
+.previews .completed { text-decoration: line-through; background: #f0f3f2; color: #687c72; }
+.mobileCount { display: none; }
+.details { background: #f7f9fd; border: 1px solid #e2e7f0; border-radius: 10px; padding: 16px; align-self: start; }
+.details h3, .undated h3, .agenda h3 { font-size: 14px; line-height: 1.6; margin-bottom: 12px; }
+.task { width: 100%; display: flex; align-items: center; gap: 10px; background: white; border: 1px solid #e2e7f0; border-radius: 8px; padding: 12px; text-align: left; color: #26324a; margin: 7px 0; }
+.taskText { min-width: 0; flex: 1; }
+.task strong { display: block; font-size: 13px; overflow-wrap: anywhere; line-height: 1.5; }
+.task small { display: block; color: #65718a; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.status { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; }
+.todo { background: #8995ab; }.doing { background: #315ae8; }.done { background: #3b986c; }
+.empty { font-size: 13px; color: #65718a; line-height: 1.7; padding: 12px 0; }
+.add { width: 100%; border-radius: 7px; background: #315ae8; color: white; padding: 12px; margin-top: 12px; }
+.overdue { color: #ad463d; font-size: 12px; }
+.undated { margin-top: 24px; border-top: 1px solid #e2e7f0; padding-top: 20px; }
+.undated h3 span { color: #65718a; font-weight: normal; }
+.undatedList { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 0 12px; }
+.agenda { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.agenda h4 { font-size: 12px; font-weight: normal; color: #65718a; margin: 18px 0 8px; }
+@media (max-width: 1200px) { .layout { grid-template-columns: minmax(0, 1fr); } .details { width: 100%; } }
+@media (max-width: 650px) { .navigation h2 { min-width: 135px; font-size: 16px; } .navigation { gap: 6px; } .day { min-height: 67px; padding: 4px; gap: 2px; align-items: center; } .previews { display: none; } .mobileCount { display: block; font-size: 10px; color: #315ae8; } .agenda { grid-template-columns: minmax(0, 1fr); } }

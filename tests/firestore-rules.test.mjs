@@ -1,0 +1,402 @@
+import { readFile } from "node:fs/promises";
+import { after, before, beforeEach, test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+} from "@firebase/rules-unit-testing";
+import {
+  collection,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  setLogLevel,
+  updateDoc,
+} from "firebase/firestore";
+import {
+  deleteObject,
+  getBytes,
+  getMetadata,
+  listAll,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
+
+let environment;
+test('workspace admin metadata cannot grant SDK writes and enrollment/operation receipts stay private',async()=>{
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,`${workspace}/members/member`),{role:'admin'});
+    await setDoc(doc(db,`${workspace}/membershipOperations/receipt`),{uid:'member'});
+    await setDoc(doc(db,'users/member/developmentEnrollments/alpha'),{enrolledAt:1});
+  });
+  const db=environment.authenticatedContext('member').firestore();
+  await assertSucceeds(getDoc(doc(db,`${workspace}/tasks/task`)));
+  await assertFails(updateDoc(doc(db,`${workspace}/members/member`),{role:'owner'}));
+  await assertFails(getDoc(doc(db,`${workspace}/membershipOperations/receipt`)));
+  await assertFails(getDoc(doc(db,'users/member/developmentEnrollments/alpha')));
+});
+test('email confirmation policy protects direct reads and defaults to required', async () => {
+  const unconfirmed = environment.authenticatedContext('member', { email_verified: false }).firestore();
+  const confirmed = environment.authenticatedContext('member', { email_verified: true }).firestore();
+  const target = doc(unconfirmed, `${workspace}/notes/note`);
+  await assertSucceeds(getDoc(target));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'security/policy'), { emailConfirmationRequired: true });
+  });
+  await assertFails(getDoc(target));
+  await assertSucceeds(getDoc(doc(confirmed, `${workspace}/notes/note`)));
+  await assertFails(setDoc(doc(unconfirmed, 'security/policy'), { emailConfirmationRequired: false }));
+  await environment.withSecurityRulesDisabled(async context => { await deleteDoc(doc(context.firestore(), 'security/policy')); });
+  await assertFails(getDoc(target));
+  await assertSucceeds(getDoc(doc(confirmed, `${workspace}/notes/note`)));
+});
+setLogLevel("silent");
+const workspace = "workspaces/alpha";
+const documents = [
+  workspace,
+  `${workspace}/members/member`,
+  `${workspace}/tasks/task`,
+  `${workspace}/boardProperties/field`,
+  `${workspace}/notes/note`,
+  `${workspace}/attachments/file`,
+];
+
+before(async () => {
+  assert.ok(
+    process.env.FIRESTORE_EMULATOR_HOST,
+    "Use npm run test:rules to start isolated emulators",
+  );
+  assert.ok(
+    process.env.FIREBASE_STORAGE_EMULATOR_HOST,
+    "Storage emulator must be running",
+  );
+  environment = await initializeTestEnvironment({
+    projectId: "demo-teamspace",
+    firestore: {
+      rules: await readFile(
+        new URL("../firestore.rules", import.meta.url),
+        "utf8",
+      ),
+    },
+    storage: {
+      rules: await readFile(
+        new URL("../storage.rules", import.meta.url),
+        "utf8",
+      ),
+    },
+  });
+});
+
+beforeEach(async () => {
+  await environment.clearFirestore();
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'security/policy'), { emailConfirmationRequired: false }),
+      setDoc(doc(db, workspace), { name: "Alpha", ownerId: "owner" }),
+      setDoc(doc(db, `${workspace}/members/owner`), { role: "owner" }),
+      setDoc(doc(db, `${workspace}/members/member`), { role: "member" }),
+      setDoc(doc(db, `${workspace}/tasks/task`), {
+        title: "Task",
+        status: "todo",
+      }),
+      setDoc(doc(db, `${workspace}/boardProperties/field`), { name: 'Priority', type: 'select', options: [], revision: 1 }),
+      setDoc(doc(db, `${workspace}/notes/note`), {
+        title: "Note",
+        revision: 1,
+      }),
+      setDoc(doc(db, `${workspace}/notes/child-note`), {
+        title: "Child note",
+        parentId: "note",
+        revision: 1,
+      }),
+      setDoc(doc(db, `${workspace}/notes/grandchild-note`), {
+        title: "Grandchild note",
+        parentId: "child-note",
+        revision: 1,
+      }),
+      setDoc(doc(db, `${workspace}/attachments/file`), {
+        parentType: "task",
+        parentId: "task",
+      }),
+      setDoc(doc(db, "users/member"), { displayName: "Member" }),
+      setDoc(doc(db, "users/outsider"), { displayName: "Outsider" }),
+      setDoc(doc(db, "users/member/workspaces/alpha"), {
+        workspaceId: "alpha",
+      }),
+      setDoc(doc(db, "invites/hash"), { workspaceId: "alpha", uses: 0 }),
+      setDoc(doc(db, "rateLimits/member-minute"), { count: 1 }),
+      setDoc(doc(db, "internal/private"), { count: 1 }),
+    ]);
+  });
+});
+
+after(async () => {
+  if (environment) await environment.cleanup();
+});
+
+test("members and owners can read each workspace document and subcollection", async () => {
+  for (const uid of ["member", "owner"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    for (const path of documents) await assertSucceeds(getDoc(doc(db, path)));
+    for (const name of ["members", "tasks", "notes", "attachments", "boardProperties"]) {
+      await assertSucceeds(getDocs(collection(db, `${workspace}/${name}`)));
+    }
+  }
+});
+
+test("anonymous and nonmembers cannot read workspace documents or query content", async () => {
+  for (const context of [
+    environment.unauthenticatedContext(),
+    environment.authenticatedContext("outsider"),
+  ]) {
+    const db = context.firestore();
+    for (const path of documents) await assertFails(getDoc(doc(db, path)));
+    for (const name of ["members", "tasks", "notes", "attachments", "boardProperties"]) {
+      await assertFails(getDocs(collection(db, `${workspace}/${name}`)));
+    }
+  }
+});
+
+test("all clients including owners are denied create, update, and delete", async () => {
+  for (const uid of [null, "member", "owner", "outsider"]) {
+    const context =
+      uid === null
+        ? environment.unauthenticatedContext()
+        : environment.authenticatedContext(uid);
+    const db = context.firestore();
+    for (const path of [...documents, "users/member", "invites/hash"]) {
+      await assertFails(setDoc(doc(db, path), { forged: true }));
+      await assertFails(updateDoc(doc(db, path), { forged: true }));
+      await assertFails(deleteDoc(doc(db, path)));
+    }
+    await assertFails(
+      setDoc(doc(db, `${workspace}/members/${uid ?? "anonymous"}`), {
+        role: "owner",
+      }),
+    );
+    await assertFails(setDoc(doc(db, "workspaces/forged"), { ownerId: uid }));
+  }
+});
+
+test("profile access is self-only and global lists and collection groups are denied", async () => {
+  const db = environment.authenticatedContext("member").firestore();
+  await assertSucceeds(getDoc(doc(db, "users/member")));
+  await assertFails(getDoc(doc(db, "users/outsider")));
+  await assertFails(getDocs(collection(db, "users")));
+  await assertFails(getDocs(collection(db, "workspaces")));
+  await assertFails(getDocs(collectionGroup(db, "tasks")));
+  await assertFails(getDocs(collectionGroup(db, "members")));
+  await assertFails(
+    getDoc(
+      doc(environment.unauthenticatedContext().firestore(), "users/member"),
+    ),
+  );
+});
+
+test("invitations and unknown paths stay inaccessible even to owners", async () => {
+  for (const uid of ["owner", "member", "outsider"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    await assertFails(getDoc(doc(db, "invites/hash")));
+    await assertFails(getDocs(collection(db, "invites")));
+    await assertFails(getDoc(doc(db, "rateLimits/member-minute")));
+    await assertFails(
+      setDoc(doc(db, "rateLimits/member-minute"), { count: 0 }),
+    );
+    await assertFails(getDoc(doc(db, "users/member/workspaces/alpha")));
+    await assertFails(
+      setDoc(doc(db, "users/member/workspaces/alpha"), { role: "owner" }),
+    );
+    await assertFails(getDoc(doc(db, "internal/private")));
+    await assertFails(
+      setDoc(doc(db, `${workspace}/unexpected/doc`), { data: "private" }),
+    );
+    await assertFails(getDoc(doc(db, `${workspace}/unexpected/doc`)));
+  }
+});
+
+test("revoking membership immediately denies subsequent content reads", async () => {
+  const db = environment.authenticatedContext("member").firestore();
+  await assertSucceeds(getDoc(doc(db, `${workspace}/tasks/task`)));
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await deleteDoc(doc(context.firestore(), `${workspace}/members/member`));
+  });
+  await assertFails(getDoc(doc(db, `${workspace}/tasks/task`)));
+  await assertFails(getDocs(collection(db, `${workspace}/notes`)));
+});
+
+test("nested note documents inherit workspace membership at every tree depth", async () => {
+  for (const uid of ["owner", "member"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    for (const id of ["note", "child-note", "grandchild-note"])
+      await assertSucceeds(getDoc(doc(db, `${workspace}/notes/${id}`)));
+  }
+  for (const context of [
+    environment.unauthenticatedContext(),
+    environment.authenticatedContext("outsider"),
+  ]) {
+    const db = context.firestore();
+    for (const id of ["child-note", "grandchild-note"]) {
+      await assertFails(getDoc(doc(db, `${workspace}/notes/${id}`)));
+      await assertFails(
+        updateDoc(doc(db, `${workspace}/notes/${id}`), { parentId: null }),
+      );
+    }
+  }
+});
+
+test("private Storage objects cannot be read or written by any browser", async () => {
+  const path = "workspaces/alpha/task/task/file/image.png";
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await uploadBytes(ref(context.storage(), path), new Uint8Array([1, 2, 3]), {
+      contentType: "image/png",
+    });
+  });
+  for (const context of [
+    environment.unauthenticatedContext(),
+    environment.authenticatedContext("owner"),
+    environment.authenticatedContext("member"),
+    environment.authenticatedContext("outsider"),
+  ]) {
+    const object = ref(context.storage(), path);
+    await assertFails(getMetadata(object));
+    await assertFails(getBytes(object));
+    await assertFails(listAll(ref(context.storage(), "workspaces/alpha")));
+    await assertFails(
+      uploadBytes(object, new Uint8Array([4]), { contentType: "image/png" }),
+    );
+    await assertFails(deleteObject(object));
+  }
+});
+
+test("presence inherits membership and live-parent access while receipts remain private", async () => {
+  const lease = `${workspace}/notes/note/presence/session`;
+  const receipt = `${workspace}/notes/note/collaborationReceipts/operation`;
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), lease), {
+      uid: "member",
+      expiresAt: Date.now() + 90000,
+    });
+    await setDoc(doc(context.firestore(), receipt), {
+      uid: "member",
+      digest: "private",
+    });
+  });
+  for (const uid of ["member", "owner"]) {
+    const db = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(db, lease)));
+    await assertSucceeds(
+      getDocs(collection(db, `${workspace}/notes/note/presence`)),
+    );
+    await assertFails(setDoc(doc(db, lease), { uid }));
+    await assertFails(deleteDoc(doc(db, lease)));
+    await assertFails(getDoc(doc(db, receipt)));
+    await assertFails(setDoc(doc(db, receipt), { uid }));
+  }
+  await assertFails(
+    getDoc(
+      doc(environment.authenticatedContext("outsider").firestore(), lease),
+    ),
+  );
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await deleteDoc(doc(context.firestore(), `${workspace}/members/member`));
+  });
+  await assertFails(
+    getDoc(doc(environment.authenticatedContext("member").firestore(), lease)),
+  );
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await deleteDoc(doc(context.firestore(), `${workspace}/notes/note`));
+  });
+  await assertFails(
+    getDoc(doc(environment.authenticatedContext("owner").firestore(), lease)),
+  );
+});
+
+test("history snapshots and restore receipts remain private to trusted APIs", async () => {
+  for (const collectionName of ["historyVersions", "historyRestores"]) {
+    const path = `${workspace}/notes/note/${collectionName}/r1`;
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), path), {
+        title: "Private history",
+        sourceRevision: 1,
+      });
+    });
+    for (const context of [
+      environment.unauthenticatedContext(),
+      ...["owner", "member", "outsider"].map((uid) =>
+        environment.authenticatedContext(uid),
+      ),
+    ]) {
+      const db = context.firestore();
+      await assertFails(getDoc(doc(db, path)));
+      await assertFails(
+        getDocs(collection(db, `${workspace}/notes/note/${collectionName}`)),
+      );
+      await assertFails(setDoc(doc(db, path), { sourceRevision: 2 }));
+      await assertFails(deleteDoc(doc(db, path)));
+    }
+  }
+});
+
+test("conversation reads require current membership and live parent while browser writes stay denied", async () => {
+  for (const [resource, id] of [
+    ["notes", "note"],
+    ["tasks", "task"],
+  ]) {
+    const parent = `${workspace}/${resource}/${id}`;
+    const path = `${parent}/comments/comment`;
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), path), {
+        body: "Discussion",
+        authorId: "member",
+        createdAt: new Date(),
+        deleted: false,
+        mentions: [],
+      });
+    });
+    for (const uid of ["owner", "member"]) {
+      const db = environment.authenticatedContext(uid).firestore();
+      await assertSucceeds(getDoc(doc(db, path)));
+      await assertSucceeds(getDocs(collection(db, `${parent}/comments`)));
+      await assertFails(setDoc(doc(db, path), { body: "Overwrite" }));
+      await assertFails(deleteDoc(doc(db, path)));
+    }
+    await assertFails(
+      getDoc(
+        doc(environment.authenticatedContext("outsider").firestore(), path),
+      ),
+    );
+    await assertFails(
+      getDoc(doc(environment.unauthenticatedContext().firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), `${workspace}/members/member`));
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("member").firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), `${workspace}/members/member`), {
+        role: "member",
+        displayName: "Member",
+      });
+    });
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), parent), { deleting: true });
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("member").firestore(), path)),
+    );
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), parent));
+    });
+    await assertFails(
+      getDoc(doc(environment.authenticatedContext("owner").firestore(), path)),
+    );
+  }
+});

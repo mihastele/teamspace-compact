@@ -1,0 +1,24 @@
+.viewHeader, .sourceHeader, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.viewHeader h3 { margin: 0; font-size: 16px; }
+.viewHeader button, .sourceHeader button, .synced button, .dialog button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; background: white; color: #172338; cursor: pointer; font: inherit; font-size: 12px; }
+.synced { flex: 1; min-width: 0; padding: 14px; border: 1px solid #a6bbed; border-left: 3px solid #4263e9; border-radius: 8px; background: #fafcff; }
+.sourceHeader { font-size: 12px; color: #637592; justify-content: flex-start; }
+.synced textarea { width: 100%; min-height: 76px; resize: vertical; border: 1px solid #d2daeb; border-radius: 6px; padding: 10px; font: inherit; color: #172338; background: white; }
+.synced p { font-size: 12px; line-height: 1.5; }
+.synced label { display: block; font-size: 12px; margin-bottom: 8px; }
+.synced [role=alert], .dialog [role=alert] { color: #9f263d; overflow-wrap: anywhere; }
+.synced pre { overflow: auto; }
+.synced img { max-width: 100%; }
+.dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 24px; overflow: auto; border: 1px solid #cbd5e1; border-radius: 12px; }
+.dialog::backdrop { background: #10203980; }
+.dialog h2 { margin: 0 0 18px; }
+.dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.dialog label { display: grid; gap: 6px; margin: 12px 0; font-size: 14px; }
+.dialog input, .dialog select { width: 100%; min-width: 0; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font: inherit; }
+.dialog p { font-size: 12px; line-height: 1.5; color: #637592; }
+.actions { justify-content: flex-end; margin: 14px 0 0; }
+.actions button:last-child { background: #2855db; border-color: #2855db; color: white; }
+.pickerOptions { display: grid; gap: 8px; margin-top: 12px; }
+.pickerOptions button { text-align: left; overflow-wrap: anywhere; }
+.pickerOptions span { display: block; white-space: pre-wrap; font-size: 12px; }
+.dialog button:disabled, .synced button:disabled { opacity: .5; cursor: default; }

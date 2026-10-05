@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Private uploads and downloads go through authenticated server routes.
+    // Admin SDK bypasses these rules and must independently check membership.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

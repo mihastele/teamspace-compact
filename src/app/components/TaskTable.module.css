@@ -1,0 +1,26 @@
+.tableView { padding: 20px 24px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.controls > label { display: grid; gap: 5px; font-size: 12px; color: #52627a; }
+.controls select, .controls > button, .columnPicker summary { border: 1px solid #d4dce8; border-radius: 6px; padding: 8px 10px; background: white; color: #172338; font: inherit; cursor: pointer; }
+.columnPicker { font-size: 12px; margin-top: 19px; max-width: 100%; }
+.columnPicker fieldset { display: grid; gap: 8px; margin: 8px 0 0; padding: 12px; border: 1px solid #d4dce8; max-height: 240px; overflow: auto; }
+.columnPicker label { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.controls > button { margin-top: 19px; font-size: 12px; }
+.hint { font-size: 12px; color: #637592; line-height: 1.5; }
+.scroll { overflow-x: auto; border: 1px solid #dce3ee; border-radius: 8px; max-width: 100%; }
+.scroll table { border-collapse: collapse; width: 100%; text-align: left; font-size: 13px; }
+.scroll th, .scroll td { padding: 12px 14px; border-bottom: 1px solid #e8edf4; vertical-align: top; min-width: 130px; max-width: 320px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.scroll thead th { background: #f6f8fc; padding: 0; }
+.scroll thead button { display: block; width: 100%; text-align: left; padding: 12px 14px; background: transparent; border: 0; color: #52627a; font: inherit; font-weight: 600; cursor: pointer; }
+.scroll tbody th { min-width: 220px; }
+.scroll tbody tr:last-child > * { border-bottom: 0; }
+.scroll tbody tr:hover { background: #fafcff; }
+.task { border: 0; padding: 0; background: transparent; color: #2855db; cursor: pointer; font: inherit; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task:hover { text-decoration: underline; }
+.todo { color: #52627a; }
+.doing { color: #2855db; }
+.done { color: #25714d; }
+.overdue { color: #a32a40; }
+.empty { padding: 20px; color: #637592; text-align: center; }
+.caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 600px) { .tableView { padding: 16px 12px; } }
