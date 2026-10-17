@@ -28,9 +28,9 @@ import { assertAuthPolicy, guardedDocumentStore } from "./auth-policy";
 import { accessConfiguration, isRootAdmin } from "./access-config";
 import { resolveRegisteredAccount, type AccountResolver } from "./registered-accounts";
 import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
-import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "../board-properties";
-import type { BoardProperty } from "../model";
-type DecodedIdToken = { uid: string; name?: string; picture?: string; email?: string; email_verified?: boolean };
+import { member, rateLimit, type ServiceActor as DecodedIdToken } from "./service-context";
+import { getTask, saveTask, saveBoardProperty } from "./task-service";
+import { getConversation, changeConversation } from "./conversation-service";
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
 import {
@@ -39,7 +39,6 @@ import {
   integer,
   noteContent,
   object,
-  taskInput,
   text,
   uuid,
 } from "./validation";
@@ -76,58 +75,6 @@ async function body(request: Request) {
   } catch {
     throw new ApiError(400, "invalid_input", "Invalid JSON.");
   }
-}
-
-async function rateLimit(
-  db: Firestore,
-  uid: string,
-  scope: string,
-  limit: number,
-) {
-  const minute = Math.floor(Date.now() / 60000);
-  const ref = db.doc(`rateLimits/${hash(`${uid}:${scope}:${minute}`)}`);
-  await db.runTransaction(async (tx) => {
-    const snapshot = await tx.get(ref);
-    const count = snapshot.data()?.count ?? 0;
-    if (count >= limit)
-      throw new ApiError(
-        429,
-        "rate_limited",
-        "Too many requests. Try again in one minute.",
-      );
-    tx.set(ref, {
-      count: count + 1,
-      expiresAt: Timestamp.fromMillis((minute + 2) * 60000),
-    });
-  });
-}
-
-async function member(
-  tx: Transaction,
-  workspace: DocumentReference,
-  uid: string,
-  owner = false,
-) {
-  const [space, membership] = await Promise.all([
-    tx.get(workspace),
-    tx.get(workspace.collection("members").doc(uid)),
-  ]);
-  if (!space.exists || !membership.exists)
-    throw new ApiError(
-      403,
-      "forbidden",
-      "You do not have access to this workspace.",
-    );
-  if (
-    owner &&
-    (space.data()?.ownerId !== uid || membership.data()?.role !== "owner")
-  )
-    throw new ApiError(
-      403,
-      "forbidden",
-      "Only the workspace owner can do this.",
-    );
-  return space;
 }
 
 async function authenticate(request: Request) {
@@ -406,95 +353,6 @@ async function redeemInvite(
     return { id: space.id, name: value.name, ownerId: value.ownerId };
   });
   return json({ workspace });
-}
-
-async function mutateTask(
-  db: Firestore,
-  workspace: DocumentReference,
-  user: DecodedIdToken,
-  id: string | undefined,
-  input: unknown,
-) {
-  const value = taskInput(input, !!id);
-  const requestedProperties = value.propertyValues;
-  const ref = id
-    ? workspace.collection("tasks").doc(id)
-    : workspace.collection("tasks").doc();
-  const task = await db.runTransaction(async (tx) => {
-    await member(tx, workspace, user.uid);
-    const prior = id ? await tx.get(ref) : null;
-    if (id && !prior?.exists)
-      throw new ApiError(404, "not_found", "Task not found.");
-    if (prior?.data()?.deleting)
-      throw new ApiError(409, "deleting", "This task is being deleted.");
-    if ("propertyValues" in value) {
-      const properties = await tx.get(workspace.collection("boardProperties"));
-      try {
-        value.propertyValues = {
-          ...(prior?.data()?.propertyValues ?? {}),
-          ...validatePropertyValues(requestedProperties, properties.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty)),
-        };
-      } catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
-    }
-    if (value.assigneeId) {
-      const assignee = await tx.get(
-        workspace.collection("members").doc(String(value.assigneeId)),
-      );
-      if (!assignee.exists)
-        throw new ApiError(
-          400,
-          "invalid_input",
-          "The assignee is no longer a member.",
-        );
-    }
-    if (id) tx.update(ref, { ...value, updatedAt: now() });
-    else
-      tx.create(ref, {
-        ...value,
-        createdBy: user.uid,
-        createdAt: now(),
-        updatedAt: now(),
-      });
-    const previous = prior?.data() ?? {};
-    return {
-      id: ref.id,
-      title: value.title ?? previous.title,
-      description: value.description ?? previous.description,
-      status: value.status ?? previous.status,
-      assigneeId:
-        "assigneeId" in value ? value.assigneeId : previous.assigneeId,
-      dueDate: "dueDate" in value ? value.dueDate : previous.dueDate,
-      position: value.position ?? previous.position,
-      propertyValues: value.propertyValues ?? previous.propertyValues ?? {},
-    };
-  });
-  return json({ task }, id ? 200 : 201);
-}
-
-async function mutateBoardProperty(db: Firestore, workspace: DocumentReference, user: DecodedIdToken, id: string, input: unknown) {
-  await rateLimit(db, user.uid, "board_property", 30);
-  const data = object(input, ["name", "type", "options", "expectedRevision"]);
-  const expected = integer(data.expectedRevision, "Expected revision", 0, 1000000000);
-  const propertyId = uuid(id);
-  let definition: ReturnType<typeof propertyDefinition>;
-  try { definition = propertyDefinition({ name: data.name, type: data.type, options: data.options }); }
-  catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
-  const property = await db.runTransaction(async tx => {
-    await member(tx, workspace, user.uid);
-    // Reading and incrementing the workspace serializes creates, including the cap and name check.
-    const space = await tx.get(workspace);
-    const rows = await tx.get(workspace.collection("boardProperties"));
-    const properties = rows.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty);
-    let next: BoardProperty;
-    try { next = validatePropertyChange(properties, propertyId, expected, definition); }
-    catch (error) { throw new ApiError(409, "property_conflict", (error as Error).message); }
-    const { id: ignoredId, ...stored } = next;
-    void ignoredId;
-    tx.set(workspace.collection("boardProperties").doc(propertyId), { ...stored, updatedAt: now(), updatedBy: user.uid });
-    tx.update(workspace, { boardPropertiesRevision: (space.data()?.boardPropertiesRevision ?? 0) + 1 });
-    return next;
-  });
-  return json({ property }, expected ? 200 : 201);
 }
 
 async function mutateNote(
@@ -1145,123 +1003,6 @@ async function presenceOperation(
   return json({ ok: true });
 }
 
-function commentView(id: string, value: Record<string, unknown>) {
-  return {
-    id,
-    body: value.body,
-    authorId: value.authorId,
-    authorName: value.authorName,
-    createdAt: (value.createdAt as Timestamp).toMillis(),
-    deleted: value.deleted,
-    mentions: value.mentions,
-  };
-}
-async function conversationOperation(
-  db: Firestore,
-  workspace: DocumentReference,
-  user: DecodedIdToken,
-  resource: "notes" | "tasks",
-  id: string,
-  commentId: string | undefined,
-  input?: unknown,
-) {
-  await rateLimit(
-    db,
-    user.uid,
-    commentId ? "comment_delete" : "comment_post",
-    commentId ? 30 : 20,
-  );
-  const parent = workspace.collection(resource).doc(id);
-  const data = commentId ? undefined : object(input, ["operationId", "body"]);
-  const operationId = data ? uuid(data.operationId) : undefined;
-  const message = data ? text(data.body, "Comment", 4000) : undefined;
-  const digest = data ? hash(data.body as string) : undefined;
-  const ref = parent
-    .collection("comments")
-    .doc(commentId ?? hash(`${user.uid}:${operationId}`));
-  const comment = await db.runTransaction(async (tx) => {
-    await member(tx, workspace, user.uid);
-    const [entity, previous] = await Promise.all([tx.get(parent), tx.get(ref)]);
-    if (!entity.exists)
-      throw new ApiError(404, "not_found", "This item no longer exists.");
-    if (entity.data()!.deleting)
-      throw new ApiError(409, "deleting", "This item is being deleted.");
-    if (commentId) {
-      if (!previous.exists)
-        throw new ApiError(404, "not_found", "Comment not found.");
-      const value = previous.data()!;
-      if (value.authorId !== user.uid)
-        throw new ApiError(
-          403,
-          "forbidden",
-          "Only the author can delete this comment.",
-        );
-      if (!value.deleted)
-        tx.update(ref, { body: "", mentions: [], deleted: true });
-      return commentView(ref.id, {
-        ...value,
-        body: "",
-        mentions: [],
-        deleted: true,
-      });
-    }
-    if (previous.exists) {
-      if (
-        previous.data()!.digest !== digest ||
-        previous.data()!.authorId !== user.uid
-      )
-        throw new ApiError(
-          409,
-          "operation_conflict",
-          "An operation ID cannot be reused with a different comment.",
-        );
-      return commentView(ref.id, previous.data()!);
-    }
-    const mentionIds = [
-      ...new Set(
-        [...message!.matchAll(/@\{([^{}]+)\}/g)].map((match) =>
-          identifier(match[1]),
-        ),
-      ),
-    ];
-    if (mentionIds.length > 10)
-      throw new ApiError(
-        400,
-        "invalid_input",
-        "A comment can mention at most ten people.",
-      );
-    const memberships = await Promise.all(
-      mentionIds.map((uid) => tx.get(workspace.collection("members").doc(uid))),
-    );
-    if (memberships.some((snapshot) => !snapshot.exists))
-      throw new ApiError(
-        400,
-        "invalid_mention",
-        "Mentioned people must be current members of this workspace.",
-      );
-    const value = {
-      body: message,
-      authorId: user.uid,
-      authorName:
-        typeof user.name === "string" ? user.name.slice(0, 200) : user.uid,
-      createdAt: Timestamp.now(),
-      deleted: false,
-      mentions: memberships.map((snapshot, index) => ({
-        uid: mentionIds[index],
-        displayName:
-          typeof snapshot.data()!.displayName === "string"
-            ? snapshot.data()!.displayName.slice(0, 200)
-            : mentionIds[index],
-      })),
-      operationId,
-      digest,
-    };
-    tx.create(ref, value);
-    return commentView(ref.id, value);
-  });
-  return json({ comment });
-}
-
 async function inviteOperation(
   db: Firestore,
   workspace: DocumentReference,
@@ -1908,17 +1649,23 @@ export async function handleTrustedApi(
       });
       return json(result);
     }
-    if (resource === "boardProperties" && itemId && !action && method === "PUT")
-      return await mutateBoardProperty(db, workspace, user, itemId, await body(request));
+    if (resource === "boardProperties" && itemId && !action && method === "PUT") {
+      const property = await saveBoardProperty(db, workspace, user, itemId, await body(request));
+      return json({ property }, property.revision === 1 ? 201 : 200);
+    }
     if (resource === "tasks" || resource === "notes") {
-      if (itemId && method === "GET" && ["comments","presence"].includes(action)) {
+      if (resource === "tasks" && itemId && !action && method === "GET")
+        return json({ task: await getTask(db, workspace, user, itemId) });
+      if (itemId && method === "GET" && action === "comments")
+        return json({ comments: await getConversation(db, workspace, user, resource, itemId) });
+      if (itemId && method === "GET" && action === "presence") {
         const result = await db.runTransaction(async tx => {
           await member(tx,workspace,user.uid);
           const parent = await tx.get(workspace.collection(resource).doc(itemId));
           if (!parent.exists || parent.data()?.deleting) throw new ApiError(404,"not_found","This item no longer exists.");
           const query = workspace.collection(resource).doc(itemId).collection(action);
-          const items = await tx.get(action === "comments" ? query.orderBy("createdAt","desc").limit(50) : query);
-          return action === "comments" ? {comments:items.docs.map(item => commentView(item.id,item.data()!)).reverse()} : {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
+          const items = await tx.get(query);
+          return {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
         });
         return json(result);
       }
@@ -1927,7 +1674,7 @@ export async function handleTrustedApi(
           (method === "POST" && path.length === 5) ||
           (method === "DELETE" && path.length === 6)
         )
-          return await conversationOperation(
+          return json({ comment: await changeConversation(
             db,
             workspace,
             user,
@@ -1935,7 +1682,7 @@ export async function handleTrustedApi(
             itemId,
             commentId,
             method === "POST" ? await body(request) : undefined,
-          );
+          ) });
         throw new ApiError(404, "not_found", "Endpoint not found.");
       }
       if (resource === "notes" && itemId && action) {
@@ -1986,9 +1733,9 @@ export async function handleTrustedApi(
       }
       if (action) throw new ApiError(404, "not_found", "Endpoint not found.");
       if ((method === "POST" && !itemId) || (method === "PATCH" && itemId))
-        return await (resource === "tasks"
-          ? mutateTask(db, workspace, user, itemId, await body(request))
-          : mutateNote(db, workspace, user, itemId, await body(request)));
+        return resource === "tasks"
+          ? json({ task: await saveTask(db, workspace, user, itemId, await body(request)) }, itemId ? 200 : 201)
+          : await mutateNote(db, workspace, user, itemId, await body(request));
       if (method === "DELETE" && itemId)
         return await deleteParent(
           db,

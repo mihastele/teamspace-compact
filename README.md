@@ -228,6 +228,7 @@ npm test
 npm run test:rules
 npm run test:supabase
 npm run build
+npm run test:http
 ```
 
 The GitHub workflow repeats these checks on pushes and pull requests with Node 24,
@@ -244,6 +245,20 @@ workaround: set `JAVA_TOOL_OPTIONS` to
 Use a nonexistent directory; see the baseline migration for the reason.
 
 Rules tests use clean isolated emulators under demo-teamspace, never a live database. See migrations/ for schema and export/deletion policies. Before release, use two signed-in users to check live task updates, refresh persistence, simultaneous note-save conflicts, expired/revoked invites, membership removal, outsider SDK denial and private file access. Also check file orientation/transparency/screenshot legibility, cleanup, mobile layout and keyboard dialog use.
+
+The API database suites run through the actual Next route module with fixture
+authentication, including custom-property PUT requests. `npm run test:http` runs
+after the build and starts an isolated loopback production server without backend
+credentials, checks PUT in the framework's Allow header and verifies that it
+reaches the guarded API. It does not write data or replace authenticated acceptance.
+
+Task/field operations and conversations share server-only services in
+`src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated
+`GET /api/workspaces/:workspaceId/tasks/:taskId` detail endpoint returns current
+task fields and available creation/update metadata, with null audit values for
+legacy records. Missing/deleting tasks return 404; workspace membership is checked
+in the read transaction. These services are groundwork for the PostgreSQL-focused
+[project/ticket implementation](.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md).
 
 Local table/calendar keyboard, task persistence and mobile navigation checks are
 recorded in [.agentic/BROWSER-ACCEPTANCE.md](.agentic/BROWSER-ACCEPTANCE.md).

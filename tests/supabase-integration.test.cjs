@@ -7,6 +7,7 @@ const Module = require('node:module');
 const originalLoad = Module._load;
 Module._load = function(id, ...args) { return id === 'server-only' ? {} : originalLoad.call(this, id, ...args); };
 const { handleTrustedApi, handleApi } = require('../.test-build/server/api.js');
+const loadApiRoute = require('./route-boundary.cjs');
 const { supabaseDocumentStore, FieldValue } = require('../.test-build/server/document-store.js');
 const { guardedDocumentStore } = require('../.test-build/server/auth-policy.js');
 const supabaseModule = require('../.test-build/server/supabase.js');
@@ -80,10 +81,13 @@ beforeEach(async () => {
 async function api(uid, method, path, input) {
   const request = new Request(`http://test/api/${path}`, { method,
     headers: { 'Content-Type': 'application/json' }, body: input === undefined ? undefined : JSON.stringify(input) });
-  const response = await handleTrustedApi(request, path.split('?')[0].split('/'), { db, storage: {}, user: {uid,name:uid,email_verified:true}, resolveAccount:async()=>({uid:outsider,displayName:'Registered account',photoURL:null}) });
+  const route = loadApiRoute((request, segments) => handleTrustedApi(request, segments, { db, storage: {}, user: {uid,name:uid,email_verified:true}, resolveAccount:async()=>({uid:outsider,displayName:'Registered account',photoURL:null}) }));
+  assert.equal(typeof route[method], 'function', `Framework route must export ${method}`);
+  const response = await route[method](request, { params: Promise.resolve({ path: path.split('?')[0].split('/') }) });
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
+require('./task-service-api-cases.cjs')(test, { api, member, outsider, prefix });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
