@@ -84,8 +84,18 @@ export function taskInput(
     "dueDate",
     "position",
     "propertyValues",
+    "projectId", "priority", "estimate",
   ]);
   const out: Record<string, unknown> = {};
+  if ("projectId" in input) out.projectId = input.projectId === null ? null : identifier(input.projectId);
+  if ("priority" in input) {
+    if (!["none", "low", "medium", "high", "urgent"].includes(input.priority as string)) throw new ApiError(400, "invalid_input", "Invalid priority.");
+    out.priority = input.priority;
+  }
+  if ("estimate" in input) {
+    if (input.estimate !== null && (typeof input.estimate !== "number" || !Number.isFinite(input.estimate) || input.estimate < 0 || input.estimate > 1000000)) throw new ApiError(400, "invalid_input", "Estimate must be a number between 0 and 1,000,000.");
+    out.estimate = input.estimate;
+  }
   if ("propertyValues" in input) {
     try { out.propertyValues = propertyValuePatch(input.propertyValues); }
     catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
@@ -119,6 +129,23 @@ export function taskInput(
   if (!Object.keys(out).length)
     throw new ApiError(400, "invalid_input", "No changes supplied.");
   return out;
+}
+
+/** Optional durability controls are never accepted as stored task fields. */
+export function taskMutationInput(value: unknown, partial: boolean) {
+  const input = object(value, [
+    "title", "description", "status", "assigneeId", "dueDate", "position", "propertyValues",
+    "operationId", "expectedRevision", "projectId", "priority", "estimate",
+  ]);
+  const { operationId, expectedRevision, ...fields } = input;
+  if (!partial && "expectedRevision" in input)
+    throw new ApiError(400, "invalid_input", "Only task updates accept a reviewed revision.");
+  return {
+    value: taskInput(fields, partial),
+    operationId: "operationId" in input ? uuid(operationId) : undefined,
+    expectedRevision: "expectedRevision" in input
+      ? integer(expectedRevision, "Expected revision", 0, Number.MAX_SAFE_INTEGER - 1) : undefined,
+  };
 }
 export function noteContent(value: unknown) {
   const data = object(value, ["blocks"]);

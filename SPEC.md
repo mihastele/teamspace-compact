@@ -23,7 +23,7 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-Multiple independent custom databases, AI, notifications and public publishing remain outside scope. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+Multiple independent custom databases, notifications and public publishing remain outside scope. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
 
 ### Custom board fields
 
@@ -250,3 +250,27 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Never recursively render references. Missing, deleted or unsupported sources remain explicit unavailable links. Removing a destination leaves original content/tasks intact. Make independent copies current source content under the destination identity. Bound each page to 100 links from 20 source notes.
 - Preserve composition/failed text, including when a remote edit removes the link; show download/discard recovery. Guard local structural changes, navigation and restore while linked edits are unfinished. Preview source saves use revisions; self-link drafts preserve other local blocks and reject conflicting source changes.
 - History/export store references and view settings without resolving current source text. Restoring a destination does not revert source content or tasks. Migration 010 documents additive existing JSON models, access controls, deletion/export and paired client/API rollout. No additional dependency, table, retention policy or SQL step. DOM/IME/mobile/two-user acceptance remains a release gate.
+
+
+### PostgreSQL Projects and normalized fields (October 17 expansion)
+
+- Projects inherit workspace membership and support reviewed name/description edits
+  and reversible archiving. Archive preserves task links; new task assignments and
+  Project relation selections require an active Project. Project creation retries
+  with one operation UUID converge. Task details and Project task lists navigate
+  both directions; tasks retain their existing identity, comments and attachments.
+- PostgreSQL adds task Project, priority (none/low/medium/high/urgent), optional
+  nonnegative numeric estimate, and all ten custom types: text, longText, number,
+  date, checkbox, select, multiSelect, person, relation(Project), URL. Person values
+  select workspace members. URLs must be HTTP(S) without credentials. Fields may
+  be workspace-wide or Project-scoped; scope/type and option identity are immutable.
+- Options retain UUIDs through renaming, ordering, color changes and archival.
+  Archived options can remain selected or be cleared, but cannot be newly selected.
+  Project moves retain historical field values while new values must match scope.
+- Migration 012 makes task/Project rows and normalized definitions/options/typed
+  values/selection rows canonical, with RLS and transactional compatibility RPCs.
+  Task IDs/option IDs, comments, attachments and private receipts are preserved.
+  Board JSON includes Projects and hydrated definitions/values. Full workspace
+  export/deletion and authenticated browser/deployment acceptance remain open.
+- Firebase/local preview retain their existing four field types. Nested composable
+  filters, reusable saved views and agent worker/approval/audits are separate stages.

@@ -11,6 +11,7 @@ Module._load = function (id, ...args) {
   return id === "server-only" ? {} : originalLoad.call(this, id, ...args);
 };
 const { handleTrustedApi } = require("../.test-build/server/api.js");
+const loadApiRoute = require('./route-boundary.cjs');
 const { firebaseDocumentStore } = require("../.test-build/server/document-store.js");
 const { guardedDocumentStore } = require("../.test-build/server/auth-policy.js");
 Module._load = originalLoad;
@@ -64,19 +65,22 @@ async function api(uid, method, path, input, storageOverride = storage) {
     headers: { "Content-Type": "application/json" },
     body: input === undefined ? undefined : JSON.stringify(input),
   });
-  const response = await handleTrustedApi(
+  const route = loadApiRoute((request, segments) => handleTrustedApi(
     request,
-    path.split("?")[0].split("/"),
+    segments,
     {
       db,
       storage: storageOverride,
       user: { uid, name: uid },
       resolveAccount: async account => account === "missing@example.test" ? null : ({ uid: account.includes("@") ? "new-user" : account, displayName: "Registered user", photoURL: null }),
     },
-  );
+  ));
+  assert.equal(typeof route[method], 'function', `Framework route must export ${method}`);
+  const response = await route[method](request, { params: Promise.resolve({ path: path.split('?')[0].split('/') }) });
   return { status: response.status, data: await response.json() };
 }
 const prefix = "workspaces/alpha";
+require('./task-service-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', owner: 'owner', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./board-property-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./linked-content-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 
@@ -1967,4 +1971,13 @@ test("failed collaboration cleanup leaves a fenced parent and deletion is retrya
     0,
   );
   op.doc.destroy();
+});
+
+
+test('Firebase preserves its baseline and rejects PostgreSQL Project and extended-field mutations',async()=>{
+  assert.equal((await api('member','POST','workspaces/alpha/projects',{name:'Unsupported'})).status,400);
+  assert.equal((await api('member','PATCH','workspaces/alpha/tasks/task',{projectId:'p'})).status,400);
+  assert.equal((await api('member','PUT',`workspaces/alpha/boardProperties/${require('node:crypto').randomUUID()}`,{name:'Number',type:'number',options:[],expectedRevision:0})).status,400);
+  assert.equal((await db.collection('workspaces/alpha/projects').get()).size,0);
+  assert.equal((await db.doc('workspaces/alpha/tasks/task').get()).data().title,'Original');
 });

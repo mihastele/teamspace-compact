@@ -16,7 +16,7 @@ export function updateTaskStatus(
 type EditableTask = Pick<
   Task,
   "title" | "description" | "status" | "assigneeId" | "dueDate"
->;
+> & Pick<Partial<Task>, "projectId" | "priority" | "estimate">;
 
 /** Send user intent only, preserving unrelated changes made after the editor opened. */
 export function taskEditPatch(
@@ -29,6 +29,7 @@ export function taskEditPatch(
     status: before.status ?? "todo",
     assigneeId: before.assigneeId ?? null,
     dueDate: before.dueDate ?? null,
+    projectId: before.projectId ?? null, priority: before.priority ?? "none", estimate: before.estimate ?? null,
   };
   return Object.fromEntries(
     Object.entries(after).filter(

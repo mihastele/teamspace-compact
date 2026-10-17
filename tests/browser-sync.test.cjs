@@ -60,3 +60,10 @@ test('periodic reconciliation cannot starve a slow in-flight snapshot', async ()
   h.reads[0].resolve('slow but current');await tick();
   assert.deepEqual(h.values,['slow but current']);assert.equal(h.reads.length,1);
 });
+
+test('workspace snapshots include canonical projects and reject malformed project snapshots',()=>{
+  const project={id:'p',name:'Release',archived:false,revision:1};
+  const data={tasks:[],notes:[],members:[],attachments:[],boardProperties:[],projects:[project]};
+  assert.deepEqual(collectionSnapshotRows('workspaces/w/snapshot',data)['workspaces/w/projects'],[project]);
+  assert.throws(()=>collectionSnapshotRows('workspaces/w/snapshot',{...data,projects:[{name:'no ID'}]}));
+});

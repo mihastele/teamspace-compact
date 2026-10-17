@@ -29,6 +29,7 @@ import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
 import TaskTable from "./components/TaskTable";
+import Projects from "./components/Projects";
 import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
@@ -46,7 +47,7 @@ import { taskEditPatch } from "@/lib/task-status";
 import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "board" | "table" | "calendar" | "notes" | "members";
+type View = "projects" | "board" | "table" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -65,6 +66,7 @@ function initials(name: string) {
 }
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
+    projects: <path d="M3 5h7l2 3h9v13H3z" />,
     table: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 14h18M10 4v16" /></>,
     board: (
       <>
@@ -235,8 +237,10 @@ function TaskDialog({
   api,
   initial,
   close,
+  onProject,
 }: {
   api: Api;
+  onProject: (id: string) => void;
   initial: Partial<Task>;
   close: () => void;
 }) {
@@ -248,6 +252,9 @@ function TaskDialog({
     status: initial.status || ("todo" as Status),
     assigneeId: initial.assigneeId || "",
     dueDate: initial.dueDate || "",
+    projectId: initial.projectId || "",
+    priority: initial.priority || ("none" as NonNullable<Task["priority"]>),
+    estimate: initial.estimate ?? null,
     propertyValues: initial.propertyValues ?? {},
   });
   const [busy, setBusy] = useState(false);
@@ -259,6 +266,7 @@ function TaskDialog({
     status: initial.status || "todo",
     assigneeId: initial.assigneeId || "",
     dueDate: initial.dueDate || "",
+    projectId: initial.projectId || "", priority: initial.priority || "none", estimate: initial.estimate ?? null,
   });
   const changed =
     Object.keys(changedPropertyValues(initial.propertyValues, draft.propertyValues)).length > 0 ||
@@ -269,6 +277,7 @@ function TaskDialog({
       status: draft.status,
       assigneeId: draft.assigneeId,
       dueDate: draft.dueDate,
+      projectId: draft.projectId, priority: draft.priority, estimate: draft.estimate,
     });
   function attemptClose() {
     if (busy) return;
@@ -309,6 +318,7 @@ function TaskDialog({
         status: draft.status,
         assigneeId: draft.assigneeId || null,
         dueDate: draft.dueDate || null,
+        ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}),
       };
       if (initial.id) {
         const patch = taskEditPatch(initial, edited);
@@ -446,7 +456,17 @@ function TaskDialog({
               onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
             />
           </label>
-          <TaskPropertyInputs properties={api.boardProperties} values={draft.propertyValues} disabled={busy}
+          {api.projectsEnabled && <>
+            {initial.projectId && <button type="button" disabled={busy || changed || commentRecoveryRisk} title="Save or discard edits before opening the project" onClick={()=>{close();onProject(initial.projectId!);}}>Open linked project ↗</button>}
+            <label className={s.field}>Project<select disabled={busy} value={draft.projectId} onChange={event=>setDraft({...draft,projectId:event.target.value})}>
+              <option value="">No project</option>{api.projects.map(project=><option key={project.id} value={project.id} disabled={project.archived && project.id!==initial.projectId}>{project.name}{project.archived?" (archived)":""}</option>)}
+            </select></label>
+            <div className={s.fieldRow}>
+              <label className={s.field}>Priority<select disabled={busy} value={draft.priority} onChange={event=>setDraft({...draft,priority:event.target.value as typeof draft.priority})}>{["none","low","medium","high","urgent"].map(value=><option key={value} value={value}>{value}</option>)}</select></label>
+              <label className={s.field}>Estimate<input disabled={busy} type="number" min="0" max="1000000" step="any" value={draft.estimate??""} onChange={event=>setDraft({...draft,estimate:event.target.value===""?null:event.target.valueAsNumber})}/></label>
+            </div>
+          </>}
+          <TaskPropertyInputs properties={api.boardProperties} values={draft.propertyValues} disabled={busy} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
           {initial.id ? (
             <Attachments api={api} type="task" id={initial.id} />
@@ -684,7 +704,7 @@ function WorkspaceBoard({
                       </span>
                       <h3>{t.title}</h3>
                       {t.description && <p>{t.description}</p>}
-                      <TaskPropertySummary task={t} properties={api.boardProperties} />
+                      <TaskPropertySummary task={t} properties={api.boardProperties} members={api.members} projects={api.projects} />
                       <div className={s.cardFooter}>
                         <span
                           className={`${s.due} ${deadline === "overdue" ? s.overdue : deadline === "today" ? s.dueToday : ""}`}
@@ -2249,7 +2269,9 @@ function WorkspaceDialog({
 }
 export default function Home() {
   const api = useTeamspace();
-  const [view, setView] = useState<View>("board");
+  const [chosenView, setView] = useState<View>("board");
+  const view = chosenView === "projects" && !api.projectsEnabled ? "board" : chosenView;
+  const [projectSelection,setProjectSelection] = useState<{scope:string;id:string}|null>(null);
   const [search, setSearch] = useState("");
   const [taskSelection, setTaskSelection] = useState<{
     scope: string;
@@ -2329,7 +2351,7 @@ export default function Home() {
         t.assigneeId === (api.configured ? api.user?.uid : "preview")),
   );
   const title =
-    view === "board"
+    view === "projects" ? "Your projects" : view === "board"
       ? "Project board"
       : view === "table"
         ? "Your task table"
@@ -2372,7 +2394,7 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {(["board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
+          {([...(api.projectsEnabled ? ["projects"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
@@ -2380,7 +2402,7 @@ export default function Home() {
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
+              {v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2413,7 +2435,7 @@ export default function Home() {
             {api.workspace.name}
             <span>/</span>
             <strong>
-              {view === "board"
+              {view === "projects" ? "Projects" : view === "board"
                 ? "Board"
                 : view === "table"
                   ? "Table"
@@ -2470,7 +2492,7 @@ export default function Home() {
               <p className={s.eyebrow}>LET’S MAKE SOMETHING GREAT</p>
               <h1>{title}</h1>
               <p className={s.subtitle}>
-                {view === "board"
+                {view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
                   ? "A clear view of what’s next. One task at a time."
                   : view === "table"
                     ? "Compare tasks and custom fields in one place."
@@ -2494,7 +2516,7 @@ export default function Home() {
           <div className={s.toolbar}>
             <div className={s.viewLabel}>
               <Icon name={view} />
-              {view === "board"
+              {view === "projects" ? "Projects" : view === "board"
                 ? "Board view"
                 : view === "table"
                   ? "Table view"
@@ -2565,9 +2587,10 @@ export default function Home() {
           )}
           {view === "table" && <>
             <BoardProperties key={`table-properties:${taskScope}`} api={api} />
-            <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members}
+            <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
+          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
             <span>
@@ -2586,6 +2609,7 @@ export default function Home() {
           key={`${taskScope}:${task.id || "new"}`}
           api={api}
           initial={task}
+          onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");}}
           close={() => setTask(null)}
         />
       )}

@@ -34,6 +34,7 @@ import type {
   ConversationComment,
   BoardProperty,
   PropertyValue,
+  Project,
 } from "./model";
 import {
   commentWindow,
@@ -135,6 +136,7 @@ export function useTeamspace() {
   );
   const [tasks, setTasks] = useState<Task[]>(configured ? [] : demoTasks);
   const [boardProperties, setBoardProperties] = useState<BoardProperty[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [members, setMembers] = useState<Member[]>(
     configured
@@ -289,6 +291,7 @@ export function useTeamspace() {
       setPasswordRecovery(recovering);
       setTasks([]);
       setBoardProperties([]);
+      setProjects([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -417,7 +420,7 @@ export function useTeamspace() {
                 );
             }
           loaded.add(name);
-          if (loaded.size >= 5) setLoading(false);
+          if (loaded.size >= (browserProvider === "supabase" ? 6 : 5)) setLoading(false);
         },
         (e) => {
           if (!active) return;
@@ -436,6 +439,7 @@ export function useTeamspace() {
       watch<Note>("notes", setNotes),
       watch<Member>("members", setMembers),
       watch<Attachment>("attachments", setAttachments),
+      ...(browserProvider === "supabase" ? [watch<Project>("projects", setProjects)] : []),
     ];
     return () => {
       active = false;
@@ -506,6 +510,13 @@ export function useTeamspace() {
     workspaces,
     tasks: tasks.toSorted((a, b) => a.position - b.position),
     boardProperties: boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    projectsEnabled: configured && browserProvider === "supabase",
+    projects: projects.toSorted((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)),
+    saveProject: (value: { name: string; description: string; operationId: string } | { id: string; expectedRevision: number; name?: string; description?: string; archived?: boolean }) => action(async () => {
+      if (!configured || browserProvider !== "supabase" || !user) return unavailable();
+      const { id, ...body } = "id" in value ? value : { ...value, id: undefined };
+      return (await api(`${path()}/projects${id ? `/${id}` : ""}`, id ? "PATCH" : "POST", body, user.uid)).project as Project;
+    }),
     saveBoardProperty: (property: Omit<BoardProperty, "revision">, expectedRevision: number) => action(async () => {
       const { id, ...input } = property;
       if (!configured) {
@@ -941,6 +952,7 @@ export function useTeamspace() {
     selectWorkspace: (id: string) => {
       setTasks([]);
       setBoardProperties([]);
+      setProjects([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -961,6 +973,7 @@ export function useTeamspace() {
         await loadWorkspaces();
         setTasks([]);
         setBoardProperties([]);
+      setProjects([]);
         setNotes([]);
         setMembers([]);
         setAttachments([]);
@@ -1009,7 +1022,7 @@ export function useTeamspace() {
             "assigneeId",
             "dueDate",
             "position",
-            "propertyValues",
+            "propertyValues", "projectId", "priority", "estimate",
           ]
             .filter((key) => key in task)
             .map((key) => [key, task[key as keyof Task]]),

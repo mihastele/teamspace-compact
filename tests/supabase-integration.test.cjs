@@ -7,6 +7,7 @@ const Module = require('node:module');
 const originalLoad = Module._load;
 Module._load = function(id, ...args) { return id === 'server-only' ? {} : originalLoad.call(this, id, ...args); };
 const { handleTrustedApi, handleApi } = require('../.test-build/server/api.js');
+const loadApiRoute = require('./route-boundary.cjs');
 const { supabaseDocumentStore, FieldValue } = require('../.test-build/server/document-store.js');
 const { guardedDocumentStore } = require('../.test-build/server/auth-policy.js');
 const supabaseModule = require('../.test-build/server/supabase.js');
@@ -59,11 +60,12 @@ before(async () => {
   await sql(readFileSync('migrations/007-supabase-backend.sql', 'utf8'));
   await sql(readFileSync('migrations/008-workspace-administration.sql', 'utf8'));
   await sql(readFileSync('migrations/009-board-properties.sql', 'utf8'));
+  await sql(readFileSync('migrations/012-canonical-projects-fields.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
 beforeEach(async () => {
-  await sql(`truncate public.teamspace_documents; update public.teamspace_store_state set epoch=0;
+  await sql(`truncate public.teamspace_documents cascade; update public.teamspace_store_state set epoch=0;
     truncate auth.users; insert into auth.users(id,email_confirmed_at) values('${owner}',now()),('${member}',now()),('${outsider}',null);`);
   await db.runTransaction(async tx => {
     for (const [path, data] of [
@@ -80,19 +82,28 @@ beforeEach(async () => {
 async function api(uid, method, path, input) {
   const request = new Request(`http://test/api/${path}`, { method,
     headers: { 'Content-Type': 'application/json' }, body: input === undefined ? undefined : JSON.stringify(input) });
-  const response = await handleTrustedApi(request, path.split('?')[0].split('/'), { db, storage: {}, user: {uid,name:uid,email_verified:true}, resolveAccount:async()=>({uid:outsider,displayName:'Registered account',photoURL:null}) });
+  const route = loadApiRoute((request, segments) => handleTrustedApi(request, segments, { db, storage: {}, user: {uid,name:uid,email_verified:true}, resolveAccount:async()=>({uid:outsider,displayName:'Registered account',photoURL:null}) }));
+  assert.equal(typeof route[method], 'function', `Framework route must export ${method}`);
+  const response = await route[method](request, { params: Promise.resolve({ path: path.split('?')[0].split('/') }) });
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
+require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
+require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
   const id=randomUUID();
   assert.equal((await api(member,'PUT',`${prefix}/boardProperties/${id}`,{name:'Priority',type:'text',options:[],expectedRevision:0})).status,201);
-  const count=async uid=>(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_documents where path='${prefix}/boardProperties/${id}';`)).split('\n').at(-1);
+  const count=async uid=>(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_all_records where path='${prefix}/boardProperties/${id}';`)).split('\n').at(-1);
   assert.equal(await count(member),'1'); assert.equal(await count(outsider),'0');
   await assert.rejects(sql(`set role authenticated; update public.teamspace_documents set data='{}' where path='${prefix}/boardProperties/${id}';`),/permission denied/);
   assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"),'t');
+  assert.equal((await api(member,'POST',`${prefix}/tasks`,{title:'Private receipt',operationId:randomUUID()})).status,201);
+  assert.equal(await sql(`set role service_role; select count(*) from public.teamspace_documents where collection='${prefix}/taskOperations';`),'1');
+  const receiptCount=async uid=>(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_documents where collection='${prefix}/taskOperations';`)).split('\n').at(-1);
+  assert.equal(await receiptCount(member),'0'); assert.equal(await receiptCount(outsider),'0');
+  await assert.rejects(sql(`set role authenticated; insert into public.teamspace_documents(path,data,version) values('${prefix}/taskOperations/forged','{}',1);`),/permission denied/);
 });
 
 test('migration runner applies clean schemas once, guards checksums and keeps bookkeeping private',async()=>{
@@ -109,7 +120,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'3');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'4');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -119,6 +130,44 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   await query("delete from public.teamspace_schema_migrations where name='007-supabase-backend.sql';");
   await assert.rejects(query(script),/no migration ledger/);
   await sql('drop database teamspace_migration_test;');
+});
+
+test('canonical migration upgrades populated legacy records atomically without changing IDs or values',async()=>{
+  await sql('create database teamspace_upgrade_test;');
+  const query=source=>command(['exec','-i',container,'psql','-U','postgres','-d','teamspace_upgrade_test','-qAt','-v','ON_ERROR_STOP=1'],source);
+  try {
+    await query(`create schema auth; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
+      create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;
+      create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);`);
+    for(const name of ['007-supabase-backend.sql','008-workspace-administration.sql','009-board-properties.sql'])await query(readFileSync(`migrations/${name}`,'utf8'));
+    const field=randomUUID(),option=randomUUID(),other=randomUUID();
+    const task={title:'Legacy',status:'todo',position:3,createdBy:member,revision:4,propertyValues:{[field]:[option],[other]:null}};
+    const records=[
+      [prefix,{name:'Alpha',ownerId:owner}],
+      [`${prefix}/boardProperties/${field}`,{name:'Labels',type:'multiSelect',options:[{id:option,name:'Stable'}],revision:2}],
+      [`${prefix}/boardProperties/${other}`,{name:'Text',type:'text',options:[],revision:1}],
+      [`${prefix}/tasks/legacy`,task],
+      [`${prefix}/tasks/legacy/comments/comment`,{body:'Preserved'}],
+      [`${prefix}/attachments/file`,{parentType:'task',parentId:'legacy'}],
+      [`${prefix}/taskOperations/receipt`,{uid:member,taskId:'legacy',digest:'hash',revision:4}]
+    ];
+    for(const [path,data]of records)await query(`insert into public.teamspace_documents(path,data,version)values(${literal(path)},${json(data)},7);`);
+    // A bad historical value must roll the entire cutover back, leaving the old store usable.
+    await query(`update public.teamspace_documents set data=jsonb_set(data,'{propertyValues}',${json({[field]:['invalid-option']})}) where path='${prefix}/tasks/legacy';`);
+    const migration=readFileSync('migrations/012-canonical-projects-fields.sql','utf8');
+    await assert.rejects(query(migration),/uuid/);
+    assert.equal(await query("select to_regclass('public.teamspace_tasks') is null;"),'t');
+    assert.equal(await query(`select count(*) from public.teamspace_documents where path='${prefix}/tasks/legacy';`),'1');
+    await query(`update public.teamspace_documents set data=${json(task)} where path='${prefix}/tasks/legacy';`);
+    await query(migration);
+    const migrated=JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`));
+    assert.deepEqual(migrated,task);
+    assert.equal(await query(`select version from public.teamspace_tasks where id='legacy';`),'7');
+    assert.equal(await query(`select count(*) from public.teamspace_documents where collection in ('${prefix}/tasks','${prefix}/boardProperties');`),'0');
+    for(const [path,data]of records.slice(4))assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path=${literal(path)};`)),data);
+    assert.equal(await query('select count(*) from public.teamspace_task_field_values;'),'2');
+    assert.equal(await query('select option_id from public.teamspace_task_field_selections;'),option);
+  } finally { await sql('drop database teamspace_upgrade_test;'); }
 });
 
 test('account email RPC is service-only, case-insensitive and rejects ambiguous identities',async()=>{

@@ -454,6 +454,12 @@ function subscribeSupabaseCollection(
           invalidate(typeof changed === "string" ? changed : undefined);
         },
       )
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_tasks",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_projects",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_definitions",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_options",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_values",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_selections",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
       .subscribe((status) => {
         if (status === "SUBSCRIBED") invalidate();
       });
@@ -484,7 +490,7 @@ function subscribeSupabaseCollection(
   if (!group) {
     group = hub.makeGroup(route, new Set(
         isWorkspaceCollection
-          ? ["tasks", "notes", "members", "attachments", "boardProperties"].map(
+          ? ["tasks", "notes", "members", "attachments", "boardProperties", "projects"].map(
               (name) => `workspaces/${workspace}/${name}`,
             )
           : [path],

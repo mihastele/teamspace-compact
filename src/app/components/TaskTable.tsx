@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { BoardProperty, Member, Task } from "@/lib/model";
+import type { BoardProperty, Member, Project, Task } from "@/lib/model";
 import { sortTableTasks, statusLabels, taskCell, taskColumns, type TableSort } from "@/lib/task-table";
 import { deadlineState, matchesDeadline, type DeadlineFilter } from "@/lib/task-deadlines";
 import { useLocalDay } from "@/lib/use-local-day";
 import s from "./TaskTable.module.css";
 
-export default function TaskTable({ tasks, properties, members, onTask, filtered }: {
+export default function TaskTable({ tasks, properties, members, onTask, filtered, projects = [], extended = false }: {
   tasks: Task[]; properties: BoardProperty[]; members: Member[];
+  projects?: Project[]; extended?: boolean;
   onTask: (task: Partial<Task>) => void; filtered: boolean;
 }) {
   const today = useLocalDay();
@@ -16,10 +17,10 @@ export default function TaskTable({ tasks, properties, members, onTask, filtered
   const [hidden, setHidden] = useState<string[]>([]);
   const [status, setStatus] = useState<"all" | Task["status"]>("all");
   const [deadline, setDeadline] = useState<DeadlineFilter>("all");
-  const columns = taskColumns(properties);
+  const columns = taskColumns(properties, extended, projects);
   const visible = columns.filter(column => column.id === "title" || !hidden.includes(column.id));
   const activeSort = sort && visible.some(column => column.id === sort.column) ? sort : null;
-  const rows = sortTableTasks(tasks.filter(task => (status === "all" || task.status === status) && matchesDeadline(task, deadline, today)), activeSort, properties, members);
+  const rows = sortTableTasks(tasks.filter(task => (status === "all" || task.status === status) && matchesDeadline(task, deadline, today)), activeSort, properties, members, projects);
   function toggleSort(column: string) {
     setSort(previous => previous?.column !== column ? { column, direction: "ascending" } : previous.direction === "ascending" ? { column, direction: "descending" } : null);
   }
@@ -50,7 +51,7 @@ export default function TaskTable({ tasks, properties, members, onTask, filtered
           </button>
         </th>)}</tr></thead>
         <tbody>{rows.map(task => <tr key={task.id}>{visible.map(column => {
-          const text = taskCell(task, column.id, properties, members);
+          const text = taskCell(task, column.id, properties, members, projects);
           const state = column.id === "dueDate" ? deadlineState(task, today) : "none";
           return column.id === "title" ? <th key={column.id} scope="row"><button className={s.task} onClick={() => onTask(task)}>{task.title || "Untitled task"}</button></th> :
             <td key={column.id}><span className={column.id === "status" ? s[task.status] : state === "overdue" ? s.overdue : undefined}>

@@ -56,6 +56,7 @@ export interface Transaction {
     delete(ref: DocumentReference): void;
 }
 export interface DocumentStore {
+    capabilities?: { projects: boolean; normalizedFields: boolean };
     doc(path: string): DocumentReference;
     collection(path: string): CollectionReference;
     runTransaction<T>(action: (tx: Transaction) => Promise<T>): Promise<T>;
@@ -171,6 +172,7 @@ export function supabaseDocumentStore(rpc: RpcCall): DocumentStore {
         get() { return read(this, null) as Promise<QuerySnapshot>; }
     }
     const store: DocumentStore = {
+        capabilities: { projects: true, normalizedFields: true },
         doc: path => new Ref(path), collection: path => new Collection(path),
         async runTransaction(action) {
             for (let attempt = 0; attempt < 12; attempt++) {
