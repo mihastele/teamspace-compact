@@ -283,6 +283,14 @@ UI saves retain selective patch behavior; durable task-form recovery and agent
 confirmation UI are later work. See [migration 011](migrations/011-task-durability.md)
 for schema, access, receipt lifetime and coordinated rollout details.
 
+The agent implementation now has internal, tested hosted/local provider and
+read-only tool adapters, including indexed ticket searches and typed proposals
+that do not save tickets. They are not exposed as an agent feature yet: durable
+run/audit storage, the separate worker and the run UI remain M4 work. See the
+[provider/read-tool contracts](.agentic/AGENT-PROVIDER.md) for limits, compatibility,
+server-only future runtime settings and remaining work. No credentials or live
+model calls are required by these tests.
+
 Local table/calendar keyboard, task persistence and mobile navigation checks are
 recorded in [.agentic/BROWSER-ACCEPTANCE.md](.agentic/BROWSER-ACCEPTANCE.md).
 Mobile workspace navigation wraps to keep every destination on screen. These

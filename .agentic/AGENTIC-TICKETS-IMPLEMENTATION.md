@@ -26,7 +26,7 @@ Started 2026-10-17 after approval of the recommendation in
 | M1b task durability/query contracts | Mutation contracts and M3 indexed queries implemented | Task operation IDs, minimal private receipts and reviewed revisions added in migration 011. Existing UI does not yet persist retry packets. Migration 013 adds bounded indexed AST queries; no agent writes before confirmation/audit services exist. |
 | M2 projects/normalized fields | Implemented; verification recorded in PROJECT-STATE.md | Migration 012 canonical cutover, inherited Project access/archive, ten normalized field types, typed values/options/selections, UI and snapshot invalidation. Clean/populated isolated upgrade verified; no live installation migrated. |
 | M3 composable queries/saved views | Implemented; verification recorded in PROJECT-STATE.md | Migration 013, bounded typed AST/compiler/keysets, shared revision-checked board/table/list definitions, default seeding, recursive builder and saved-view note references. Live migration/browser/two-user acceptance open. |
-| M4 read-only agent/worker | Planned | Provider/tool boundary, durable queue/checkpoints, provenance, scoped reads and agreed audit policy. |
+| M4 read-only agent/worker | In progress: internal provider/read tools implemented | [M4a contracts](AGENT-PROVIDER.md): bounded hosted/local transport, seven authorized read/proposal tools and in-memory reference provenance. Durable queue/checkpoints, account reauthentication, audit retention/export/deletion, worker and UI remain ahead. Not exposed as an agent feature. |
 | M5 approved writes/release acceptance | Planned | Approval-bound diffs, transactional idempotency/audits, restart recovery and full Compose/two-user acceptance. |
 
 ## M1a contracts and verification boundaries
@@ -107,8 +107,9 @@ New feature controls are PostgreSQL-only; Firebase's existing four types remain.
 The shared realtime channel invalidates snapshots for new tables; periodic polling
 continues. Board JSON adds Projects and hydrated canonical fields/values.
 
-M3 below adds nested query/saved-view contracts. Durable task-form recovery, worker,
-model provider, tool confirmation and full agent audit retention remain future work.
+M3 below adds nested query/saved-view contracts. M4a's internal provider/read tools
+are described in [their contract](AGENT-PROVIDER.md). Durable task-form recovery,
+worker, tool confirmation and full agent audit retention remain future work.
 No new dependency, live schema change or deployed acceptance is implied.
 
 

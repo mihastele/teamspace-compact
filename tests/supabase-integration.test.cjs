@@ -11,6 +11,7 @@ const loadApiRoute = require('./route-boundary.cjs');
 const { supabaseDocumentStore, FieldValue } = require('../.test-build/server/document-store.js');
 const { guardedDocumentStore } = require('../.test-build/server/auth-policy.js');
 const {compileTicketQuery}=require('../.test-build/server/ticket-query-sql.js');
+const {createReadOnlyAgentTools}=require('../.test-build/server/agent-tools.js');
 const supabaseModule = require('../.test-build/server/supabase.js');
 Module._load = originalLoad;
 const Y = require('yjs');
@@ -93,6 +94,7 @@ async function api(uid, method, path, input) {
 }
 const value = async path => (await db.doc(path).get()).data();
 require('./ticket-query-api-cases.cjs')(test,{api,member,outsider,owner,prefix,read:value,sql,rpc,compileTicketQuery});
+require('./agent-tools-cases.cjs')(test,{api,db:()=>db,createReadOnlyAgentTools,guardedDocumentStore,member,outsider,prefix,sql});
 require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
 require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
