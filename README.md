@@ -245,6 +245,11 @@ Use a nonexistent directory; see the baseline migration for the reason.
 
 Rules tests use clean isolated emulators under demo-teamspace, never a live database. See migrations/ for schema and export/deletion policies. Before release, use two signed-in users to check live task updates, refresh persistence, simultaneous note-save conflicts, expired/revoked invites, membership removal, outsider SDK denial and private file access. Also check file orientation/transparency/screenshot legibility, cleanup, mobile layout and keyboard dialog use.
 
+Local table/calendar keyboard, task persistence and mobile navigation checks are
+recorded in [.agentic/BROWSER-ACCEPTANCE.md](.agentic/BROWSER-ACCEPTANCE.md).
+Mobile workspace navigation wraps to keep every destination on screen. These
+local checks leave authenticated two-user and the remaining acceptance gates open.
+
 Supabase integration tests require Docker. They create and remove their own
 isolated PostgreSQL container, with no exposed port or production credentials.
 They exercise the migration, real RLS/transactions and shared API final states.
