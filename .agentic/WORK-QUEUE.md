@@ -14,7 +14,9 @@ separate from browser/deployed acceptance.
 | R6 — Repository license | User decision required | Select and add a license before public distribution, reconciling existing dependency/upstream notices. An agent must not silently select legal terms. |
 | R7 — Complete workspace/account export and deletion | Scope/policy decision required | Define attachment/history/conversation export scope and ownership/retention rules before schema/auth/deletion work. Current per-note, board and conversation downloads are partial exports. |
 | R8 — Older conversation messages | Deferred feature | Design bounded stable pagination on both backends, live-window reconciliation and deletion handling; current latest-50 UI remains documented. Notifications and block comments stay deferred. |
+| R9 — Agentic projects/tickets and reusable views | Audited; implementation decisions pending | [Audit and staged plan](AGENTIC-TICKETS-AUDIT.md) inventories existing Tasks/fields/blocks/views and proposes normalized PostgreSQL fields, Projects, saved queries and a separate agent worker. Resolve backend parity, project access, API topology and audit retention before building. First repair the missing PUT route export with route-boundary coverage. |
 
-MFA enrollment, independent databases, AI and public publishing remain outside
-the current authorized implementation scope. No ticket here changes retention,
+MFA enrollment, independent databases and public publishing remain outside
+the current authorized implementation scope. Agentic ticket work is assessed in
+R9; implementation and its material policy choices remain pending. No ticket here changes retention,
 membership policy or a live installation by itself.
