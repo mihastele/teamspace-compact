@@ -1,10 +1,12 @@
 # M4a provider and read-tool contracts
 
-These are internal server components, not a deployed agent. There is no run API,
-queue, worker, agent UI or persisted prompt/output table yet. Importing them does
-not contact a model. The application does not construct the provider automatically.
-Do not wire an HTTP route directly to `complete`: first implement the M4 durable
-run/audit boundary and its approved access, retention, export and deletion policy.
+These are internal server components, not a deployed agent. M4b adds the
+[private durable queue/audit boundary](../migrations/014-agent-queue.md), prepared
+for deployment but not applied to a live database here. There is no run API,
+worker or agent UI yet. Importing these components does not contact a model.
+The application does not construct the provider automatically. Do not wire an
+HTTP route directly to `complete`: connect it through the fenced checkpoint engine
+and queue, including authorized retention/export/deletion and revocation handling.
 
 ## Provider transport
 
@@ -89,13 +91,12 @@ snapshot. Search reuses the existing distributed query rate limit (and therefore
 writes rate-limit metadata), but no tool mutates workspace content. All other run
 quotas and step limits belong at the future queue/worker boundary.
 
-## Remaining M4 work
+## Remaining M4 work after M4b
 
-- Numbered queue/audit migration with clean/populated upgrade checks, RLS for
-  initiator plus workspace administrators, fenced leases, account revocation,
-  quotas, cancellation, immutable retry identity and expiry. Hide expired content
-  immediately; physically prune full content per configurable 30-day default;
-  authorized export and workspace-deletion cleanup.
+- Wire migration 014's tested queue/audit client into a bounded worker and run
+  API. SQL now enforces initiator/admin RLS, account revocation, leases, quotas,
+  cancellation, retry identity, expiry, exports and workspace deletion; operator
+  cleanup includes audit pruning. No live queue or worker is running yet.
 - Atomic checkpoints/provenance/events before and after provider/tool calls,
   bounded step/total-context budgets, explicit crash uncertainty, retry/backoff
   and process restart tests. Provider billing cannot be exactly once after a
@@ -106,6 +107,6 @@ quotas and step limits belong at the future queue/worker boundary.
 - Fake-provider end-to-end runs and lease/revocation/retention/export/deletion
   races on real PostgreSQL; live compatible provider acceptance remains external.
 
-This subtask changes no schema, retention behavior or deployment setup. Existing
-database RLS/export/deletion contracts are reused; no new user-content table or
-background process has been introduced.
+M4a added no schema. M4b adds migration 014's three private tables and runtime
+retention configuration, documented separately; no background process or model
+request starts automatically. Full worker/UI acceptance remains ahead.

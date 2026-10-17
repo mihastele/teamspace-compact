@@ -12,6 +12,7 @@ const { supabaseDocumentStore, FieldValue } = require('../.test-build/server/doc
 const { guardedDocumentStore } = require('../.test-build/server/auth-policy.js');
 const {compileTicketQuery}=require('../.test-build/server/ticket-query-sql.js');
 const {createReadOnlyAgentTools}=require('../.test-build/server/agent-tools.js');
+const {createAgentQueue}=require('../.test-build/server/agent-queue.js');
 const supabaseModule = require('../.test-build/server/supabase.js');
 Module._load = originalLoad;
 const Y = require('yjs');
@@ -44,6 +45,7 @@ async function rpc(name, value) {
   };
   expressions.teamspace_ticket_context=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified}`;
   expressions.teamspace_ticket_query=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified},${literal(value.p_epoch)},${literal(value.p_where)},${literal(value.p_order)},${literal(value.p_keys)},${json(value.p_parameters)},${value.p_limit}`;
+  expressions.teamspace_agent_queue=()=>`${literal(value.p_action)},${json(value.p_input)}`;
   assert.ok(expressions[name], 'Only the service RPC contract is allowed');
   return JSON.parse(await sql(`set role service_role; select public.${name}(${expressions[name]()});`));
 }
@@ -55,7 +57,7 @@ before(async () => {
     try { await sql('select 1;'); break; } catch (error) { if (attempt === 40) throw error; await new Promise(resolve => setTimeout(resolve, 250)); }
   }
   await sql(`create role anon; create role authenticated; create role service_role bypassrls;
-    create schema auth; create table auth.users(id uuid primary key,email_confirmed_at timestamptz,email text);
+    create schema auth; create table auth.users(id uuid primary key,email_confirmed_at timestamptz,email text,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema auth to authenticated;
     create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -66,6 +68,7 @@ before(async () => {
   await sql(readFileSync('migrations/009-board-properties.sql', 'utf8'));
   await sql(readFileSync('migrations/012-canonical-projects-fields.sql', 'utf8'));
   await sql(readFileSync('migrations/013-ticket-queries-views.sql', 'utf8'));
+  await sql(readFileSync('migrations/014-agent-queue.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -95,6 +98,7 @@ async function api(uid, method, path, input) {
 const value = async path => (await db.doc(path).get()).data();
 require('./ticket-query-api-cases.cjs')(test,{api,member,outsider,owner,prefix,read:value,sql,rpc,compileTicketQuery});
 require('./agent-tools-cases.cjs')(test,{api,db:()=>db,createReadOnlyAgentTools,guardedDocumentStore,member,outsider,prefix,sql});
+require('./agent-queue-cases.cjs')(test,{db:()=>db,rpc,sql,member,owner,outsider,prefix,createAgentQueue});
 require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
 require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
@@ -127,7 +131,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'5');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'6');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -179,6 +183,10 @@ test('canonical migration upgrades populated legacy records atomically without c
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/notes/legacy-board';`)),records.at(-1)[1]);
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_saved_views';"),'t');
+    await query(readFileSync('migrations/014-agent-queue.sql','utf8'));
+    assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
+    assert.equal(await query('select count(*) from public.teamspace_agent_runs;'),'0');
+    assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_agent_runs','teamspace_agent_events','teamspace_agent_requests');"),'t');
   } finally { await sql('drop database teamspace_upgrade_test;'); }
 });
 

@@ -15,7 +15,7 @@ Started 2026-10-17 after approval of the recommendation in
 - Approved agent audit policy: configurable 30-day default for full prompts,
   outputs and before/after content; access for the initiating user and workspace
   administrators, authorized exports, deletion with the workspace. This policy
-  is recorded for the future agent implementation; no audit worker/table exists yet.
+  is implemented internally by migration 014; live upgrade, worker and UI remain ahead.
 
 ## Progress
 
@@ -26,7 +26,7 @@ Started 2026-10-17 after approval of the recommendation in
 | M1b task durability/query contracts | Mutation contracts and M3 indexed queries implemented | Task operation IDs, minimal private receipts and reviewed revisions added in migration 011. Existing UI does not yet persist retry packets. Migration 013 adds bounded indexed AST queries; no agent writes before confirmation/audit services exist. |
 | M2 projects/normalized fields | Implemented; verification recorded in PROJECT-STATE.md | Migration 012 canonical cutover, inherited Project access/archive, ten normalized field types, typed values/options/selections, UI and snapshot invalidation. Clean/populated isolated upgrade verified; no live installation migrated. |
 | M3 composable queries/saved views | Implemented; verification recorded in PROJECT-STATE.md | Migration 013, bounded typed AST/compiler/keysets, shared revision-checked board/table/list definitions, default seeding, recursive builder and saved-view note references. Live migration/browser/two-user acceptance open. |
-| M4 read-only agent/worker | In progress: internal provider/read tools implemented | [M4a contracts](AGENT-PROVIDER.md): bounded hosted/local transport, seven authorized read/proposal tools and in-memory reference provenance. Durable queue/checkpoints, account reauthentication, audit retention/export/deletion, worker and UI remain ahead. Not exposed as an agent feature. |
+| M4 read-only agent/worker | In progress: provider/read tools and durable queue/audit storage implemented | [M4a contracts](AGENT-PROVIDER.md) and [migration 014](../migrations/014-agent-queue.md): bounded provider/tools, private run/event/receipt tables, fenced leases/retries, account checks, quotas, cancellation, retention/export/deletion. Worker checkpoint engine, process/Compose wiring and UI remain ahead; not exposed as an agent feature. |
 | M5 approved writes/release acceptance | Planned | Approval-bound diffs, transactional idempotency/audits, restart recovery and full Compose/two-user acceptance. |
 
 ## M1a contracts and verification boundaries
@@ -83,7 +83,7 @@ work. Indexed query endpoints remain coupled to the canonical PostgreSQL schema.
 
 Minimal hash/identity/revision receipts contain no ticket text and persist for
 workspace-lifetime duplicate prevention, matching existing operation-receipt
-conventions. They are distinct from the future agent audit's approved default
+conventions. They are distinct from the agent audit's approved default
 30-day content retention. See [migration 011](../migrations/011-task-durability.md)
 for full shape, access, export/deletion and rollout details.
 
@@ -108,8 +108,9 @@ The shared realtime channel invalidates snapshots for new tables; periodic polli
 continues. Board JSON adds Projects and hydrated canonical fields/values.
 
 M3 below adds nested query/saved-view contracts. M4a's internal provider/read tools
-are described in [their contract](AGENT-PROVIDER.md). Durable task-form recovery,
-worker, tool confirmation and full agent audit retention remain future work.
+are described in [their contract](AGENT-PROVIDER.md); migration 014 adds M4b's
+private queue and audit lifecycle. Durable task-form recovery, worker, tool
+confirmation, run UI and live deployment remain future work.
 No new dependency, live schema change or deployed acceptance is implied.
 
 

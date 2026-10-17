@@ -91,7 +91,8 @@ role key from that same project. Keep the service role key server-only. Apply
 `migrations/008-workspace-administration.sql` and
 `migrations/009-board-properties.sql` and
 `migrations/012-canonical-projects-fields.sql` and
-`migrations/013-ticket-queries-views.sql`, using the administrative SQL
+`migrations/013-ticket-queries-views.sql` and
+`migrations/014-agent-queue.sql`, using the administrative SQL
 connection, then publish the authentication security policy as described in the migration.
 The application uses a private `teamspace-private` Storage bucket. Configure
 email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
@@ -285,8 +286,11 @@ for schema, access, receipt lifetime and coordinated rollout details.
 
 The agent implementation now has internal, tested hosted/local provider and
 read-only tool adapters, including indexed ticket searches and typed proposals
-that do not save tickets. They are not exposed as an agent feature yet: durable
-run/audit storage, the separate worker and the run UI remain M4 work. See the
+that do not save tickets. [Migration 014](migrations/014-agent-queue.md) adds private
+run/audit storage, fenced leases, cancellation, bounded retries, authorized exports
+and configurable 30-day content expiry. Apply it before using the updated hourly
+cleanup script. These components are not exposed as an agent feature yet: the
+separate worker, checkpoint engine and run UI remain M4 work. See the
 [provider/read-tool contracts](.agentic/AGENT-PROVIDER.md) for limits, compatibility,
 server-only future runtime settings and remaining work. No credentials or live
 model calls are required by these tests.
