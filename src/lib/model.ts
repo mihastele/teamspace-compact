@@ -18,6 +18,7 @@ export type BoardView = {
 export type BlockSource = { noteId: string; blockId: string };
 export type Task = {
   id: string;
+  revision?: number;
   title: string;
   description: string;
   status: Status;

@@ -80,7 +80,7 @@ async function api(uid, method, path, input, storageOverride = storage) {
   return { status: response.status, data: await response.json() };
 }
 const prefix = "workspaces/alpha";
-require('./task-service-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix });
+require('./task-service-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', owner: 'owner', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./board-property-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./linked-content-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 

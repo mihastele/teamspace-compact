@@ -32,12 +32,15 @@ test('workspace admin metadata cannot grant SDK writes and enrollment/operation 
     const db=context.firestore();
     await setDoc(doc(db,`${workspace}/members/member`),{role:'admin'});
     await setDoc(doc(db,`${workspace}/membershipOperations/receipt`),{uid:'member'});
+    await setDoc(doc(db,`${workspace}/taskOperations/receipt`),{uid:'member',digest:'not-content'});
     await setDoc(doc(db,'users/member/developmentEnrollments/alpha'),{enrolledAt:1});
   });
   const db=environment.authenticatedContext('member').firestore();
   await assertSucceeds(getDoc(doc(db,`${workspace}/tasks/task`)));
   await assertFails(updateDoc(doc(db,`${workspace}/members/member`),{role:'owner'}));
   await assertFails(getDoc(doc(db,`${workspace}/membershipOperations/receipt`)));
+  await assertFails(getDoc(doc(db,`${workspace}/taskOperations/receipt`)));
+  await assertFails(setDoc(doc(db,`${workspace}/taskOperations/forged`),{uid:'member'}));
   await assertFails(getDoc(doc(db,'users/member/developmentEnrollments/alpha')));
 });
 test('email confirmation policy protects direct reads and defaults to required', async () => {

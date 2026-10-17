@@ -120,6 +120,23 @@ export function taskInput(
     throw new ApiError(400, "invalid_input", "No changes supplied.");
   return out;
 }
+
+/** Optional durability controls are never accepted as stored task fields. */
+export function taskMutationInput(value: unknown, partial: boolean) {
+  const input = object(value, [
+    "title", "description", "status", "assigneeId", "dueDate", "position", "propertyValues",
+    "operationId", "expectedRevision",
+  ]);
+  const { operationId, expectedRevision, ...fields } = input;
+  if (!partial && "expectedRevision" in input)
+    throw new ApiError(400, "invalid_input", "Only task updates accept a reviewed revision.");
+  return {
+    value: taskInput(fields, partial),
+    operationId: "operationId" in input ? uuid(operationId) : undefined,
+    expectedRevision: "expectedRevision" in input
+      ? integer(expectedRevision, "Expected revision", 0, Number.MAX_SAFE_INTEGER - 1) : undefined,
+  };
+}
 export function noteContent(value: unknown) {
   const data = object(value, ["blocks"]);
   if (!Array.isArray(data.blocks) || data.blocks.length > 1000)

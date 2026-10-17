@@ -87,7 +87,7 @@ async function api(uid, method, path, input) {
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
-require('./task-service-api-cases.cjs')(test, { api, member, outsider, prefix });
+require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
@@ -97,6 +97,11 @@ test('custom field definitions retain member-only RLS reads and SDK write denial
   assert.equal(await count(member),'1'); assert.equal(await count(outsider),'0');
   await assert.rejects(sql(`set role authenticated; update public.teamspace_documents set data='{}' where path='${prefix}/boardProperties/${id}';`),/permission denied/);
   assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"),'t');
+  assert.equal((await api(member,'POST',`${prefix}/tasks`,{title:'Private receipt',operationId:randomUUID()})).status,201);
+  assert.equal(await sql(`set role service_role; select count(*) from public.teamspace_documents where collection='${prefix}/taskOperations';`),'1');
+  const receiptCount=async uid=>(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_documents where collection='${prefix}/taskOperations';`)).split('\n').at(-1);
+  assert.equal(await receiptCount(member),'0'); assert.equal(await receiptCount(outsider),'0');
+  await assert.rejects(sql(`set role authenticated; insert into public.teamspace_documents(path,data,version) values('${prefix}/taskOperations/forged','{}',1);`),/permission denied/);
 });
 
 test('migration runner applies clean schemas once, guards checksums and keeps bookkeeping private',async()=>{

@@ -260,6 +260,14 @@ legacy records. Missing/deleting tasks return 404; workspace membership is check
 in the read transaction. These services are groundwork for the PostgreSQL-focused
 [project/ticket implementation](.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md).
 
+Task API mutations now accept optional `operationId` retry identities and, for
+updates, `expectedRevision`. Retrying the same accepted payload returns the
+current task without applying it again; stale reviewed updates fail with 409.
+Minimal private receipts prevent retries from recreating deleted tasks. Existing
+UI saves retain selective patch behavior; durable task-form recovery and agent
+confirmation UI are later work. See [migration 011](migrations/011-task-durability.md)
+for schema, access, receipt lifetime and coordinated rollout details.
+
 Local table/calendar keyboard, task persistence and mobile navigation checks are
 recorded in [.agentic/BROWSER-ACCEPTANCE.md](.agentic/BROWSER-ACCEPTANCE.md).
 Mobile workspace navigation wraps to keep every destination on screen. These

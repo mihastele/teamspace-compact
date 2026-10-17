@@ -29,7 +29,7 @@ import { accessConfiguration, isRootAdmin } from "./access-config";
 import { resolveRegisteredAccount, type AccountResolver } from "./registered-accounts";
 import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
 import { member, rateLimit, type ServiceActor as DecodedIdToken } from "./service-context";
-import { getTask, saveTask, saveBoardProperty } from "./task-service";
+import { getTask, saveTask, saveBoardProperty, nextTaskRevision } from "./task-service";
 import { getConversation, changeConversation } from "./conversation-service";
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
@@ -1131,7 +1131,7 @@ async function removeMember(
         "Unassign some tasks before removing this member.",
       );
     tasks.docs.forEach((task) =>
-      tx.update(task.ref, { assigneeId: null, updatedAt: now() }),
+      tx.update(task.ref, { assigneeId: null, revision: nextTaskRevision(task.data()), updatedAt: now() }),
     );
     tx.delete(target.ref);
     tx.delete(db.doc(`users/${uid}/workspaces/${workspace.id}`));

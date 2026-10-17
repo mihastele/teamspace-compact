@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ApiError, identifier, integer, noteContent, object, taskInput, text } from "../.test-build/server/validation.js";
+import { ApiError, identifier, integer, noteContent, object, taskInput, taskMutationInput, text } from "../.test-build/server/validation.js";
 
 const rejected = (run) => assert.throws(run, error => error instanceof ApiError && error.status === 400 && error.code === "invalid_input");
 
@@ -54,4 +54,19 @@ test("numeric guards reject unsafe revision counters and text rejects NUL", () =
   for (const value of [Number.MAX_SAFE_INTEGER + 1, 1.5, -1, "1", NaN]) rejected(() => integer(value, "Revision", 0, Number.MAX_SAFE_INTEGER));
   rejected(() => text("bad\0input", "Name", 100));
   assert.equal(text("  Name  ", "Name", 100), "Name");
+});
+
+
+test('task durability controls are validated independently and never stored as editable fields', () => {
+  const operationId = '12345678-1234-4234-8234-123456789abc';
+  assert.deepEqual(taskMutationInput({ status: 'doing', operationId, expectedRevision: 0 }, true), {
+    value: {status:'doing'}, operationId, expectedRevision:0,
+  });
+  for (const operationId of [null,'',42,'not-a-uuid']) rejected(() => taskMutationInput({title:'Task',operationId},false));
+  for (const expectedRevision of [null,-1,1.5,'1',Number.MAX_SAFE_INTEGER,Infinity])
+    rejected(() => taskMutationInput({status:'done',expectedRevision},true));
+  rejected(() => taskMutationInput({title:'Task',expectedRevision:0},false));
+  rejected(() => taskMutationInput({operationId},false));
+  rejected(() => taskMutationInput({operationId,expectedRevision:0},true));
+  rejected(() => taskMutationInput({status:'doing',revision:1},true));
 });
