@@ -455,6 +455,7 @@ function subscribeSupabaseCollection(
         },
       )
       .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_tasks",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_saved_views",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
       .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_projects",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
       .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_definitions",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
       .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_options",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
@@ -490,7 +491,7 @@ function subscribeSupabaseCollection(
   if (!group) {
     group = hub.makeGroup(route, new Set(
         isWorkspaceCollection
-          ? ["tasks", "notes", "members", "attachments", "boardProperties", "projects"].map(
+          ? ["tasks", "notes", "members", "attachments", "boardProperties", "projects", "savedViews"].map(
               (name) => `workspaces/${workspace}/${name}`,
             )
           : [path],

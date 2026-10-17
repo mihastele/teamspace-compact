@@ -1,0 +1,22 @@
+.views { display:grid; gap:16px; min-width:0; }
+.controls,.filterRow { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
+.views label,.filterRow label { display:grid; gap:5px; font-size:13px; }
+.views input,.views select { max-width:100%; padding:7px; border:1px solid #cad2e0; border-radius:5px; background:white; color:#202c42; }
+.views button { padding:7px 10px; border:1px solid #c8d2e2; border-radius:5px; background:white; color:#244675; cursor:pointer; }
+.views button:disabled { opacity:.55; cursor:default; }
+.views button:focus-visible,.views input:focus-visible,.views select:focus-visible { outline:2px solid #276be3; outline-offset:2px; }
+.group { border:1px solid #d4ddea; border-radius:6px; padding:12px; min-width:0; }
+.condition { display:grid; gap:8px; padding:12px 0; border-bottom:1px solid #e1e6ef; }
+.condition>button { justify-self:start; }
+.board { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr)); gap:14px; }
+.column { padding:12px; background:#eff3f9; border-radius:8px; min-width:0; }
+.card { margin:9px 0; padding:12px; border:1px solid #d2dcea; border-radius:7px; background:white; overflow-wrap:anywhere; }
+.card>button { display:block; width:100%; text-align:left; font-weight:600; }
+.card label { margin-top:10px; }
+.scroll { overflow:auto; max-width:100%; }
+.views table { border-collapse:collapse; width:100%; }
+.views th,.views td { padding:10px; border-bottom:1px solid #d9e1ed; text-align:left; max-width:380px; overflow-wrap:anywhere; vertical-align:top; }
+.columns { display:flex; gap:14px; flex-wrap:wrap; }
+.columns label { display:flex; align-items:center; }
+.hint { color:#5d6c81; font-size:13px; line-height:1.5; }
+.error { color:#a02539; }

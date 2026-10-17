@@ -92,3 +92,16 @@ test('atomic view settings and source targets converge while concurrent source t
   assert.ok(result.blocks[2].text.includes('A')&&result.blocks[2].text.includes('B'));
   original.destroy();a.destroy();b.destroy();
 });
+
+
+test('shared saved-view references preserve old independent settings through CRDT, duplication and Markdown export',()=>{
+  const view={...linked.defaultBoardView,query:'keep independent settings',savedViewId:'default-mine'};
+  const content={blocks:[{type:'board',text:'',boardView:view}]};
+  assert.deepEqual(noteContent(content),content);
+  const doc=model.initializeDocument(content),roundtrip=model.readContent(model.decodeDocument(model.encodeDocument(doc)));
+  assert.equal(roundtrip.blocks[0].boardView.savedViewId,'default-mine');
+  assert.equal(roundtrip.blocks[0].boardView.query,'keep independent settings');
+  assert.match(exportNoteMarkdown('Linked',content).markdown,/default-mine/);
+  assert.throws(()=>linked.validateBoardView({...view,savedViewId:'../foreign'}));
+  doc.destroy();
+});

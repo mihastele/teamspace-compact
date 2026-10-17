@@ -272,5 +272,28 @@ The application UI, Firebase client integration, trusted API handlers, default-d
   Task IDs/option IDs, comments, attachments and private receipts are preserved.
   Board JSON includes Projects and hydrated definitions/values. Full workspace
   export/deletion and authenticated browser/deployment acceptance remain open.
-- Firebase/local preview retain their existing four field types. Nested composable
-  filters, reusable saved views and agent worker/approval/audits are separate stages.
+- Firebase/local preview retain their existing four field types. Composable filters and shared saved views are implemented in M3 below; agent
+  worker/approval/audits remain separate stages.
+
+
+### Composable ticket queries and shared views (M3)
+
+- PostgreSQL has one validated version-1 query AST for UI and future agent searches:
+  AND/OR groups, typed built-in/custom predicates, explicit IANA timezone, viewer
+  tokens, three sorts and bounded keyset pages. The trusted compiler binds every
+  user value. Context/execute reauthorize membership, confirmation and schema epoch.
+- Saved workspace views persist layout (board/table/list), status/priority grouping,
+  columns and query, with revision checks, optional create operation UUID, reversible
+  archive and idempotent default seeding. No duplicate task data. Default This week
+  includes today through today + 7 (inclusive), independent of the older deadline filter.
+- Existing note board blocks optionally store savedViewId; shared settings stay
+  authoritative while independent legacy settings remain intact. History/downloads
+  preserve reference IDs. Changing/removing a reference never deletes tasks/views.
+- Views uses typed filters and canonical indexed queries; board moves persist only
+  intended status/priority fields. Counts and exports describe loaded rows. URLs
+  retain authorized workspace/view/Project/task context and validated overrides.
+  Pages follow current data; refresh after concurrent sorting/filter-value changes.
+- Migration 013 protects the new canonical view table with RLS, SDK write denial
+  and workspace deletion cascade. Board export includes saved definitions; loaded
+  query export includes applied settings/rows/completeness. Full account/workspace
+  export/deletion and real browser/two-user acceptance remain open.

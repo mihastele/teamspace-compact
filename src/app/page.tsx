@@ -28,6 +28,7 @@ import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
+import TicketViews, { SavedViewLink } from "./components/TicketViews";
 import TaskTable from "./components/TaskTable";
 import Projects from "./components/Projects";
 import RecoveryArchives from "./components/RecoveryArchives";
@@ -47,7 +48,7 @@ import { taskEditPatch } from "@/lib/task-status";
 import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "projects" | "board" | "table" | "calendar" | "notes" | "members";
+type View = "views" | "projects" | "board" | "table" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -66,6 +67,7 @@ function initials(name: string) {
 }
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
+    views: <path d="M3 5h18M6 12h12M9 19h6" />,
     projects: <path d="M3 5h7l2 3h9v13H3z" />,
     table: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 14h18M10 4v16" /></>,
     board: (
@@ -1773,6 +1775,8 @@ function Notes({
           api={api}
           renderBoard={(block, onViewChange, disabled) => (
             <>
+            <SavedViewLink api={api} view={block.boardView} disabled={disabled} onApply={onViewChange}/>
+            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId}/> : <>
             <LinkedBoardSettings view={block.boardView} members={api.members} disabled={disabled} onApply={onViewChange} />
             <WorkspaceBoard
               key={`${api.workspace?.id}:${block.id ?? "board"}`}
@@ -1781,7 +1785,7 @@ function Notes({
               onTask={onTask}
               view={block.boardView}
               filtered={Boolean(block.boardView)}
-            />
+            /></>}
             </>
           )}
           value={displayedContent}
@@ -2270,7 +2274,11 @@ function WorkspaceDialog({
 export default function Home() {
   const api = useTeamspace();
   const [chosenView, setView] = useState<View>("board");
-  const view = chosenView === "projects" && !api.projectsEnabled ? "board" : chosenView;
+  const view = ["projects","views"].includes(chosenView) && !api.projectsEnabled ? "board" : chosenView;
+  useEffect(()=>{
+    const open=()=>{if(new URLSearchParams(location.search).has("ticketView"))setView("views");};
+    queueMicrotask(open);window.addEventListener("popstate",open);return()=>window.removeEventListener("popstate",open);
+  },[]);
   const [projectSelection,setProjectSelection] = useState<{scope:string;id:string}|null>(null);
   const [search, setSearch] = useState("");
   const [taskSelection, setTaskSelection] = useState<{
@@ -2281,7 +2289,15 @@ export default function Home() {
   const task = taskSelection?.scope === taskScope ? taskSelection.value : null;
   function setTask(value: Partial<Task> | null) {
     setTaskSelection(value ? { scope: taskScope, value } : null);
+    const url=new URL(location.href);if(value?.id){url.searchParams.set("ticket",value.id);if(api.workspace)url.searchParams.set("workspace",api.workspace.id);}else url.searchParams.delete("ticket");history.replaceState(null,"",url);
   }
+  const restoredWorkspace=useRef("");
+  useEffect(()=>{
+    const params=new URLSearchParams(location.search),workspaceId=params.get("workspace"),ticketId=params.get("ticket"),projectId=params.get("project");
+    if(workspaceId){const key=`${api.user?.uid??"preview"}:${workspaceId}`;if(restoredWorkspace.current!==key){if(workspaceId!==api.workspace?.id){if(api.workspaces.some(workspace=>workspace.id===workspaceId)){restoredWorkspace.current=key;api.selectWorkspace(workspaceId);}return;}restoredWorkspace.current=key;}if(workspaceId!==api.workspace?.id)return;}
+    if(ticketId&&task?.id!==ticketId){const linked=api.tasks.find(item=>item.id===ticketId);if(linked)queueMicrotask(()=>setTaskSelection({scope:taskScope,value:linked}));}
+    if(projectId&&!params.has("ticketView")&&(projectSelection?.id!==projectId||projectSelection.scope!==taskScope)&&api.projectsEnabled){queueMicrotask(()=>{setProjectSelection({scope:taskScope,id:projectId});setView("projects");});}
+  },[api,task?.id,taskScope,projectSelection?.id,projectSelection?.scope]);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState(false);
   const [workspaceDialog, setWorkspaceDialog] = useState(false);
@@ -2351,7 +2367,7 @@ export default function Home() {
         t.assigneeId === (api.configured ? api.user?.uid : "preview")),
   );
   const title =
-    view === "projects" ? "Your projects" : view === "board"
+    view === "views" ? "Your saved views" : view === "projects" ? "Your projects" : view === "board"
       ? "Project board"
       : view === "table"
         ? "Your task table"
@@ -2371,6 +2387,7 @@ export default function Home() {
           value={api.workspace.id}
           aria-label="Active workspace"
           onChange={(e) => {
+            const url=new URL(location.href);for(const key of ["ticket","project","ticketView","ticketQuery"])url.searchParams.delete(key);url.searchParams.set("workspace",e.target.value);history.replaceState(null,"",url);
             api.selectWorkspace(e.target.value);
             setTask(null);
           }}
@@ -2394,15 +2411,15 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {([...(api.projectsEnabled ? ["projects"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
+          {([...(api.projectsEnabled ? ["projects","views"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
-              onClick={() => setView(v)}
+              onClick={() => {setView(v);if(v!=="views"){const url=new URL(location.href);for(const key of ["ticketView","ticketQuery","project"])url.searchParams.delete(key);history.replaceState(null,"",url);}}}
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
+              {v === "views" ? "Views" : v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2435,7 +2452,7 @@ export default function Home() {
             {api.workspace.name}
             <span>/</span>
             <strong>
-              {view === "projects" ? "Projects" : view === "board"
+              {view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board"
                 : view === "table"
                   ? "Table"
@@ -2492,7 +2509,7 @@ export default function Home() {
               <p className={s.eyebrow}>LET’S MAKE SOMETHING GREAT</p>
               <h1>{title}</h1>
               <p className={s.subtitle}>
-                {view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
+                {view === "views" ? "Filter, sort and group the same tasks in reusable views." : view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
                   ? "A clear view of what’s next. One task at a time."
                   : view === "table"
                     ? "Compare tasks and custom fields in one place."
@@ -2516,7 +2533,7 @@ export default function Home() {
           <div className={s.toolbar}>
             <div className={s.viewLabel}>
               <Icon name={view} />
-              {view === "projects" ? "Projects" : view === "board"
+              {view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board view"
                 : view === "table"
                   ? "Table view"
@@ -2590,7 +2607,8 @@ export default function Home() {
             <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
-          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
             <span>
@@ -2609,7 +2627,7 @@ export default function Home() {
           key={`${taskScope}:${task.id || "new"}`}
           api={api}
           initial={task}
-          onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");}}
+          onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);}}
           close={() => setTask(null)}
         />
       )}

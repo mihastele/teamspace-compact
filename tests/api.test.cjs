@@ -1975,6 +1975,8 @@ test("failed collaboration cleanup leaves a fenced parent and deletion is retrya
 
 
 test('Firebase preserves its baseline and rejects PostgreSQL Project and extended-field mutations',async()=>{
+  assert.equal((await api('member','POST','workspaces/alpha/views/seed',{})).status,400);
+  assert.equal((await api('member','POST','workspaces/alpha/tasks/query',{query:{version:1,filter:{and:[]},sort:[],timeZone:'UTC'}})).status,400);
   assert.equal((await api('member','POST','workspaces/alpha/projects',{name:'Unsupported'})).status,400);
   assert.equal((await api('member','PATCH','workspaces/alpha/tasks/task',{projectId:'p'})).status,400);
   assert.equal((await api('member','PUT',`workspaces/alpha/boardProperties/${require('node:crypto').randomUUID()}`,{name:'Number',type:'number',options:[],expectedRevision:0})).status,400);

@@ -10,6 +10,7 @@ const { handleTrustedApi, handleApi } = require('../.test-build/server/api.js');
 const loadApiRoute = require('./route-boundary.cjs');
 const { supabaseDocumentStore, FieldValue } = require('../.test-build/server/document-store.js');
 const { guardedDocumentStore } = require('../.test-build/server/auth-policy.js');
+const {compileTicketQuery}=require('../.test-build/server/ticket-query-sql.js');
 const supabaseModule = require('../.test-build/server/supabase.js');
 Module._load = originalLoad;
 const Y = require('yjs');
@@ -40,6 +41,8 @@ async function rpc(name, value) {
     teamspace_store_commit: () => `${literal(value.p_epoch)}::bigint,${json(value.p_writes)}`,
     teamspace_store_delete_collection: () => literal(value.p_path),
   };
+  expressions.teamspace_ticket_context=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified}`;
+  expressions.teamspace_ticket_query=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified},${literal(value.p_epoch)},${literal(value.p_where)},${literal(value.p_order)},${literal(value.p_keys)},${json(value.p_parameters)},${value.p_limit}`;
   assert.ok(expressions[name], 'Only the service RPC contract is allowed');
   return JSON.parse(await sql(`set role service_role; select public.${name}(${expressions[name]()});`));
 }
@@ -61,6 +64,7 @@ before(async () => {
   await sql(readFileSync('migrations/008-workspace-administration.sql', 'utf8'));
   await sql(readFileSync('migrations/009-board-properties.sql', 'utf8'));
   await sql(readFileSync('migrations/012-canonical-projects-fields.sql', 'utf8'));
+  await sql(readFileSync('migrations/013-ticket-queries-views.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -88,6 +92,7 @@ async function api(uid, method, path, input) {
   return { status: response.status, data: await response.json() };
 }
 const value = async path => (await db.doc(path).get()).data();
+require('./ticket-query-api-cases.cjs')(test,{api,member,outsider,owner,prefix,read:value,sql,rpc,compileTicketQuery});
 require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
 require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
@@ -120,7 +125,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'4');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'5');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -149,7 +154,8 @@ test('canonical migration upgrades populated legacy records atomically without c
       [`${prefix}/tasks/legacy`,task],
       [`${prefix}/tasks/legacy/comments/comment`,{body:'Preserved'}],
       [`${prefix}/attachments/file`,{parentType:'task',parentId:'legacy'}],
-      [`${prefix}/taskOperations/receipt`,{uid:member,taskId:'legacy',digest:'hash',revision:4}]
+      [`${prefix}/taskOperations/receipt`,{uid:member,taskId:'legacy',digest:'hash',revision:4}],
+      [`${prefix}/notes/legacy-board`,{title:'Keep settings',content:{blocks:[{type:'board',text:'',boardView:{name:'Custom legacy',query:'keep',status:'doing',assignee:'me',deadline:'week',sort:'title'}}]}}]
     ];
     for(const [path,data]of records)await query(`insert into public.teamspace_documents(path,data,version)values(${literal(path)},${json(data)},7);`);
     // A bad historical value must roll the entire cutover back, leaving the old store usable.
@@ -167,6 +173,10 @@ test('canonical migration upgrades populated legacy records atomically without c
     for(const [path,data]of records.slice(4))assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path=${literal(path)};`)),data);
     assert.equal(await query('select count(*) from public.teamspace_task_field_values;'),'2');
     assert.equal(await query('select option_id from public.teamspace_task_field_selections;'),option);
+    await query(readFileSync('migrations/013-ticket-queries-views.sql','utf8'));
+    assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
+    assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/notes/legacy-board';`)),records.at(-1)[1]);
+    assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_saved_views';"),'t');
   } finally { await sql('drop database teamspace_upgrade_test;'); }
 });
 

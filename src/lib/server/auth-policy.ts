@@ -12,6 +12,7 @@ export function assertAuthPolicy(policy: StoreData | undefined, required: boolea
 export function guardedDocumentStore(db: DocumentStore, required: boolean, verified: boolean): DocumentStore {
   return {
     ...db,
+    ...(db.ticketRead ? {ticketRead: (kind: "context" | "query", input: Record<string, unknown>) => db.ticketRead!(kind,input,{required,verified})} : {}),
     runTransaction: action => db.runTransaction(async tx => {
       const policy = await tx.get(db.doc("security/policy"));
       assertAuthPolicy(policy.data(), required, verified);

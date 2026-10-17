@@ -10,6 +10,7 @@ export type BoardProperty = {
 export type PropertyValue = string | string[] | number | boolean | null;
 export type Project = { id: string; name: string; description: string; archived: boolean; revision: number };
 export type BoardView = {
+  savedViewId?: string;
   name: string;
   query: string;
   status: "all" | Status;

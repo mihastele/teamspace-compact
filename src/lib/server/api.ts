@@ -31,6 +31,7 @@ import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
 import { member, rateLimit, type ServiceActor as DecodedIdToken } from "./service-context";
 import { getTask, saveTask, saveBoardProperty, nextTaskRevision } from "./task-service";
 import { getConversation, changeConversation } from "./conversation-service";
+import { queryTickets, readViews, saveView, seedViews } from "./ticket-view-service";
 import { getProject, saveProject, requireProjects } from "./project-service";
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
@@ -1641,11 +1642,18 @@ export async function handleTrustedApi(
     const [, , resource, itemId, action, commentId] = path;
     if (path.length > 6 || (path.length === 6 && action !== "comments"))
       throw new ApiError(404, "not_found", "Endpoint not found.");
+    if (resource === "tasks" && itemId === "query" && !action && method === "POST") return json(await queryTickets(db,workspace,user,await body(request)));
+    if (resource === "views" && !action) {
+      if (itemId === "seed" && method === "POST") { object(await body(request),[]); return json(await seedViews(db,workspace,user)); }
+      if (method === "GET") return json(await readViews(db,workspace,user,itemId));
+      if ((!itemId && method === "POST") || (itemId && method === "PATCH")) return json({view:await saveView(db,workspace,user,itemId,await body(request))},itemId?200:201);
+      throw new ApiError(405,"method_not_allowed","Views support create, read, edit and reversible archive.");
+    }
     if (resource === "snapshot" && !itemId && method === "GET") {
       const result = await db.runTransaction(async tx => {
         await member(tx,workspace,user.uid);
         const names = ["tasks","notes","members","attachments","boardProperties"];
-        if (db.capabilities?.projects) names.push("projects");
+        if (db.capabilities?.projects) names.push("projects","savedViews");
         const collections = await Promise.all(names.map(name => tx.get(workspace.collection(name))));
         return Object.fromEntries(names.map((name,index) => [name, collections[index].docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))]));
       });

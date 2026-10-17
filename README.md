@@ -90,7 +90,8 @@ role key from that same project. Keep the service role key server-only. Apply
 `migrations/007-supabase-backend.sql`, followed by
 `migrations/008-workspace-administration.sql` and
 `migrations/009-board-properties.sql` and
-`migrations/012-canonical-projects-fields.sql`, using the administrative SQL
+`migrations/012-canonical-projects-fields.sql` and
+`migrations/013-ticket-queries-views.sql`, using the administrative SQL
 connection, then publish the authentication security policy as described in the migration.
 The application uses a private `teamspace-private` Storage bucket. Configure
 email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
@@ -147,7 +148,7 @@ upgrades**. It serializes runs, records checksums atomically with each migration
 and safely skips completed migrations. A failed migration rolls back; earlier
 completed migrations remain applied. Retry after correcting the failure.
 It refuses an existing application schema without its ledger. For installations
-where 007 was previously applied manually, apply 008, 009 and 012 manually following
+where 007 was previously applied manually, apply 008, 009, 012 and 013 manually following
 [its upgrade guide](migrations/008-workspace-administration.md); do not replay
 007 or delete existing tables to make the runner accept them. See
 [migration bookkeeping](migrations/000-supabase-migration-ledger.md).
@@ -180,8 +181,8 @@ direct readers of the old document table must use the compatibility view or APIs
 The migration runner includes this upgrade. No installation is migrated by a build.
 Firebase and local preview retain the existing Text/Select/Multi-select/Date
 workspace fields; Firebase still requires the migration 009 rules. Authenticated
-Project/field UI and two-user browser acceptance remain open. Nested composable
-filters, reusable saved views and agent integrations are later milestones.
+Project/field UI and two-user browser acceptance remain open. Composable filters and saved views are described below; agent integrations remain
+later milestones.
 
 The website uses the private Docker gateway for server requests, while browser
 requests and signed attachment links retain the configured public API URL.
@@ -376,3 +377,40 @@ Use `/synced` or **Synced content** in the block menu to choose a saved text blo
 Sources can be paragraphs, headings, lists, checklists, quotes, code or Markdown. Boards, dividers and other synced references cannot be sources. Deleted sources show unavailable and keep their reference. Each page supports 100 links from 20 source notes. Configured saved sources synchronize through their existing journals; preview source edits use revision-checked saves, while self-links in preview stay in the current note draft until Save. Unfinished composition and failed drafts show recovery controls; download them before leaving. Linked source controllers stay open until the destination page closes so pending recovery remains accessible.
 
 Page history and Markdown downloads retain reference IDs and view settings. Restoring a linked page leaves source content and board tasks unchanged; export the original separately for its text. Deploy the updated client and trusted API together as documented in [migration 010](migrations/010-linked-content.md). No new SQL migration or live database backfill is needed. Browser/IME/mobile and authenticated two-user acceptance remain open checks.
+
+
+## Saved ticket views (PostgreSQL)
+
+Open **Views** for a recursive AND/OR filter builder over built-in and custom
+fields. Choose board/table/list, group by status or priority, select visible
+columns and up to three sorts, then **Apply settings** locally or **Save changes**
+to the shared view. **Save as new view** creates another definition over the same
+tasks. Anyone in the workspace can use/edit these views; edits check revisions.
+Archive/restore preserves the view and tasks.
+
+**Add default views** creates missing Engineering Kanban, Project board, My open
+work, This week and Overdue definitions without replacing customized defaults.
+Choose a Project when using Project board. Views store an editable IANA timezone
+(default UTC); This week includes today through today + 7, including completed
+work. Overdue and My open work exclude done. The older board deadline filter
+retains its original next-seven-calendar-dates behavior.
+
+Custom filters support typed equality, emptiness, text contains, select choices,
+multi-select any/all, date bounds and numeric comparisons. Archived options remain
+searchable. Empty values also match negative comparisons. Numbers sort numerically;
+text uses case-insensitive deterministic database ordering; nulls stay last.
+A saved view's changes appear in all linked representations. In a `/kanban` note
+block, choose **Shared saved view** to reference one; clearing it restores that
+block's independent settings. Note history/export retains the reference.
+
+Views query canonical PostgreSQL rows with bounded keyset paging, rather than
+loading the full task snapshot for filtering. Counts/exports describe **loaded
+rows**, with Load more for additional pages. Concurrent edits can move rows across
+page boundaries; refresh for a new first page. Board drag/drop and the accessible
+Move selector change only status/priority through existing task services. URLs
+retain workspace/view/Project/task IDs and validated local override settings.
+
+Apply [migration 013](migrations/013-ticket-queries-views.md) after 012 before the
+paired API/client deployment. It adds the shared-view table with RLS and private
+query RPCs; no build modifies a live database. Full browser/two-user acceptance
+and live rollout remain open. Firebase/local preview keep their existing views.

@@ -22,6 +22,7 @@ import {
   type AuthConfiguration,
 } from "./browser-backend";
 export { browserConfigurationStatus } from "./browser-backend";
+import type { SavedView, TicketQuery, ViewConfig } from "./ticket-query";
 import { buildInviteUrl, resolveAppBaseUrl } from "./app-url";
 import type {
   Attachment,
@@ -137,6 +138,7 @@ export function useTeamspace() {
   const [tasks, setTasks] = useState<Task[]>(configured ? [] : demoTasks);
   const [boardProperties, setBoardProperties] = useState<BoardProperty[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [savedViews,setSavedViews] = useState<SavedView[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [members, setMembers] = useState<Member[]>(
     configured
@@ -292,6 +294,7 @@ export function useTeamspace() {
       setTasks([]);
       setBoardProperties([]);
       setProjects([]);
+      setSavedViews([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -420,7 +423,7 @@ export function useTeamspace() {
                 );
             }
           loaded.add(name);
-          if (loaded.size >= (browserProvider === "supabase" ? 6 : 5)) setLoading(false);
+          if (loaded.size >= (browserProvider === "supabase" ? 7 : 5)) setLoading(false);
         },
         (e) => {
           if (!active) return;
@@ -439,7 +442,7 @@ export function useTeamspace() {
       watch<Note>("notes", setNotes),
       watch<Member>("members", setMembers),
       watch<Attachment>("attachments", setAttachments),
-      ...(browserProvider === "supabase" ? [watch<Project>("projects", setProjects)] : []),
+      ...(browserProvider === "supabase" ? [watch<Project>("projects", setProjects), watch<SavedView>("savedViews",setSavedViews)] : []),
     ];
     return () => {
       active = false;
@@ -480,7 +483,19 @@ export function useTeamspace() {
       "This needs a configured shared backend. Local preview has no shared access or file storage.",
     );
   }
+  const ticketRequest = useCallback(async (suffix: string, method: string, body?: unknown) => {
+    if (!configured || browserProvider !== "supabase" || !workspace?.id || !user?.uid) throw new Error("Saved views need a PostgreSQL workspace.");
+    return api(`workspaces/${workspace.id}/${suffix}`,method,body,user.uid);
+  },[workspace?.id,user?.uid,api]);
+  const queryTickets = useCallback(async (query: TicketQuery, cursor?: string, projectId?: string) => await ticketRequest("tasks/query","POST",{query,limit:50,...(cursor?{cursor}:{}),...(projectId?{projectId}:{})}) as {tasks:Task[];nextCursor:string|null},[ticketRequest]);
+  const listViews = useCallback(async ()=>(await ticketRequest("views","GET")).views as SavedView[],[ticketRequest]);
+  const saveView = useCallback(async (config: ViewConfig, controls: {id:string;expectedRevision:number;archived?:boolean}|{operationId:string}) => {
+    const {id,...body}="id" in controls?controls:{...controls,id:undefined};
+    return (await ticketRequest(`views${id?`/${id}`:""}`,id?"PATCH":"POST",{config,...body})).view as SavedView;
+  },[ticketRequest]);
+  const seedViews = useCallback(async()=>{await ticketRequest("views/seed","POST",{});},[ticketRequest]);
   return {
+    queryTickets, listViews, saveView, seedViews, savedViews,
     configured,
     provider: browserProvider,
     authConfiguration,
@@ -953,6 +968,7 @@ export function useTeamspace() {
       setTasks([]);
       setBoardProperties([]);
       setProjects([]);
+      setSavedViews([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -974,6 +990,7 @@ export function useTeamspace() {
         setTasks([]);
         setBoardProperties([]);
       setProjects([]);
+      setSavedViews([]);
         setNotes([]);
         setMembers([]);
         setAttachments([]);

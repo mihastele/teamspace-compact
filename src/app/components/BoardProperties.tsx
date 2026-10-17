@@ -80,12 +80,12 @@ export function BoardProperties({ api }: { api: Api }) {
           setExportError("");
           let url: string | undefined;
           try {
-            url = URL.createObjectURL(new Blob([JSON.stringify({ version: 2, projects: api.projects, properties: api.boardProperties, tasks: api.tasks }, null, 2)], { type: "application/json" }));
+            url = URL.createObjectURL(new Blob([JSON.stringify({ version: 3, views: api.savedViews, projects: api.projects, properties: api.boardProperties, tasks: api.tasks }, null, 2)], { type: "application/json" }));
             const anchor = document.createElement("a"); anchor.href = url; anchor.download = "teamspace-board.json"; document.body.append(anchor); anchor.click(); anchor.remove();
             const downloadUrl = url; setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
           } catch { if (url) URL.revokeObjectURL(url); setExportError("Board export failed. Your data is unchanged."); }
         }}>Download board JSON</button>
-        <p className={s.hint}>Exports all saved projects, tasks and field definitions. Attachments and conversations are separate.</p>
+        <p className={s.hint}>Exports all saved views, projects, tasks and field definitions. Attachments and conversations are separate.</p>
         {exportError && <p role="alert">{exportError}</p>}
       </div>
     </details>
