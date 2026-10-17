@@ -43,3 +43,14 @@ test('default order, source updates and deletions reconcile without modifying or
   assert.deepEqual(ids(sortTableTasks(next,{column:'title',direction:'ascending'},properties,members)),['b','c']);
   assert.equal(rows[0].title,'b');assert.equal(rows.length,3);
 });
+
+test('extended columns sort signed decimal values numerically and resolve project/person labels',()=>{
+  const fields=[{id:'number',name:'Cost',type:'number',options:[],revision:1},{id:'person',name:'Reviewer',type:'person',options:[],revision:1}];
+  const projects=[{id:'p',name:'Release'}];
+  const rows=[task('positive',{estimate:0.2,priority:'urgent',projectId:'p',propertyValues:{number:0.2,person:'alice'}}),task('negative',{estimate:0.11,priority:'low',propertyValues:{number:-2.5}}),task('zero',{estimate:0,priority:'none',propertyValues:{number:0}}),task('empty')];
+  assert.equal(taskColumns(fields,true).length,9);
+  assert.deepEqual(ids(sortTableTasks(rows,{column:'property:number',direction:'ascending'},fields,members,projects)),['negative','zero','positive','empty']);
+  assert.deepEqual(ids(sortTableTasks(rows,{column:'estimate',direction:'descending'},fields,members,projects)),['positive','negative','zero','empty']);
+  assert.equal(taskCell(rows[0],'project',fields,members,projects),'Release');
+  assert.equal(taskCell(rows[0],'property:person',fields,members,projects),'Alice');
+});

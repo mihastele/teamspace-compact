@@ -4,6 +4,7 @@ import { member, rateLimit, now, hash, type ServiceActor } from "./service-conte
 import { ApiError, identifier, integer, object, taskMutationInput, uuid } from "./validation";
 import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "../board-properties";
 import type { BoardProperty } from "../model";
+import { requireProjects } from "./project-service";
 
 export function taskRevision(value: Record<string, unknown>): number {
   const revision = value.revision ?? 0;
@@ -24,6 +25,9 @@ function taskView(id: string, value: Record<string, unknown>) {
     id, title: value.title, description: value.description, status: value.status,
     assigneeId: value.assigneeId ?? null, dueDate: value.dueDate ?? null,
     position: value.position, propertyValues: value.propertyValues ?? {}, revision: taskRevision(value),
+    ...(value.projectId !== undefined ? { projectId: value.projectId } : {}),
+    ...(value.priority !== undefined ? { priority: value.priority } : {}),
+    ...(value.estimate !== undefined ? { estimate: value.estimate } : {}),
   };
 }
 
@@ -88,17 +92,43 @@ export async function saveTask(
     if (prior.data()?.deleting)
       throw new ApiError(409, "deleting", "This task is being deleted.");
     const previous = prior.data() ?? {};
+    if (["projectId", "priority", "estimate"].some(key => key in value)) requireProjects(db);
+    const projectId = ("projectId" in value ? value.projectId : previous.projectId) as string | null | undefined;
+    if (projectId && (projectId !== previous.projectId || !taskId)) {
+      const project = await tx.get(workspace.collection("projects").doc(projectId));
+      if (!project.exists || project.data()?.archived)
+        throw new ApiError(400, "invalid_project", "Choose an active project in this workspace.");
+    }
     if (expectedRevision !== undefined && taskRevision(previous) !== expectedRevision)
       throw new ApiError(409, "revision_conflict", "This task changed. Review the latest version before applying these changes.");
     const patch = { ...value };
     if ("propertyValues" in value) {
       const properties = await tx.get(workspace.collection("boardProperties"));
+      const definitions = properties.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty);
       try {
+        const changes = validatePropertyValues(requestedProperties, definitions, previous.propertyValues as Record<string, import("../model").PropertyValue> ?? {});
+        for (const [key, selected] of Object.entries(changes)) {
+          const definition = definitions.find(field => field.id === key)!;
+          if (definition.projectId && definition.projectId !== projectId && selected !== null)
+            throw new Error("That custom field belongs to another project.");
+        }
         patch.propertyValues = {
           ...(previous.propertyValues as Record<string, unknown> ?? {}),
-          ...validatePropertyValues(requestedProperties, properties.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty)),
+          ...changes,
         };
       } catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
+      for (const [key, selected] of Object.entries(requestedProperties as Record<string, unknown>)) {
+        if (selected === null) continue;
+        const definition = definitions.find(field => field.id === key)!;
+        if (definition.type === "person" && selected !== previous.propertyValues?.[key]) {
+          const person = await tx.get(workspace.collection("members").doc(String(selected)));
+          if (!person.exists) throw new ApiError(400, "invalid_person", "Choose a current workspace member.");
+        }
+        if (definition.type === "relation" && selected !== previous.propertyValues?.[key]) {
+          const project = await tx.get(workspace.collection("projects").doc(String(selected)));
+          if (!project.exists || project.data()?.archived) throw new ApiError(400, "invalid_project", "Choose an active workspace project.");
+        }
+      }
     }
     if (value.assigneeId) {
       const assignee = await tx.get(
@@ -129,18 +159,24 @@ export async function saveTask(
 
 export async function saveBoardProperty(db: Firestore, workspace: DocumentReference, user: ServiceActor, id: string, input: unknown) {
   await rateLimit(db, user.uid, "board_property", 30);
-  const data = object(input, ["name", "type", "options", "expectedRevision"]);
+  const data = object(input, ["name", "type", "options", "expectedRevision", "projectId"]);
   const expected = integer(data.expectedRevision, "Expected revision", 0, 1000000000);
   const propertyId = uuid(id);
   let definition: ReturnType<typeof propertyDefinition>;
-  try { definition = propertyDefinition({ name: data.name, type: data.type, options: data.options }); }
+  try { definition = propertyDefinition({ name: data.name, type: data.type, options: data.options, ...(data.projectId !== undefined ? {projectId:data.projectId} : {}) }); }
   catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
+  if ((!db.capabilities?.normalizedFields) && (definition.projectId || !["text","select","multiSelect","date"].includes(definition.type)))
+    throw new ApiError(400, "feature_unavailable", "This property type or scope requires PostgreSQL.");
   const property = await db.runTransaction(async tx => {
     await member(tx, workspace, user.uid);
     // Reading and incrementing the workspace serializes creates, including the cap and name check.
     const space = await tx.get(workspace);
     const rows = await tx.get(workspace.collection("boardProperties"));
     const properties = rows.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty);
+    if (definition.projectId && !properties.some(property => property.id === propertyId)) {
+      const project = await tx.get(workspace.collection("projects").doc(definition.projectId));
+      if (!project.exists || project.data()?.archived) throw new ApiError(400, "invalid_project", "Choose an active workspace project.");
+    }
     let next: BoardProperty;
     try { next = validatePropertyChange(properties, propertyId, expected, definition); }
     catch (error) { throw new ApiError(409, "property_conflict", (error as Error).message); }

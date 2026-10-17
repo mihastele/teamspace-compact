@@ -31,6 +31,7 @@ import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
 import { member, rateLimit, type ServiceActor as DecodedIdToken } from "./service-context";
 import { getTask, saveTask, saveBoardProperty, nextTaskRevision } from "./task-service";
 import { getConversation, changeConversation } from "./conversation-service";
+import { getProject, saveProject, requireProjects } from "./project-service";
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
 import {
@@ -1644,6 +1645,7 @@ export async function handleTrustedApi(
       const result = await db.runTransaction(async tx => {
         await member(tx,workspace,user.uid);
         const names = ["tasks","notes","members","attachments","boardProperties"];
+        if (db.capabilities?.projects) names.push("projects");
         const collections = await Promise.all(names.map(name => tx.get(workspace.collection(name))));
         return Object.fromEntries(names.map((name,index) => [name, collections[index].docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))]));
       });
@@ -1652,6 +1654,21 @@ export async function handleTrustedApi(
     if (resource === "boardProperties" && itemId && !action && method === "PUT") {
       const property = await saveBoardProperty(db, workspace, user, itemId, await body(request));
       return json({ property }, property.revision === 1 ? 201 : 200);
+    }
+    if (resource === "projects" && !action) {
+      requireProjects(db);
+      if (itemId && method === "GET") return json({ project: await getProject(db, workspace, user, itemId), tickets: { projectId: itemId } });
+      if ((method === "POST" && !itemId) || (method === "PATCH" && itemId))
+        return json({ project: await saveProject(db, workspace, user, itemId, await body(request)) }, itemId ? 200 : 201);
+      if (method === "GET" && !itemId) {
+        const projects = await db.runTransaction(async tx => {
+          await member(tx, workspace, user.uid);
+          const rows = await tx.get(workspace.collection("projects").orderBy("name").limit(101));
+          return rows.docs.map(row => ({ id: row.id, name: row.data().name, description: row.data().description, archived: row.data().archived, revision: row.data().revision }));
+        });
+        return json({ projects: projects.slice(0, 100), truncated: projects.length > 100 });
+      }
+      throw new ApiError(405, "method_not_allowed", "Projects support reversible archiving, not deletion.");
     }
     if (resource === "tasks" || resource === "notes") {
       if (resource === "tasks" && itemId && !action && method === "GET")

@@ -24,7 +24,7 @@ Started 2026-10-17 after approval of the recommendation in
 | M0 architecture scope | Accepted, including lifecycle policies | PostgreSQL-focused expansion; Firebase baseline retained. User approved 30-day configurable full agent audits and inherited Project access/reversible archiving. |
 | M1a route and services | Implemented; verification recorded in PROJECT-STATE.md | Export PUT; extract membership/rate-limit helpers, Task/Property mutation services and Conversation read/write services; add authorized task-detail read. |
 | M1b task durability/query contracts | Mutation contracts implemented; indexed queries remain planned | Task operation IDs, minimal private receipts and reviewed revisions added in migration 011. Existing UI does not yet persist retry packets. Bounded indexed queries are coordinated with canonical PostgreSQL storage/query migrations; no agent writes before confirmation/audit services exist. |
-| M2 projects/normalized fields | Planned | Preserve task/option IDs, adapt parent relations/snapshots/cleanup, implement the approved project lifecycle and cut over to one canonical task/field source. No new SQL tables/migrations have been applied. |
+| M2 projects/normalized fields | Implemented; verification recorded in PROJECT-STATE.md | Migration 012 canonical cutover, inherited Project access/archive, ten normalized field types, typed values/options/selections, UI and snapshot invalidation. Clean/populated isolated upgrade verified; no live installation migrated. |
 | M3 composable queries/saved views | Planned | One validated query language, server evaluation, persisted layouts/groups/columns and shared view references. |
 | M4 read-only agent/worker | Planned | Provider/tool boundary, durable queue/checkpoints, provenance, scoped reads and agreed audit policy. |
 | M5 approved writes/release acceptance | Planned | Approval-bound diffs, transactional idempotency/audits, restart recovery and full Compose/two-user acceptance. |
@@ -86,3 +86,27 @@ workspace-lifetime duplicate prevention, matching existing operation-receipt
 conventions. They are distinct from the future agent audit's approved default
 30-day content retention. See [migration 011](../migrations/011-task-durability.md)
 for full shape, access, export/deletion and rollout details.
+
+
+## M2 canonical records and Projects
+
+See [migration 012](../migrations/012-canonical-projects-fields.md) for schema,
+backfill/rollback, RLS, export/deletion and paired rollout instructions. The existing
+transactional document interface reads a security-invoker compatibility view;
+canonical task JSON excludes custom values. Six member-readable/server-written
+relational tables hold Projects, Tasks, definitions, options, typed values and
+multi-select joins. Existing IDs and parent references survive atomic cutover.
+Core generated columns and custom-value indexes prepare M3; the store still uses
+the existing global epoch and small workspace snapshots.
+
+Projects expose authorized create/list/detail/revision-checked edit/archive APIs.
+Task assignment and relation changes check active same-workspace Projects in the
+transaction. Browser Projects/task/table/forms cover Project links, priority,
+estimate, scoped fields, all ten types and option color/order/archive management.
+New feature controls are PostgreSQL-only; Firebase's existing four types remain.
+The shared realtime channel invalidates snapshots for new tables; periodic polling
+continues. Board JSON adds Projects and hydrated canonical fields/values.
+
+Full nested query/saved-view contracts, durable task-form recovery, worker, model
+provider, tool confirmation and full agent audit retention are still future work.
+No new dependency, live schema change or deployed acceptance is implied.
