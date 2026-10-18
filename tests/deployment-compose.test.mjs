@@ -23,6 +23,13 @@ test('real Compose models isolate staging/production data, identities, keys and 
       const config=JSON.parse(result.stdout);
       validateCompose(config,deployment);
       assert.equal(config.services.auth.environment.GOTRUE_SMTP_PASS,'');
+      assert.equal(config.services.auth.environment.GOTRUE_SMTP_HOST,name==='staging'?'mailpit':'');
+      if(name==='staging'){
+        assert.equal(config.services.mailpit.ports.length,1);
+        assert.equal(config.services.mailpit.ports[0].host_ip,'127.0.0.1');
+        assert.equal(config.services.mailpit.ports[0].target,8025);
+        assert.equal(config.services.auth.depends_on.mailpit.condition,'service_healthy');
+      }else assert.equal(config.services.mailpit,undefined);
       assert.equal(config.services.supavisor.ports,undefined);
       assert.equal(config.services.web.build.args.NEXT_PUBLIC_SUPABASE_ANON_KEY,deployment.values.ANON_KEY);
       assert.ok(!Object.values(config.services.web.build.args).includes(deployment.values.SERVICE_ROLE_KEY));

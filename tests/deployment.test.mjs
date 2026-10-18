@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEnv } from 'node:util';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
-import { deploymentEnvironment, deploymentProblems, deploymentProcessEnvironment, deploymentPath, publicUrl, scopedSupabaseCompose } from '../scripts/deployment-config.mjs';
+import { deploymentEnvironment, deploymentProblems, deploymentProcessEnvironment, deploymentPath, publicUrl, scopedSupabaseCompose, enableLocalMail } from '../scripts/deployment-config.mjs';
 import { setupArguments } from '../scripts/setup-deployment.mjs';
 import { commandArguments, dockerFailure, preflightFailure } from '../scripts/deploy.mjs';
 
@@ -14,17 +16,43 @@ test('staging and production receive independent aligned secrets with external c
   assert.equal(staging.PORT,'3100');assert.equal(production.PORT,'3000');
   assert.equal(staging.POSTGRES_PORT,'5432');assert.equal(production.POSTGRES_PORT,'5432');
   for(const values of [staging,production]){
-    for(const key of ['SMTP_PASS','SMTP_USER','SMTP_HOST','GOOGLE_CLIENT_ID','GOOGLE_SECRET','OPENAI_API_KEY'])assert.equal(values[key],'');
+    for(const key of ['SMTP_PASS','SMTP_USER','GOOGLE_CLIENT_ID','GOOGLE_SECRET','OPENAI_API_KEY'])assert.equal(values[key],'');
     assert.equal(values.ANON_KEY,values.NEXT_PUBLIC_SUPABASE_ANON_KEY);
     assert.equal(values.SERVICE_ROLE_KEY,values.SUPABASE_SERVICE_ROLE_KEY);
     assert.equal(values.EMAIL_CONFIRMATION_REQUIRED,'true');
     assert.equal(values.DEV_AUTO_JOIN_WORKSPACE_ID,'');
   }
   assert.deepEqual(deploymentProblems('staging',staging,false),[]);
+  assert.deepEqual(deploymentProblems('staging',staging,true),[]);
+  assert.equal(staging.SMTP_HOST,'mailpit');assert.equal(production.SMTP_HOST,'');
   assert.deepEqual(deploymentProblems('production',production,false),[]);
   const issues=deploymentProblems('production',production,true).join('\n');
   assert.match(issues,/SMTP_HOST/);assert.match(issues,/placeholder/);
   assert.ok(!issues.includes(production.JWT_SECRET));
+});
+test('existing staging can enable captured mail without rotating keys or changing confirmation',()=>{
+  const base=mkdtempSync(resolve(tmpdir(),'teamspace-mail-tests-'));
+  try {
+  const directory=deploymentPath('staging',base);
+  mkdirSync(directory,{recursive:true});
+  const source=deploymentEnvironment('staging').replace('SMTP_HOST=mailpit','SMTP_HOST=');
+  writeFileSync(resolve(directory,'.env'),source);writeFileSync(resolve(directory,'compose.yaml'),'services: {}');
+  enableLocalMail('staging',base);
+  const values=parseEnv(readFileSync(resolve(directory,'.env'),'utf8'));
+  const before=parseEnv(source);
+  for(const key of Object.keys(before).filter(key=>!key.startsWith('SMTP_')))assert.equal(values[key],before[key],key);
+  assert.deepEqual(deploymentProblems('staging',values,true),[]);
+  enableLocalMail('staging',base);
+  assert.equal(readFileSync(resolve(directory,'.env'),'utf8').split('SMTP_HOST=').length,2);
+  writeFileSync(resolve(directory,'.env'),source.replace('SMTP_HOST=','SMTP_HOST=smtp.provider.test'));
+  assert.throws(()=>enableLocalMail('staging',base),/external SMTP/);
+  assert.throws(()=>enableLocalMail('production',base),/staging only/);
+  assert.ok(deploymentProblems('production',{...values,DEPLOYMENT_ENVIRONMENT:'production'},false).some(value=>value.includes('staging only')));
+  assert.throws(()=>deploymentEnvironment('staging',{webPort:'8025'}),/reserved/);
+  } finally {
+    assert.ok(resolve(base).startsWith(resolve(tmpdir())+sep));
+    rmSync(base,{recursive:true,force:true});
+  }
 });
 test('deployment doctor rejects key mismatches, invalid URLs, unsafe flags and invalid ports',()=>{
   const values=parseEnv(deploymentEnvironment('production',{siteUrl:'https://notes.test',apiUrl:'https://api.notes.test'}));

@@ -20,6 +20,6 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))tr
   const directory=createDeployment(name,options);
   console.log(`Prepared ${name} at ${directory}.`);
   console.log('Generated private .env secrets, isolated compose.yaml and pinned Supabase configuration. No services started.');
-  console.log('External SMTP/OAuth/API credentials remain blank. Set public URLs and mail credentials in this .env.');
+  console.log(name==='staging'?'Staging captures mail at http://localhost:8025 when started. External OAuth/API credentials remain blank.':'External SMTP/OAuth/API credentials remain blank. Set public URLs and mail credentials in this .env.');
   console.log(`Next: npm run deploy -- ${name} doctor, then npm run deploy -- ${name} up`);
 }catch(error){console.error(`Setup failed: ${error.message} Existing keys/data were not overwritten. See deploy/README.md.`);process.exitCode=1;}

@@ -4,16 +4,17 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { readDeployment, deploymentProblems, deploymentName } from './deployment-config.mjs';
+import { readDeployment, deploymentProblems, deploymentName, enableLocalMail } from './deployment-config.mjs';
 import { migrationSQL } from './migrate-supabase.mjs';
 
 const backend=['db','auth','rest','realtime','storage','imgproxy','meta','studio','supavisor','api-gw','functions'];
 export function commandArguments(args) {
-  if(args.length!==2||!['doctor','build','up','status','stop','migrate','backup','prune'].includes(args[1]))throw new Error('Use staging|production doctor|build|up|status|stop|migrate|backup|prune.');
+  if(args.length!==2||!['doctor','build','up','status','stop','migrate','backup','prune','mail-local'].includes(args[1]))throw new Error('Use staging|production doctor|build|up|status|stop|migrate|backup|prune, or staging mail-local.');
   return {name:deploymentName(args[0]),action:args[1]};
 }
 export function composeCommand(deployment,args) {
-  return ['compose','--project-name',deployment.values.COMPOSE_PROJECT_NAME,'--project-directory',deployment.directory,'--env-file',resolve(deployment.directory,'.env'),'-f',resolve(deployment.directory,'compose.yaml'),...args];
+  const mail=deployment.values.SMTP_HOST==='mailpit'&&deployment.values.DEPLOYMENT_ENVIRONMENT==='staging'?['-f',resolve(deployment.directory,'mail-local.yaml')]:[];
+  return ['compose','--project-name',deployment.values.COMPOSE_PROJECT_NAME,'--project-directory',deployment.directory,'--env-file',resolve(deployment.directory,'.env'),'-f',resolve(deployment.directory,'compose.yaml'),...mail,...args];
 }
 function compose(deployment,args,input, capture=true) {
   const result=spawnSync('docker',composeCommand(deployment,args),{cwd:deployment.directory,env:deployment.environment,input,encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024});
@@ -41,10 +42,11 @@ export function validateCompose(model,deployment) {
   const project=deployment.values.COMPOSE_PROJECT_NAME,services=model.services;
   if(model.name!==project)throw new Error('Compose project identity does not match the deployment.');
   if(!services?.web||!services.db||!services.cleanup)throw new Error('Deployment services are incomplete.');
+  if(deployment.values.SMTP_HOST==='mailpit'&&(!services.mailpit||services.auth?.environment.GOTRUE_SMTP_HOST!=='mailpit'||services.auth?.depends_on?.mailpit?.condition!=='service_healthy'))throw new Error('Staging mail capture configuration is incomplete. Run staging mail-local to prepare it.');
   for(const [service,value]of Object.entries(services)){
     if(value.container_name&&!value.container_name.includes(project))throw new Error('Container names are not isolated.');
     for(const volume of value.volumes??[])if(volume.type==='bind'&&!resolve(volume.source).startsWith(resolve(deployment.directory)+ (process.platform==='win32'?'\\':'/')))throw new Error('A service bind mount escapes its deployment data directory.');
-    for(const port of value.ports??[])if(port.host_ip!=='127.0.0.1'||!['web','api-gw'].includes(service))throw new Error('Only website/API loopback ports may be published.');
+    for(const port of value.ports??[])if(port.host_ip!=='127.0.0.1'||!(['web','api-gw'].includes(service)||(service==='mailpit'&&project==='teamspace-staging'&&port.target===8025&&String(port.published)==='8025')))throw new Error('Only website/API and staging inbox loopback ports may be published.');
   }
   if(services.realtime.container_name!==`realtime-dev.${project}-realtime`)throw new Error('Realtime tenant hostname is invalid.');
   if(services.web.environment.SUPABASE_INTERNAL_URL!=='http://api-gw:8000'||services.web.environment.DEV_AUTO_JOIN_WORKSPACE_ID!=='')throw new Error('Private transport or production access settings are invalid.');
@@ -90,11 +92,17 @@ async function migrate(deployment,name) {
   console.log('Tracked migrations and matching authentication read policy applied.');
 }
 export async function runDeployment(name,action) {
+  if(action==='mail-local'){
+    enableLocalMail(name);
+    console.log('Staging mail capture configured. Internal keys and email confirmation policy retained. Run staging up; inbox: http://localhost:8025. Messages stay local and are discarded when its container is replaced.');
+    return;
+  }
   const deployment=readDeployment(name);
   if(action==='status'){compose(deployment,['ps'],undefined,false);return;}
   if(action==='stop'){compose(deployment,['stop']);console.log(`${name} stopped; data and keys retained.`);return;}
   if(action==='backup'){await backup(deployment,name);return;}
   doctor(deployment,name,!['build'].includes(action));
+  if(deployment.values.SMTP_HOST==='mailpit')console.log('Staging captures email locally: http://localhost:8025 (no delivery to real recipients).');
   if(action==='doctor')return;
   if(action==='prune'){compose(deployment,['run','--rm','--no-deps','cleanup','node','scripts/prune-supabase.mjs']);console.log('Expiry/staging cleanup completed.');return;}
   if(action==='build'||action==='up'){

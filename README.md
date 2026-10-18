@@ -13,8 +13,11 @@ npm run deploy:setup -- staging
 npm run deploy:setup -- production --site-url https://notes.your-domain.com --api-url https://api.your-domain.com
 ```
 
-Fill external mail/OAuth credentials in the selected `deployments/<environment>/.env`;
-those are deliberately blank. Staging defaults to localhost ports 3100/8100,
+Staging captures confirmation/reset email locally at `http://localhost:8025`,
+so no SMTP account is needed. For an older staging profile, run
+`npm run deploy -- staging mail-local` once before `up`.
+Production requires external mail credentials in `deployments/production/.env`;
+optional OAuth/API credentials stay blank. Staging defaults to localhost ports 3100/8100,
 production to 3000/8000 behind your HTTPS reverse proxy. Setup never overwrites
 existing keys or copies production data into staging.
 

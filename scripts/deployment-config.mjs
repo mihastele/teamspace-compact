@@ -13,6 +13,40 @@ export function deploymentName(value) {
   return value;
 }
 export function deploymentPath(name, base=root) { return resolve(base,'deployments',deploymentName(name)); }
+export const localMailSettings={SMTP_HOST:'mailpit',SMTP_PORT:'1025',SMTP_USER:'',SMTP_PASS:'',SMTP_ADMIN_EMAIL:'noreply@staging.test'};
+export function localMailCompose() {
+  return `services:
+  mailpit:
+    image: axllent/mailpit:v1.31.5@sha256:94f6b70c1436defae6799d9ac7ff0eeff9540465b842026d5cdb018f1c0234ea
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_DISABLE_VERSION_CHECK: "true"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  auth:
+    depends_on:
+      mailpit:
+        condition: service_healthy
+`;
+}
+export function enableLocalMail(name,base=root) {
+  if(deploymentName(name)!=='staging')throw new Error('Local mail capture is supported for staging only.');
+  const deployment=readDeployment(name,base);
+  if(deployment.values.SMTP_HOST&&deployment.values.SMTP_HOST!=='mailpit')throw new Error('Staging already has an external SMTP host. Clear SMTP_HOST explicitly before switching to captured mail.');
+  let source=readFileSync(resolve(deployment.directory,'.env'),'utf8');
+  for(const [key,value]of Object.entries(localMailSettings)){
+    const pattern=new RegExp(`^${key}=.*$`,'gm');
+    source=pattern.test(source)?source.replace(pattern,`${key}=${value}`):`${source}\n${key}=${value}\n`;
+  }
+  writeFileSync(resolve(deployment.directory,'mail-local.yaml'),localMailCompose(),{mode:0o600});
+  writeFileSync(resolve(deployment.directory,'.env'),source,{mode:0o600});
+}
 export function publicUrl(value, production=false) {
   let url;try{url=new URL(value);}catch{throw new Error('Use an absolute website/API URL.');}
   const local=['localhost','127.0.0.1','[::1]'].includes(url.hostname);
@@ -26,6 +60,7 @@ export function deploymentEnvironment(name, options={}, template=readFileSync(re
   const webPort=port(options.webPort??(production?3000:3100));
   const apiPort=port(options.apiPort??(production?8000:8100));
   if(webPort===apiPort)throw new Error('Website and API host ports must differ.');
+  if(!production&&[webPort,apiPort].includes('8025'))throw new Error('Port 8025 is reserved for the staging inbox.');
   const site=publicUrl(options.siteUrl??(production?'https://teamspace.example.com':`http://localhost:${webPort}`),production);
   const api=publicUrl(options.apiUrl??(production?'https://api.teamspace.example.com':`http://localhost:${apiPort}`),production);
   if(site===api)throw new Error('Website and Supabase API require separate origins.');
@@ -39,6 +74,7 @@ export function deploymentEnvironment(name, options={}, template=readFileSync(re
     STUDIO_DEFAULT_PROJECT:`Teamspace ${name}`,ROOT_ADMIN_UIDS:'',DEV_AUTO_JOIN_WORKSPACE_ID:'',
     EMAIL_CONFIRMATION_REQUIRED:'true',GOOGLE_AUTH_ENABLED:'false',
     SMTP_ADMIN_EMAIL:'',SMTP_HOST:'',SMTP_USER:'',SMTP_PASS:'',GOOGLE_CLIENT_ID:'',GOOGLE_SECRET:'',OPENAI_API_KEY:'',
+    ...(!production?localMailSettings:{}),
   };
   let source=createSupabaseEnvironment(template);
   source=source.replace(/^([A-Z_0-9]+)=.*$/gm,(line,key)=>Object.hasOwn(values,key)?`${key}=${values[key]}`:line);
@@ -85,7 +121,13 @@ export function deploymentProblems(name, values, launch=true) {
   if(values.APP_URL!==values.SITE_URL||values.SUPABASE_URL!==values.NEXT_PUBLIC_SUPABASE_URL||values.SUPABASE_PUBLIC_URL!==values.NEXT_PUBLIC_SUPABASE_URL||values.API_EXTERNAL_URL!==`${values.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`||values.ADDITIONAL_REDIRECT_URLS!==`${values.SITE_URL}/`)errors.push('Keep website/API/Auth URL settings aligned; see deployment README.');
   if(!['true','false'].includes(values.EMAIL_CONFIRMATION_REQUIRED))errors.push('EMAIL_CONFIRMATION_REQUIRED must be true or false.');
   if(values.DEV_AUTO_JOIN_WORKSPACE_ID)errors.push('Development auto-join must be empty.');
-  if(launch&&values.PASSWORD_AUTH_ENABLED==='true'&&values.EMAIL_CONFIRMATION_REQUIRED==='true')for(const key of ['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','SMTP_ADMIN_EMAIL'])requireValue(key);
+  if(values.SMTP_HOST==='mailpit'){
+    if(name!=='staging')errors.push('Local mail capture is supported for staging only.');
+    if(values.SMTP_PORT!=='1025'||values.SMTP_USER||values.SMTP_PASS)errors.push('Local captured mail requires port 1025 and empty SMTP_USER/SMTP_PASS.');
+    requireValue('SMTP_ADMIN_EMAIL');
+    if([values.PORT,values.API_GW_HTTP_PORT].includes('8025'))errors.push('Port 8025 is reserved for the staging inbox.');
+  }
+  if(launch&&values.PASSWORD_AUTH_ENABLED==='true'&&values.EMAIL_CONFIRMATION_REQUIRED==='true')for(const key of (values.SMTP_HOST==='mailpit'?['SMTP_HOST','SMTP_PORT','SMTP_ADMIN_EMAIL']:['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','SMTP_ADMIN_EMAIL']))requireValue(key);
   if(values.GOOGLE_AUTH_ENABLED==='true')for(const key of ['GOOGLE_CLIENT_ID','GOOGLE_SECRET'])requireValue(key);
   if(!['true','false'].includes(values.GOOGLE_AUTH_ENABLED)||!['true','false'].includes(values.PASSWORD_AUTH_ENABLED))errors.push('Authentication feature flags must be true or false.');
   if(values.GOOGLE_AUTH_ENABLED==='false'&&values.PASSWORD_AUTH_ENABLED==='false')errors.push('Enable at least one implemented authentication method.');
@@ -151,5 +193,6 @@ export function createDeployment(name, options={}, base=root, checkout=resolve(r
   writeFileSync(resolve(directory,'compose.yaml'),generatedCompose(root),{flag:'wx',mode:0o600});
   writeFileSync(resolve(directory,'deployment.json'),JSON.stringify({version:1,environment:name,upstreamCommit:SUPABASE_COMMIT},null,2)+'\n',{flag:'wx',mode:0o600});
   writeFileSync(resolve(directory,'.env'),environment,{flag:'wx',mode:0o600});
+  if(name==='staging')writeFileSync(resolve(directory,'mail-local.yaml'),localMailCompose(),{flag:'wx',mode:0o600});
   return directory;
 }

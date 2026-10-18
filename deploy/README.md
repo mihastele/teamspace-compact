@@ -37,7 +37,8 @@ External credentials intentionally stay blank. Edit only the selected
 environment's `.env`:
 
 - Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `SMTP_ADMIN_EMAIL`
-  for confirmation and password-reset mail. No mail service is provisioned.
+  for production confirmation and password-reset mail. Staging defaults to
+  the local captured-mail service described below.
 - Google OAuth is optional and disabled. To enable it, provide `GOOGLE_CLIENT_ID`
   and `GOOGLE_SECRET`, then set `GOOGLE_AUTH_ENABLED=true` and configure the exact
   callback `<API origin>/auth/v1/callback` in Google.
@@ -50,6 +51,35 @@ not silently relax authentication for staging. `doctor` lists missing email
 settings by name without printing values. External API credentials cannot be
 generated locally. Quote values containing `$`, `#`, spaces or quotes according
 to dotenv syntax; simple single-quoted passwords preserve literal dollar signs.
+
+## Staging email inbox
+
+New staging profiles include pinned Mailpit mail capture. Email confirmation
+remains required; open confirmation/reset messages at `http://localhost:8025`.
+Mail is captured locally and never delivered to real recipients. Only the inbox
+HTTP port is published, on loopback; SMTP port 1025 stays inside Docker. Do not
+publish the inbox through your public reverse proxy: it contains sign-in links.
+Messages are held in the container (up to 500) and disappear when it is replaced.
+The inbox is a staging aid, not a production mail provider.
+
+For a staging profile generated before local mail support, run once:
+
+```sh
+npm run deploy -- staging mail-local
+npm run deploy -- staging up
+```
+
+This updates only staging SMTP settings and adds `mail-local.yaml`; internal
+keys, database files and confirmation policy are retained. It refuses production
+and refuses to replace an existing external SMTP host unless you explicitly
+clear `SMTP_HOST` first. New profiles are already configured. The wrapper loads
+the extra Compose file whenever staging's `SMTP_HOST=mailpit`. To use real SMTP
+instead, replace all staging SMTP settings; the wrapper omits local capture.
+Port 8025 is reserved for the inbox and must be free on the host.
+
+Mailpit is MIT licensed and actively maintained; its version and image digest
+are pinned. See [official Docker documentation](https://mailpit.axllent.org/docs/install/docker/)
+and [license](https://mailpit.axllent.org/docs/development/).
 
 If editing URLs later, keep `SITE_URL` and `APP_URL` equal to the website origin;
 `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL` and `SUPABASE_PUBLIC_URL` equal to the
@@ -150,14 +180,17 @@ separate planned operations, never a setup rerun.
 
 For direct Compose operations, enter the chosen deployment directory and use
 `docker compose --env-file .env -f compose.yaml ...` in a clean shell. Prefer the
-wrapper because shell variables override dotenv values in plain Compose. Do not
+wrapper because shell variables override dotenv values in plain Compose. For
+staging with captured mail, direct Compose also requires `-f mail-local.yaml`
+after `-f compose.yaml`. Do not
 paste `docker compose config` output into logs: it resolves private credentials.
 The wrapper suppresses raw build/SQL/Compose failure output for the same reason.
 
 ### When `up` stops
 
 If the command lists missing `SMTP_*` settings, it stopped during preflight,
-before building or starting services. Edit `deployments/<environment>/.env`
+before building or starting services. For an older staging profile, use
+`npm run deploy -- staging mail-local` to enable the local inbox. Otherwise edit `deployments/<environment>/.env`
 with your mail provider's settings, run `doctor`, then retry `up`. Generated
 staging credentials do not include an external SMTP account. Email confirmation
 requires mail delivery; a successful image build alone does not make signup ready.
