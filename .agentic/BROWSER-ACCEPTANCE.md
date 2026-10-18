@@ -39,3 +39,89 @@ conversations, custom-field editing/export, mobile task dialogs and live
 Auth/Storage acceptance. This manual session does not add a persisted automated
 browser suite or close R1/R2 as a whole. Prior browser-policy failures remain
 historical evidence, but no longer establish that all local UI checks are blocked.
+
+
+## 2026-10-18 — Save-based task pages and templates
+
+Tested the Next development build in browser-local preview on 127.0.0.1:3010,
+with the existing IAB browser automation. No configured backend/account was used.
+
+- Created a task with a slash-inserted H2 and a second paragraph, saved/reopened it,
+  and verified actual heading/body persistence. A task created from a saved shared
+  template retained its own copied body/title when the template was later edited.
+- Created and edited a named task template, applied it to a new draft with explicit
+  replacement review, and archived/restored it through the task-page controls.
+- Created a multi-select field with Bug/UI options from inside a task page; checked
+  both, saved, reloaded and verified both selections and block formatting remained.
+- Changed task status in a second tab while the first held an unsaved body edit.
+  Save rejected the stale revision and retained the draft. The latest-version review
+  displayed the other tab's In progress state and saved body. Explicit rebase plus
+  Save preserved that status and the user's body; reopening confirmed both.
+- Opened the same task in two tabs: the second Save was disabled while the first
+  owned its draft. Closing the first transferred ownership and refreshed the second
+  editor's saved content/status. Task-name focus followed ownership acquisition.
+- Recovered an unsaved task draft after a development runtime-error reload. The
+  original body text survived and completed the conflict-review/save flow afterward.
+- Verified the 390x844 viewport: document scroll/client widths matched at 375px and
+  dialog scroll/client widths matched (341px after the fixed-action-bar change).
+  Task controls fit without horizontal overflow. Desktop visual review confirmed
+  the rich body and persistent Save/Cancel actions. Viewport override was reset.
+- Screenshot: `.agentic/verification/task-pages-desktop.jpg` (gitignored). Test-only
+  local fixtures remain: Task blocks acceptance, Task created from template
+  acceptance, Bug report acceptance template and Acceptance labels field. Existing
+  preview tasks were not edited/deleted. Development server was stopped afterward.
+
+Verification caught/fixed empty optional-template values, draft-lock initialization
+and handover around Strict Mode/remounts, and passing a Markdown export object to a
+string renderer during conflict review. Final browser checks used the corrected
+code. Early refused navigation/compilation timeout and stale selectors were resolved
+using normal documented browser actions; no browser security bypass occurred.
+
+Open: authenticated two-user/template Realtime acceptance on Firebase/Supabase,
+provider outage/response-loss/storage-quota/IME UI scenarios and a persisted automated
+React/browser suite. Actual database revision/replay/access/migration behavior has
+separate integration tests; local UI checks are not deployed acceptance.
+
+## 2026-10-18 — Task duplication and repeatable preview
+
+- Started using `npm run dev:preview` on http://127.0.0.1:3107. The config API
+  returned provider=firebase, configured=false. No Docker/backend was started or
+  configured data modified. The script never edits environment files.
+- Opened seeded Shape the project brief, chose Task actions / Duplicate task,
+  and verified the copy title, body, assignee and Design review custom value.
+  Closing offered to retain the draft; after accepting and reloading, Add task
+  recovered the copy before its first Save.
+- Before finishing that draft, attempting a second duplicate preserved the source
+  and displayed the existing-new-draft message. The retained copy was unchanged.
+- Saved the recovered copy as Duplicate acceptance copy with Independent copied
+  body. Board showed four tasks, independent copied text and the original source
+  title/body unchanged. This synthetic local task remains for review.
+- Unsaved source-title edits disabled Duplicate task; restored the original title
+  without saving. Escape dismissed the actions menu and restored its trigger focus.
+- At 390x844, dialog clientWidth=scrollWidth=341px; actions menu and fixed Save/Cancel
+  footer fit the viewport. Screenshots: `.agentic/verification/task-copy-desktop.png`
+  and `task-copy-mobile.png` (gitignored). Reset the viewport afterward.
+- Stopped the owned npm/Next preview with Ctrl+C; no listening socket remained on
+  3107. The unrelated port-3000 application was untouched.
+
+Open: persisted React/browser automation, authenticated Firebase/Supabase duplicate
+creation with unavailable/archived scoped references and two-user acceptance.
+Automated tests cover independent field/block copying, metadata exclusion, limits,
+legacy literal text and preview argument/environment isolation. Existing trusted
+create validation/retry tests remain separate from browser-local evidence.
+
+# Independent databases — 2026-10-18 acceptance scope
+
+Migration 016 implements PostgreSQL-only collections alongside Tasks/Projects.
+No authenticated browser fixture/live stack was exercised for this increment;
+unit/real PostgreSQL/API/build evidence does not establish DOM acceptance.
+
+Pending browser checks: create Clients/Documents databases; add scalar/select
+and cross-database relation fields; rich entry Save/reopen; select two related
+entries and follow outgoing/incoming links; rename a target/property; archive,
+retain/clear links, reject new archived links and restore; recover a new-record
+draft after reload; competing-tab Web Lock handover; stale schema/body saves,
+outage/response-loss retry, quota/read failure and IME recovery. Verify Load more,
+loaded-title search, the export truncation flag, 30-second refresh versus expanded
+pages, downloads, Escape/focus restoration, 390px overflow and authenticated
+two-user propagation/revocation. No screenshot or manual-acceptance claim.

@@ -65,6 +65,7 @@ const documents = [
   `${workspace}/members/member`,
   `${workspace}/tasks/task`,
   `${workspace}/boardProperties/field`,
+  `${workspace}/taskTemplates/template`,
   `${workspace}/notes/note`,
   `${workspace}/attachments/file`,
 ];

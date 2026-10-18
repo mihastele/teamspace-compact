@@ -22,6 +22,7 @@ import {
   type AuthConfiguration,
 } from "./browser-backend";
 export { browserConfigurationStatus } from "./browser-backend";
+import type { SavedView, TicketQuery, ViewConfig } from "./ticket-query";
 import { buildInviteUrl, resolveAppBaseUrl } from "./app-url";
 import type {
   Attachment,
@@ -33,8 +34,8 @@ import type {
   PageVersionSummary,
   ConversationComment,
   BoardProperty,
-  PropertyValue,
   Project,
+  TaskTemplate,
 } from "./model";
 import {
   commentWindow,
@@ -54,6 +55,7 @@ import {
 } from "./page-history";
 import { prepareImage } from "./images";
 import { assertNoteParent } from "./note-tree";
+import { ApiError, taskInput } from "./server/validation";
 import { updateTaskStatus } from "./task-status";
 import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "./board-properties";
 import { terminalSnapshotReadFailure } from "./browser-sync";
@@ -95,6 +97,8 @@ const demoTasks: Task[] = [
 type Preview = {
   tasks: Task[];
   boardProperties?: BoardProperty[];
+  taskTemplates?: TaskTemplate[];
+  taskOperations?: Record<string, { digest: string; taskId: string }>;
   notes: Note[];
   histories?: Record<string, LocalPageHistory>;
   conversations?: Record<string, PreviewComment[]>;
@@ -136,7 +140,9 @@ export function useTeamspace() {
   );
   const [tasks, setTasks] = useState<Task[]>(configured ? [] : demoTasks);
   const [boardProperties, setBoardProperties] = useState<BoardProperty[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [savedViews,setSavedViews] = useState<SavedView[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [members, setMembers] = useState<Member[]>(
     configured
@@ -270,6 +276,7 @@ export function useTeamspace() {
               preview.current = data;
               setTasks(data.tasks);
               setBoardProperties(data.boardProperties ?? []);
+              setTaskTemplates(data.taskTemplates ?? []);
               setNotes(data.notes);
             }
           }
@@ -291,7 +298,9 @@ export function useTeamspace() {
       setPasswordRecovery(recovering);
       setTasks([]);
       setBoardProperties([]);
+      setTaskTemplates([]);
       setProjects([]);
+      setSavedViews([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -379,7 +388,7 @@ export function useTeamspace() {
             .map(
               (doc) =>
                 ({
-                  ...doc,
+                  ...(name === "taskTemplates" ? { name: doc.name, defaults: doc.defaults, revision: doc.revision, archived: doc.archived === true } : doc),
                   ...(name === "notes"
                     ? { parentId: doc.parentId ?? null }
                     : {}),
@@ -420,7 +429,7 @@ export function useTeamspace() {
                 );
             }
           loaded.add(name);
-          if (loaded.size >= (browserProvider === "supabase" ? 6 : 5)) setLoading(false);
+          if (loaded.size >= (browserProvider === "supabase" ? 8 : 6)) setLoading(false);
         },
         (e) => {
           if (!active) return;
@@ -436,10 +445,11 @@ export function useTeamspace() {
     const unsubs = [
       watch<Task>("tasks", setTasks),
       watch<BoardProperty>("boardProperties", setBoardProperties),
+      watch<TaskTemplate>("taskTemplates", setTaskTemplates),
       watch<Note>("notes", setNotes),
       watch<Member>("members", setMembers),
       watch<Attachment>("attachments", setAttachments),
-      ...(browserProvider === "supabase" ? [watch<Project>("projects", setProjects)] : []),
+      ...(browserProvider === "supabase" ? [watch<Project>("projects", setProjects), watch<SavedView>("savedViews",setSavedViews)] : []),
     ];
     return () => {
       active = false;
@@ -456,8 +466,16 @@ export function useTeamspace() {
     preview.current = next;
     setTasks(next.tasks);
     setBoardProperties(next.boardProperties ?? []);
+    setTaskTemplates(next.taskTemplates ?? []);
     setNotes(next.notes);
     notifyPreviewComments();
+  }
+  function refreshPreviewTasks() {
+    const raw = localStorage.getItem("teamspace-preview-v1");
+    if (!raw) return;
+    const latest = JSON.parse(raw) as Preview;
+    if (!Array.isArray(latest.tasks) || !Array.isArray(latest.notes)) throw new Error("Local preview data could not be read. Download your draft before leaving.");
+    preview.current = latest;
   }
   function hasPreviewParent(type: ConversationParent, id: string) {
     return (
@@ -468,7 +486,9 @@ export function useTeamspace() {
     try {
       return await fn();
     } catch (e) {
-      throw report(e);
+      report(e);
+      if (e instanceof ApiError) throw new RequestError(e.message, e.status, e.code);
+      throw e instanceof Error ? e : new Error("The operation failed.");
     }
   }
   function path() {
@@ -480,7 +500,20 @@ export function useTeamspace() {
       "This needs a configured shared backend. Local preview has no shared access or file storage.",
     );
   }
+  const ticketRequest = useCallback(async (suffix: string, method: string, body?: unknown) => {
+    if (!configured || browserProvider !== "supabase" || !workspace?.id || !user?.uid) throw new Error("Saved views need a PostgreSQL workspace.");
+    return api(`workspaces/${workspace.id}/${suffix}`,method,body,user.uid);
+  },[workspace?.id,user?.uid,api]);
+  const queryTickets = useCallback(async (query: TicketQuery, cursor?: string, projectId?: string) => await ticketRequest("tasks/query","POST",{query,limit:50,...(cursor?{cursor}:{}),...(projectId?{projectId}:{})}) as {tasks:Task[];nextCursor:string|null},[ticketRequest]);
+  const listViews = useCallback(async ()=>(await ticketRequest("views","GET")).views as SavedView[],[ticketRequest]);
+  const saveView = useCallback(async (config: ViewConfig, controls: {id:string;expectedRevision:number;archived?:boolean}|{operationId:string}) => {
+    const {id,...body}="id" in controls?controls:{...controls,id:undefined};
+    return (await ticketRequest(`views${id?`/${id}`:""}`,id?"PATCH":"POST",{config,...body})).view as SavedView;
+  },[ticketRequest]);
+  const seedViews = useCallback(async()=>{await ticketRequest("views/seed","POST",{});},[ticketRequest]);
   return {
+    databaseRequest: ticketRequest,
+    queryTickets, listViews, saveView, seedViews, savedViews,
     configured,
     provider: browserProvider,
     authConfiguration,
@@ -508,6 +541,22 @@ export function useTeamspace() {
     error,
     workspace,
     workspaces,
+    taskTemplates,
+    saveTaskTemplate: (template: Omit<TaskTemplate, "revision"> & { expectedRevision: number }) => action(async () => {
+      const { id, ...body } = template;
+      if (configured) return (await api(`${path()}/taskTemplates/${id}`, "PUT", body, user?.uid)).template as TaskTemplate;
+      refreshPreviewTasks();
+      const prior = preview.current.taskTemplates?.find(item => item.id === id);
+      if ((prior?.revision ?? 0) !== template.expectedRevision) throw new Error("This template changed. Reopen it before saving.");
+      if (!prior && (preview.current.taskTemplates?.length ?? 0) >= 64) throw new Error("This workspace supports 64 templates, including archived templates.");
+      const { position: ignoredPosition, ...validatedDefaults } = taskInput(template.defaults, false);
+      void ignoredPosition;
+      const defaults = validatedDefaults as TaskTemplate["defaults"];
+      const saved: TaskTemplate = { id, name: template.name.trim(), defaults, archived: template.archived === true, revision: template.expectedRevision + 1 };
+      if (!saved.name || saved.name.length > 80) throw new Error("Template name must be 1–80 characters.");
+      persist({ ...preview.current, taskTemplates: [...(preview.current.taskTemplates ?? []).filter(item => item.id !== id), saved] });
+      return saved;
+    }),
     tasks: tasks.toSorted((a, b) => a.position - b.position),
     boardProperties: boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
     projectsEnabled: configured && browserProvider === "supabase",
@@ -952,7 +1001,9 @@ export function useTeamspace() {
     selectWorkspace: (id: string) => {
       setTasks([]);
       setBoardProperties([]);
+      setTaskTemplates([]);
       setProjects([]);
+      setSavedViews([]);
       setNotes([]);
       setMembers([]);
       setAttachments([]);
@@ -973,69 +1024,56 @@ export function useTeamspace() {
         await loadWorkspaces();
         setTasks([]);
         setBoardProperties([]);
+      setTaskTemplates([]);
       setProjects([]);
+      setSavedViews([]);
         setNotes([]);
         setMembers([]);
         setAttachments([]);
         setLoading(true);
         setWorkspace(data.workspace);
       }),
-    saveTask: (task: Partial<Task> & ({ id: string } | { title: string })) =>
+    readTask: (id: string) => action(async () => {
+      if (configured) return (await api(`${path()}/tasks/${id}`, "GET", undefined, user?.uid)).task as Task;
+      refreshPreviewTasks();
+      const task = preview.current.tasks.find(item => item.id === id);
+      if (!task) throw new RequestError("This task no longer exists.", 404, "not_found");
+      return structuredClone(task);
+    }),
+    saveTask: (task: Partial<Task> & ({ id: string } | { title: string }) & { operationId?: string; expectedRevision?: number }) =>
       action(async () => {
-        if (!configured) {
-          const current = task.id
-            ? preview.current.tasks.find((item) => item.id === task.id)
-            : undefined;
-          if (task.id && !current)
-            throw new Error(
-              "This task no longer exists. Your changes have not been saved.",
-            );
-          const item = {
-            description: "",
-            status: "todo" as const,
-            assigneeId: null,
-            dueDate: null,
-            position: preview.current.tasks.length,
-            ...current,
-            ...task,
-            title: task.title ?? current?.title ?? "",
-            id: task.id ?? crypto.randomUUID(),
-            propertyValues: {
-              ...(current?.propertyValues ?? {}),
-              ...validatePropertyValues(task.propertyValues ?? {}, preview.current.boardProperties ?? []),
-            } as Record<string, PropertyValue>,
-          };
-          persist({
-            ...preview.current,
-            tasks: [
-              ...preview.current.tasks.filter((t) => t.id !== item.id),
-              item,
-            ],
-          });
-          return;
+        const { id, operationId, expectedRevision, ...fields } = task;
+        const body = { ...fields, ...(operationId ? { operationId } : {}), ...(expectedRevision !== undefined ? { expectedRevision } : {}) };
+        if (configured) return (await api(`${path()}/tasks${id ? `/${id}` : ""}`, id ? "PATCH" : "POST", body, user?.uid)).task as Task;
+        const packet = JSON.stringify({ id, body });
+        const digest = operationId ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(packet)))).map(byte => byte.toString(16).padStart(2, "0")).join("") : "";
+        refreshPreviewTasks();
+        const current = id ? preview.current.tasks.find(item => item.id === id) : undefined;
+        const receipt = operationId ? preview.current.taskOperations?.[operationId] : undefined;
+        if (receipt) {
+          if (receipt.digest !== digest) throw new Error("An operation ID cannot be reused with different task changes.");
+          const saved = preview.current.tasks.find(item => item.id === receipt.taskId);
+          if (!saved) throw new Error("That task was saved and has since been removed.");
+          return saved;
         }
-        const body = Object.fromEntries(
-          [
-            "title",
-            "description",
-            "status",
-            "assigneeId",
-            "dueDate",
-            "position",
-            "propertyValues", "projectId", "priority", "estimate",
-          ]
-            .filter((key) => key in task)
-            .map((key) => [key, task[key as keyof Task]]),
-        );
-        await api(
-          `${path()}/tasks${task.id ? `/${task.id}` : ""}`,
-          task.id ? "PATCH" : "POST",
-          body,
-        );
+        if (id && !current) throw new Error("This task no longer exists. Your changes have not been saved.");
+        if (expectedRevision !== undefined && (current?.revision ?? 0) !== expectedRevision) throw new RequestError("This task changed. Review the latest version before saving. Your draft is still here.", 409, "revision_conflict");
+        const validated = taskInput(fields, Boolean(id)) as Partial<Task>;
+        const item: Task = {
+          description: "", status: "todo", assigneeId: null, dueDate: null,
+          position: preview.current.tasks.length, ...current, ...validated,
+          title: validated.title ?? current?.title ?? "", id: id ?? crypto.randomUUID(),
+          revision: (current?.revision ?? 0) + 1,
+          propertyValues: { ...(current?.propertyValues ?? {}), ...validatePropertyValues(validated.propertyValues ?? {}, preview.current.boardProperties ?? []) },
+        };
+        persist({ ...preview.current, tasks: [...preview.current.tasks.filter(row => row.id !== item.id), item],
+          ...(operationId ? { taskOperations: { ...preview.current.taskOperations, [operationId]: { digest, taskId: item.id } } } : {}) });
+        return item;
       }),
     setTaskStatus: (id: string, status: Task["status"]) =>
       action(async () => {
         if (!configured) {
+          refreshPreviewTasks();
           persist({
             ...preview.current,
             tasks: updateTaskStatus(preview.current.tasks, id, status),

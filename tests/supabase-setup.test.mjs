@@ -35,4 +35,5 @@ test('self-hosted keys are fresh, aligned and correctly signed; example has no c
   }
   assert.equal(first.EMAIL_CONFIRMATION_REQUIRED, 'true');
   assert.equal(first.GOOGLE_AUTH_ENABLED, 'false');
+  assert.equal(first.AGENT_AUDIT_RETENTION_DAYS, '30');
 });

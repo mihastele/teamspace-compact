@@ -56,6 +56,8 @@ export interface Transaction {
     delete(ref: DocumentReference): void;
 }
 export interface DocumentStore {
+    databaseEntryRead?: (input: Record<string, unknown>, policy?: { required: boolean; verified: boolean }) => Promise<StoreData>;
+    ticketRead?: (kind: "context" | "query", input: Record<string, unknown>, policy?: { required: boolean; verified: boolean }) => Promise<StoreData>;
     capabilities?: { projects: boolean; normalizedFields: boolean };
     doc(path: string): DocumentReference;
     collection(path: string): CollectionReference;
@@ -172,7 +174,9 @@ export function supabaseDocumentStore(rpc: RpcCall): DocumentStore {
         get() { return read(this, null) as Promise<QuerySnapshot>; }
     }
     const store: DocumentStore = {
+        databaseEntryRead: (input, policy = {required:true, verified:true}) => rpc("teamspace_database_entry", {...input,p_required:policy.required,p_verified:policy.verified}),
         capabilities: { projects: true, normalizedFields: true },
+        ticketRead: (kind, input, policy = {required:true, verified:true}) => rpc(`teamspace_ticket_${kind}`, {...input,p_required:policy.required,p_verified:policy.verified}),
         doc: path => new Ref(path), collection: path => new Collection(path),
         async runTransaction(action) {
             for (let attempt = 0; attempt < 12; attempt++) {

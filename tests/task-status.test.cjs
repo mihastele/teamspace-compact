@@ -18,10 +18,10 @@ test("quick status updates preserve latest task details and other tasks", () => 
   const other = Object.freeze({ ...latest, id: "b" });
   const tasks = Object.freeze([latest, other]);
   const next = updateTaskStatus(tasks, "a", "done");
-  assert.deepEqual(next[0], { ...latest, status: "done" });
+  assert.deepEqual(next[0], { ...latest, status: "done", revision: 1 });
   assert.equal(next[1], other);
   assert.equal(latest.status, "todo");
-  assert.deepEqual(updateTaskStatus(next, "a", "done"), next);
+  assert.deepEqual(updateTaskStatus(next, "a", "done"), [{ ...next[0], revision: 2 }, other]);
 });
 
 test("a stale quick move cannot resurrect a deleted preview task", () => {

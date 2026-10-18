@@ -81,6 +81,7 @@ async function api(uid, method, path, input, storageOverride = storage) {
 }
 const prefix = "workspaces/alpha";
 require('./task-service-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', owner: 'owner', prefix, read: async path => (await db.doc(path).get()).data() });
+require('./task-page-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./board-property-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 require('./linked-content-api-cases.cjs')(test, { api, member: 'member', outsider: 'outsider', prefix, read: async path => (await db.doc(path).get()).data() });
 
@@ -1975,6 +1976,12 @@ test("failed collaboration cleanup leaves a fenced parent and deletion is retrya
 
 
 test('Firebase preserves its baseline and rejects PostgreSQL Project and extended-field mutations',async()=>{
+  for(const resource of ['databases','databaseEntries']) {
+    assert.equal((await api('member','GET',`workspaces/alpha/${resource}/${require('node:crypto').randomUUID()}`)).status,400);
+    assert.equal((await api('member','PUT',`workspaces/alpha/${resource}/${require('node:crypto').randomUUID()}`,{})).status,400);
+  }
+  assert.equal((await api('member','POST','workspaces/alpha/views/seed',{})).status,400);
+  assert.equal((await api('member','POST','workspaces/alpha/tasks/query',{query:{version:1,filter:{and:[]},sort:[],timeZone:'UTC'}})).status,400);
   assert.equal((await api('member','POST','workspaces/alpha/projects',{name:'Unsupported'})).status,400);
   assert.equal((await api('member','PATCH','workspaces/alpha/tasks/task',{projectId:'p'})).status,400);
   assert.equal((await api('member','PUT',`workspaces/alpha/boardProperties/${require('node:crypto').randomUUID()}`,{name:'Number',type:'number',options:[],expectedRevision:0})).status,400);

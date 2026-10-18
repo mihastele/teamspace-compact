@@ -14,13 +14,14 @@ function boundedText(value: unknown, max: number): value is string {
 }
 export function validateBoardView(value: unknown): BoardView {
   const data = record(value);
-  if (Object.keys(data).some(key => !Object.keys(defaultBoardView).includes(key)) ||
+  if (Object.keys(data).some(key => ![...Object.keys(defaultBoardView),"savedViewId"].includes(key)) ||
       !boundedText(data.name, 80) || !data.name.trim() || !boundedText(data.query, 200) ||
       typeof data.status !== "string" || !["all", "todo", "doing", "done"].includes(data.status) ||
       !boundedText(data.assignee, 128) || !/^[a-zA-Z0-9_-]+$/.test(data.assignee) ||
       typeof data.deadline !== "string" || !["all", "overdue", "today", "week", "undated"].includes(data.deadline) ||
       typeof data.sort !== "string" || !["position", "title", "dueDate"].includes(data.sort)) throw new Error("Invalid linked board view.");
-  return { name: data.name, query: data.query, status: data.status as BoardView["status"], assignee: data.assignee, deadline: data.deadline as BoardView["deadline"], sort: data.sort as BoardView["sort"] };
+  if (data.savedViewId !== undefined && (typeof data.savedViewId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(data.savedViewId))) throw new Error("Invalid saved view reference.");
+  return { ...(data.savedViewId !== undefined ? {savedViewId:data.savedViewId as string} : {}), name: data.name, query: data.query, status: data.status as BoardView["status"], assignee: data.assignee, deadline: data.deadline as BoardView["deadline"], sort: data.sort as BoardView["sort"] };
 }
 export function validateBlockSource(value: unknown): BlockSource {
   const data = record(value);

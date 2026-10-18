@@ -1,4 +1,6 @@
 import "server-only";
+import { readDatabases, readDatabase, readDatabaseEntry, saveDatabaseRecord } from "./database-service";
+import { saveTaskTemplate, templateView } from "./task-template-service";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import {
@@ -31,6 +33,7 @@ import { buildInviteUrl, resolveAppBaseUrl } from "../app-url";
 import { member, rateLimit, type ServiceActor as DecodedIdToken } from "./service-context";
 import { getTask, saveTask, saveBoardProperty, nextTaskRevision } from "./task-service";
 import { getConversation, changeConversation } from "./conversation-service";
+import { queryTickets, readViews, saveView, seedViews } from "./ticket-view-service";
 import { getProject, saveProject, requireProjects } from "./project-service";
 import sharp from "sharp";
 import { firebaseAdmin } from "./firebase";
@@ -1641,11 +1644,31 @@ export async function handleTrustedApi(
     const [, , resource, itemId, action, commentId] = path;
     if (path.length > 6 || (path.length === 6 && action !== "comments"))
       throw new ApiError(404, "not_found", "Endpoint not found.");
+    if ((resource === "databases" || resource === "databaseEntries") && !action) {
+      if (method === "GET") {
+        if(resource==="databases"){
+          const params=new URL(request.url).searchParams;
+          if([...params.keys()].some(key=>!["cursor","summary"].includes(key))||(params.has("summary")&&params.get("summary")!=="1"))throw new ApiError(400,"invalid_input","Invalid database read options.");
+          return json(itemId?await readDatabase(db,workspace,user,itemId,params.get("cursor")??undefined,params.get("summary")==="1"):await readDatabases(db,workspace,user));
+        }
+        if(itemId)return json(await readDatabaseEntry(db,workspace,user,itemId));
+        throw new ApiError(404,"not_found","Choose an entry.");
+      }
+      if (method === "PUT" && itemId) return json({ record: await saveDatabaseRecord(db, workspace, user, resource, itemId, await body(request)) });
+      throw new ApiError(405, "method_not_allowed", "Databases and entries support read, save and reversible archive.");
+    }
+    if (resource === "tasks" && itemId === "query" && !action && method === "POST") return json(await queryTickets(db,workspace,user,await body(request)));
+    if (resource === "views" && !action) {
+      if (itemId === "seed" && method === "POST") { object(await body(request),[]); return json(await seedViews(db,workspace,user)); }
+      if (method === "GET") return json(await readViews(db,workspace,user,itemId));
+      if ((!itemId && method === "POST") || (itemId && method === "PATCH")) return json({view:await saveView(db,workspace,user,itemId,await body(request))},itemId?200:201);
+      throw new ApiError(405,"method_not_allowed","Views support create, read, edit and reversible archive.");
+    }
     if (resource === "snapshot" && !itemId && method === "GET") {
       const result = await db.runTransaction(async tx => {
         await member(tx,workspace,user.uid);
-        const names = ["tasks","notes","members","attachments","boardProperties"];
-        if (db.capabilities?.projects) names.push("projects");
+        const names = ["tasks","notes","members","attachments","boardProperties","taskTemplates"];
+        if (db.capabilities?.projects) names.push("projects","savedViews");
         const collections = await Promise.all(names.map(name => tx.get(workspace.collection(name))));
         return Object.fromEntries(names.map((name,index) => [name, collections[index].docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))]));
       });
@@ -1654,6 +1677,15 @@ export async function handleTrustedApi(
     if (resource === "boardProperties" && itemId && !action && method === "PUT") {
       const property = await saveBoardProperty(db, workspace, user, itemId, await body(request));
       return json({ property }, property.revision === 1 ? 201 : 200);
+    }
+    if (resource === "taskTemplates" && !action) {
+      if (itemId && method === "PUT") return json({ template: await saveTaskTemplate(db, workspace, user, itemId, await body(request)) });
+      if (!itemId && method === "GET") return json({ templates: await db.runTransaction(async tx => {
+        await member(tx, workspace, user.uid);
+        const rows = await tx.get(workspace.collection("taskTemplates"));
+        return rows.docs.map(row => templateView(row.id, row.data()));
+      }) });
+      throw new ApiError(405, "method_not_allowed", "Templates support read, save and reversible archive.");
     }
     if (resource === "projects" && !action) {
       requireProjects(db);

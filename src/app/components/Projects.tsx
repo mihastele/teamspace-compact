@@ -39,8 +39,9 @@ function ProjectEditor({ api, project, close }: { api: Api; project?: Project; c
   </form></dialog>;
 }
 
-export default function Projects({ api, onTask, search, initialSelection }: { api: Api; onTask: (task: Partial<Task>) => void; search: string; initialSelection: string | null }) {
+export default function Projects({ api, onTask, search, initialSelection, onSelect }: { api: Api; onTask: (task: Partial<Task>) => void; search: string; initialSelection: string | null; onSelect: (id:string)=>void }) {
   const [selected, setSelected] = useState<string | null>(initialSelection);
+  useEffect(()=>{queueMicrotask(()=>setSelected(initialSelection));},[initialSelection]);
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [archived, setArchived] = useState(false);
@@ -55,7 +56,7 @@ export default function Projects({ api, onTask, search, initialSelection }: { ap
     <button onClick={()=>setCreating(true)}>+ Create project</button>{" "}
     <label><input type="checkbox" checked={archived} onChange={event=>setArchived(event.target.checked)}/> Show archived projects</label>
     <ul>{api.projects.filter(project=>(archived||!project.archived)&&`${project.name} ${project.description}`.toLowerCase().includes(search.toLowerCase())).map(project=><li key={project.id}>
-      <button aria-pressed={selected===project.id} onClick={()=>{setSelected(project.id);setError("");}}>{project.name}{project.archived?" (archived)":""}</button>{" · "}{api.tasks.filter(task=>task.projectId===project.id).length} tasks
+      <button aria-pressed={selected===project.id} onClick={()=>{setSelected(project.id);onSelect(project.id);setError("");}}>{project.name}{project.archived?" (archived)":""}</button>{" · "}{api.tasks.filter(task=>task.projectId===project.id).length} tasks
     </li>)}</ul>
     {project && <article>
       <h2>{project.name}{project.archived?" (archived)":""}</h2>

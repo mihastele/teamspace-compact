@@ -23,7 +23,7 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-Multiple independent custom databases, notifications and public publishing remain outside scope. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+Notifications and public publishing remain outside scope. On October 18 the user approved independent databases alongside Tasks/Projects; the first PostgreSQL increment adds named collections, rich entry bodies, typed properties and multi-entry relations with incoming links. Migration 016 and matching deployment/authenticated acceptance remain required. Formulas/rollups and generic entry comments/attachments/saved layouts are future increments. See `.agentic/DATABASES-PLAN.md`. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
 
 ### Custom board fields
 
@@ -124,6 +124,13 @@ If time runs short, defer attachments first; label incomplete work explicitly. N
 - Production build passes; authentication works on the deployed authorized domain.
 
 ## Current implementation milestone
+
+- Staging/production setup: `deploy:setup` generates isolated Compose/config/data
+  roots and fresh internal keys, leaving external credentials blank. `deploy`
+  checks configuration, builds optimized images and coordinates startup,
+  database backups, tracked migrations/auth policy and hourly existing cleanup.
+  Existing legacy environments remain untouched. HTTPS/DNS, real mail delivery,
+  restore and authenticated live acceptance remain operator release checks.
 
 The application UI, Firebase client integration, trusted API handlers, default-deny rules, indexes and baseline schema are implemented. Automated validation/rules/API checks pass. Earlier local browser checks covered the previous interface; collaboration browser acceptance remains open. Without Firebase configuration the app remains a clearly labeled device-local preview. Production release still requires project provisioning, deployed Google sign-in, real two-user acceptance, Storage CORS/lifecycle setup and dependency-audit review. See README.md and .agentic/PROJECT-STATE.md.
 
@@ -272,5 +279,64 @@ The application UI, Firebase client integration, trusted API handlers, default-d
   Task IDs/option IDs, comments, attachments and private receipts are preserved.
   Board JSON includes Projects and hydrated definitions/values. Full workspace
   export/deletion and authenticated browser/deployment acceptance remain open.
-- Firebase/local preview retain their existing four field types. Nested composable
-  filters, reusable saved views and agent worker/approval/audits are separate stages.
+- Firebase/local preview retain their existing four field types. Composable filters and shared saved views are implemented in M3 below; agent
+  worker/approval/audits remain separate stages.
+
+
+### Composable ticket queries and shared views (M3)
+
+- PostgreSQL has one validated version-1 query AST for UI and future agent searches:
+  AND/OR groups, typed built-in/custom predicates, explicit IANA timezone, viewer
+  tokens, three sorts and bounded keyset pages. The trusted compiler binds every
+  user value. Context/execute reauthorize membership, confirmation and schema epoch.
+- Saved workspace views persist layout (board/table/list), status/priority grouping,
+  columns and query, with revision checks, optional create operation UUID, reversible
+  archive and idempotent default seeding. No duplicate task data. Default This week
+  includes today through today + 7 (inclusive), independent of the older deadline filter.
+- Existing note board blocks optionally store savedViewId; shared settings stay
+  authoritative while independent legacy settings remain intact. History/downloads
+  preserve reference IDs. Changing/removing a reference never deletes tasks/views.
+- Views uses typed filters and canonical indexed queries; board moves persist only
+  intended status/priority fields. Counts and exports describe loaded rows. URLs
+  retain authorized workspace/view/Project/task context and validated overrides.
+  Pages follow current data; refresh after concurrent sorting/filter-value changes.
+- Migration 013 protects the new canonical view table with RLS, SDK write denial
+  and workspace deletion cascade. Board export includes saved definitions; loaded
+  query export includes applied settings/rows/completeness. Full account/workspace
+  export/deletion and real browser/two-user acceptance remain open.
+
+
+## Save-based task pages and workspace templates (2026-10-18)
+
+- User selected explicit Save with reviewed revision conflicts, ahead of live
+  simultaneous task-body editing. Tasks retain their own IDs, comments, attachments,
+  Project links and shared views; do not introduce hidden backing notes.
+- Reuse the note block editor for editable task text, H1–H6, lists, checklists,
+  quotes, code, dividers and Markdown. Existing descriptions remain literal.
+  Board/synced/subpage blocks remain note capabilities in this iteration.
+- Manage existing configurable properties/options inside task pages. Preserve
+  Firebase/preview's four field types and PostgreSQL's ten-field capability gate.
+- Share named workspace task templates with default properties and block bodies,
+  revision-checked edits and reversible archive/restore. Copy content and values
+  into new task drafts; never link or rewrite existing task content on template edit.
+  Do not copy comments, attachments, task IDs or authority. Maximum 64 definitions
+  including archived entries; validate current references again at task creation.
+- Save task bodies only against reviewed revisions. Keep drafts on conflicts;
+  display the latest saved task and rebase edited fields only after explicit review.
+  Persist exact operation UUID/payload before sending; retries must not duplicate
+  creates or undo later edits. Late acknowledgements cannot close another editor.
+- Scope local draft recovery and Web Locks by account/workspace/task. Waiting tabs
+  reload recovery/current data after acquiring ownership; browsers without locking
+  remain read-only. Expose JSON draft recovery and reload-loss warnings. Device
+  storage clearing can remove unsaved work.
+- Export full bodies/templates through board JSON version 4. Derive a bounded
+  10,000-character description excerpt for compatibility search/cards/tools; no
+  full-body indexing claim. Template archive retains content; task deletion removes
+  its body; workspace deletion removes template records as documented in migration
+  015. Full workspace/account export/deletion UI remains separate scope.
+- Duplicate saved tasks from the task actions menu into independent, reviewable
+  new drafts. Copy editable fields/body with fresh block IDs and a bounded title
+  suffix; leave identity, audit, comments and attachments with the original. Require
+  saving source edits first, protect an existing new-task draft, and retain copied
+  or prefilled drafts locally before their first Save. Normal creation validation
+  and durable retry semantics apply when the user saves the copy.

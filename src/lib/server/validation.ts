@@ -1,4 +1,5 @@
 import type { NoteBlock } from "../model";
+import { taskBlockTypes, taskDescription } from "../task-pages";
 import { propertyValuePatch } from "../board-properties";
 import { validateBoardView, validateBlockSource, validateLinkedContentLimits } from "../linked-content";
 export class ApiError extends Error {
@@ -79,6 +80,7 @@ export function taskInput(
   const input = object(value, [
     "title",
     "description",
+    "content",
     "status",
     "assigneeId",
     "dueDate",
@@ -103,6 +105,10 @@ export function taskInput(
   if (!partial || "title" in input) out.title = text(input.title, "Title", 200);
   if (!partial || "description" in input)
     out.description = text(input.description ?? "", "Description", 10000, true);
+  if ("content" in input) {
+    out.content = taskPageContent(input.content);
+    out.description = taskDescription(out.content as ReturnType<typeof taskPageContent>);
+  }
   if (!partial || "status" in input) {
     const status = input.status ?? "todo";
     if (!["todo", "doing", "done"].includes(status as string))
@@ -135,7 +141,7 @@ export function taskInput(
 export function taskMutationInput(value: unknown, partial: boolean) {
   const input = object(value, [
     "title", "description", "status", "assigneeId", "dueDate", "position", "propertyValues",
-    "operationId", "expectedRevision", "projectId", "priority", "estimate",
+    "operationId", "expectedRevision", "projectId", "priority", "estimate", "content",
   ]);
   const { operationId, expectedRevision, ...fields } = input;
   if (!partial && "expectedRevision" in input)
@@ -238,4 +244,11 @@ export function noteContent(value: unknown) {
   try { validateLinkedContentLimits({ blocks }); }
   catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
   return { blocks };
+}
+
+export function taskPageContent(value: unknown) {
+  const content = noteContent(value);
+  if (content.blocks.some(block => !(taskBlockTypes as readonly string[]).includes(block.type)))
+    throw new ApiError(400, "invalid_input", "Task pages support text, headings, lists, checklists, quotes, code, dividers and Markdown.");
+  return content;
 }

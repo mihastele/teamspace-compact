@@ -8,7 +8,12 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { useTeamspace } from "@/lib/client";
+import { useTeamspace, RequestError } from "@/lib/client";
+import { useTaskDraftLock } from "@/lib/use-task-draft-lock";
+import MarkdownText from "./components/MarkdownText";
+import TaskTemplates from "./components/TaskTemplates";
+import { taskContent, taskDescription, taskBlockTypes, templateDefaults, duplicateTask } from "@/lib/task-pages";
+import { decodeTaskDraft, taskDraftBaseline, type TaskSavePacket, type TaskDraftRecord } from "@/lib/task-drafts";
 import { useCollaborativeNote } from "@/lib/use-collaborative-note";
 import type { Task, NoteContent, Attachment, BoardView } from "@/lib/model";
 import {
@@ -28,8 +33,10 @@ import { PageHistoryAction } from "./components/PageHistory";
 import Conversation from "./components/Conversation";
 import AuthPanel from "./components/AuthPanel";
 import TaskCalendar from "./components/TaskCalendar";
+import TicketViews, { SavedViewLink } from "./components/TicketViews";
 import TaskTable from "./components/TaskTable";
 import Projects from "./components/Projects";
+import Databases from "./components/Databases";
 import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
@@ -47,7 +54,7 @@ import { taskEditPatch } from "@/lib/task-status";
 import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "projects" | "board" | "table" | "calendar" | "notes" | "members";
+type View = "views" | "projects" | "databases" | "board" | "table" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -66,6 +73,7 @@ function initials(name: string) {
 }
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
+    views: <path d="M3 5h18M6 12h12M9 19h6" />,
     projects: <path d="M3 5h7l2 3h9v13H3z" />,
     table: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 14h18M10 4v16" /></>,
     board: (
@@ -233,52 +241,93 @@ function Attachments({
   );
 }
 
+function taskDraftFields(task: Partial<Task>) {
+    return {
+      title: task.title ?? "", description: task.description ?? "", content: taskContent({ description: task.description ?? "", content: task.content }),
+      status: task.status ?? ("todo" as Status), assigneeId: task.assigneeId ?? "", dueDate: task.dueDate ?? "",
+      projectId: task.projectId ?? "", priority: task.priority ?? ("none" as NonNullable<Task["priority"]>),
+      estimate: task.estimate ?? null, propertyValues: task.propertyValues ?? {},
+    };
+}
+
 function TaskDialog({
   api,
   initial,
   close,
   onProject,
+  onDuplicate,
 }: {
   api: Api;
   onProject: (id: string) => void;
+  onDuplicate: (task: Partial<Task>) => void;
   initial: Partial<Task>;
   close: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [draft, setDraft] = useState({
-    ...initial,
-    title: initial.title || "",
-    description: initial.description || "",
-    status: initial.status || ("todo" as Status),
-    assigneeId: initial.assigneeId || "",
-    dueDate: initial.dueDate || "",
-    projectId: initial.projectId || "",
-    priority: initial.priority || ("none" as NonNullable<Task["priority"]>),
-    estimate: initial.estimate ?? null,
-    propertyValues: initial.propertyValues ?? {},
+  const taskApi = useRef(api);
+  useEffect(() => { taskApi.current = api; }, [api]);
+  const taskActive = useRef(true);
+  useEffect(() => { taskActive.current = true; return () => { taskActive.current = false; }; }, []);
+  const recoveryKey = `teamspace-task-draft-v1:${api.user?.uid ?? "preview"}:${api.workspace!.id}:${initial.id ?? "new"}`;
+  const [recovered, setRecovered] = useState(() => {
+    try {
+      const raw = localStorage.getItem(recoveryKey);
+      return { record: raw ? decodeTaskDraft(raw, initial.id) : null, error: "" };
+    } catch (error) { return { record: null, error: error instanceof Error ? error.message : "Task recovery could not be read." }; }
   });
+  const [baseline, setBaseline] = useState(() => recovered.record?.baseline ?? taskDraftBaseline(initial.id ? initial : {}));
+  const [draft, setDraft] = useState(() => taskDraftFields(recovered.record?.draft ?? initial));
+  const [packet, setPacket] = useState<TaskSavePacket | null>(() => recovered.record?.packet ?? null);
+  const [storageError, setStorageError] = useState(recovered.error);
+  const [composing, setComposing] = useState(false);
+  const [review, setReview] = useState<Task | null>(null);
+  const saved = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [copyError, setCopyError] = useState("");
   const [commentRecoveryRisk, setCommentRecoveryRisk] = useState(false);
-  const original = JSON.stringify({
-    title: initial.title || "",
-    description: initial.description || "",
-    status: initial.status || "todo",
-    assigneeId: initial.assigneeId || "",
-    dueDate: initial.dueDate || "",
-    projectId: initial.projectId || "", priority: initial.priority || "none", estimate: initial.estimate ?? null,
-  });
-  const changed =
-    Object.keys(changedPropertyValues(initial.propertyValues, draft.propertyValues)).length > 0 ||
-    original !==
-    JSON.stringify({
-      title: draft.title,
-      description: draft.description,
-      status: draft.status,
-      assigneeId: draft.assigneeId,
-      dueDate: draft.dueDate,
-      projectId: draft.projectId, priority: draft.priority, estimate: draft.estimate,
+  const changed = JSON.stringify(templateDefaults({ ...draft, projectId: draft.projectId || undefined })) !==
+    JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined }));
+  const onDraftAcquired = useCallback(async () => {
+    try {
+      const raw = localStorage.getItem(recoveryKey);
+      if (raw) {
+        const record = decodeTaskDraft(raw, initial.id);
+        setRecovered({ record, error: "" }); setBaseline(record.baseline);
+        setDraft(taskDraftFields(record.draft)); setPacket(record.packet);
+      } else if (initial.id) {
+        const latest = await taskApi.current.readTask(initial.id);
+        setBaseline(taskDraftBaseline(latest)); setDraft(taskDraftFields(latest)); setPacket(null);
+      }
+    } catch (error) { setRecovered({ record: null, error: error instanceof Error ? error.message : "Task recovery could not be read." }); }
+  }, [recoveryKey, initial.id]);
+  const ownsDraft = useTaskDraftLock(recoveryKey, onDraftAcquired);
+  const locked = busy || packet !== null || !ownsDraft;
+  useEffect(() => {
+    if (ownsDraft) dialog.current?.querySelector<HTMLInputElement>("input")?.focus();
+  }, [ownsDraft]);
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active || !ownsDraft || saved.current || recovered.error) return;
+      try {
+        if (!changed && !packet) { localStorage.removeItem(recoveryKey); setStorageError(""); return; }
+        const record: TaskDraftRecord = { version: 1, baseline, draft: { ...draft, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, projectId: draft.projectId || null }, packet };
+        localStorage.setItem(recoveryKey, JSON.stringify(record));
+        setStorageError("");
+      } catch { setStorageError("This task draft could not be stored on this device. Download it before leaving. Saving will retry storage before sending."); }
     });
+    return () => { active = false; };
+  }, [baseline, draft, packet, recoveryKey, recovered.error, ownsDraft, changed]);
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => { if (!saved.current && (changed || packet || composing)) event.preventDefault(); };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [changed, packet, composing]);
+  function downloadDraft() {
+    const url = URL.createObjectURL(new Blob([recovered.error ? (localStorage.getItem(recoveryKey) ?? "No stored recovery data") : JSON.stringify({ version: 1, baseline, draft, packet }, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "task-draft.json"; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function attemptClose() {
     if (busy) return;
     if (
@@ -288,7 +337,7 @@ function TaskDialog({
       )
     )
       return;
-    if (!busy && (!changed || confirm("Discard unsaved task changes?")))
+    if (!busy && (!(changed || packet || composing) || confirm(packet ? "This save may already have reached the server. Keep its exact retry locally and close?" : storageError ? "This task draft could not be stored. Download it before closing. Close anyway?" : "Keep this task draft on this device and close?")))
       close();
   }
   useEffect(() => {
@@ -302,6 +351,7 @@ function TaskDialog({
     };
   }, []);
   async function save() {
+    if (busy || composing || !ownsDraft) return;
     if (
       commentRecoveryRisk &&
       !confirm(
@@ -313,22 +363,30 @@ function TaskDialog({
     setError("");
     try {
       const edited = {
-        title: draft.title.trim(),
-        description: draft.description,
-        status: draft.status,
-        assigneeId: draft.assigneeId || null,
-        dueDate: draft.dueDate || null,
+        title: draft.title.trim(), description: taskDescription(draft.content),
+        status: draft.status, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null,
         ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}),
       };
-      if (initial.id) {
-        const patch = taskEditPatch(initial, edited);
-        const propertyValues = changedPropertyValues(initial.propertyValues, draft.propertyValues);
-        const combined = { ...patch, ...(Object.keys(propertyValues).length ? { propertyValues } : {}) };
-        if (Object.keys(combined).length)
-          await api.saveTask({ id: initial.id, ...combined });
-      } else await api.saveTask({ ...edited, propertyValues: draft.propertyValues });
+      const propertyValues = changedPropertyValues(baseline.propertyValues, draft.propertyValues);
+      const contentChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
+      const changes = initial.id ? {
+        ...taskEditPatch(baseline, edited),
+        ...(contentChanged ? { content: draft.content } : {}),
+        ...(Object.keys(propertyValues).length ? { propertyValues } : {}),
+      } : { ...edited, content: draft.content, propertyValues: draft.propertyValues };
+      if (!packet && initial.id && !Object.keys(changes).length) { saved.current = true; localStorage.removeItem(recoveryKey); close(); return; }
+      const next: TaskSavePacket = packet ?? { ...changes, ...(initial.id ? { id: initial.id, expectedRevision: baseline.revision ?? 0 } : {}), operationId: crypto.randomUUID() };
+      if (recovered.error) throw new Error("Stored recovery needs review. Download it and explicitly discard it before saving a new draft.");
+      try { localStorage.setItem(recoveryKey, JSON.stringify({ version: 1, baseline, draft: { ...draft, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, projectId: draft.projectId || null }, packet: next })); }
+      catch { setStorageError("Saving is blocked because this task draft could not be stored. Download it before leaving, or free browser storage and retry."); throw new Error("Task draft could not be stored. No request was sent."); }
+      setPacket(next);
+      await api.saveTask(next as Parameters<Api["saveTask"]>[0]);
+      if (!taskActive.current) return;
+      saved.current = true;
+      try { localStorage.removeItem(recoveryKey); } catch { /* An accepted retry remains safe if device cleanup fails. */ }
       close();
     } catch (e) {
+      if (e instanceof RequestError && (e.code === "revision_conflict" || (!packet && e.status >= 400 && e.status < 500))) setPacket(null);
       setError(
         e instanceof Error
           ? e.message
@@ -354,6 +412,9 @@ function TaskDialog({
     setBusy(true);
     try {
       await api.deleteTask(initial.id);
+      if (!taskActive.current) return;
+      saved.current = true;
+      try { localStorage.removeItem(recoveryKey); } catch { /* Local recovery cleanup can be retried later. */ }
       close();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Task could not be deleted.");
@@ -364,23 +425,32 @@ function TaskDialog({
   return (
     <dialog
       ref={dialog}
-      className={s.dialog}
+      className={`${s.dialog} ${s.taskPage}`}
       aria-labelledby="task-dialog-title"
       onCancel={(e) => {
         e.preventDefault();
         attemptClose();
       }}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
+      <div className={s.taskFrame}>
         <div className={s.dialogHeader}>
           <h2 id="task-dialog-title">
-            {initial.id ? "Task details" : "Create a task"}
+            {initial.id ? "Task page" : "Create a task"}
           </h2>
+          <details className={s.taskActions} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+            <summary aria-label="Task actions">···</summary>
+            <div>
+              {initial.id && <button type="button" disabled={locked || changed || composing || commentRecoveryRisk || Boolean(recovered.error)} title={changed ? "Save your changes before duplicating" : "Open an independent copy to review before saving"} onClick={event => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                try {
+                  const newKey = `teamspace-task-draft-v1:${api.user?.uid ?? "preview"}:${api.workspace!.id}:new`;
+                  if (localStorage.getItem(newKey)) { setCopyError("You already have a new-task draft on this device. Finish it from Add task before making a copy."); return; }
+                  onDuplicate(duplicateTask({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) }));
+                } catch { setCopyError("The copy could not be opened. Your task is unchanged."); }
+              }}>Duplicate task</button>}
+              <button type="button" onClick={downloadDraft}>Download task draft</button>
+            </div>
+          </details>
           <button
             type="button"
             className={s.close}
@@ -393,28 +463,35 @@ function TaskDialog({
         </div>
         <div className={s.dialogBody}>
           {error && <ErrorMessage message={error} />}
-          <label className={s.field}>
-            Task name
+          {copyError && <ErrorMessage message={copyError} />}
+          {!ownsDraft && <p role="status">This task draft is read-only while another tab owns it or browser locking is unavailable. Close its other editor to continue here. Draft recovery reloads when ownership transfers.</p>}
+          {storageError && <p role="alert">{storageError}</p>}
+          {recovered.error && <button type="button" disabled={!ownsDraft} onClick={() => { if (confirm("Discard the unreadable stored task draft? Download recovery data first if you need it.")) { try { localStorage.removeItem(recoveryKey); setRecovered({ record: null, error: "" }); setStorageError(""); } catch { setStorageError("Browser storage is unavailable."); } } }}>Discard unreadable recovery data</button>}
+          {recovered.record && <p className={s.hint}>Recovered a task draft from this device. Review it before saving.</p>}
+          {packet && !busy && <p role="status">A save is waiting for acknowledgement. Retry sends the same request; editing is paused to avoid duplicate tasks.</p>}
+          {initial.id && error && !packet && <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { setReview(await api.readTask(initial.id!)); } catch (error) { setError(error instanceof Error ? error.message : "Could not load the latest task."); } finally { setBusy(false); } }}>Review latest saved task</button>}
+          {review && <section aria-label="Review latest task"><h3>Latest saved task</h3><div className={s.taskReview}><h4>{review.title}</h4><p>Status: {columns.find(column => column.id === review.status)?.label} · Assignee: {api.members.find(member => member.id === review.assigneeId)?.displayName ?? "Unassigned"} · Due: {review.dueDate ?? "No date"}</p>{api.projectsEnabled && <p>Project: {api.projects.find(project => project.id === review.projectId)?.name ?? "None"} · Priority: {review.priority ?? "none"} · Estimate: {review.estimate ?? "Unset"}</p>}<TaskPropertySummary task={review} properties={api.boardProperties} members={api.members} projects={api.projects} /><MarkdownText text={exportNoteMarkdown(review.title, taskContent(review)).markdown} /></div><button type="button" disabled={busy} onClick={() => {
+            const intent = taskEditPatch(baseline, { title: draft.title, description: taskDescription(draft.content), status: draft.status, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}) });
+            const bodyChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
+            setDraft(taskDraftFields({ ...review, ...intent, content: bodyChanged ? draft.content : taskContent(review), propertyValues: { ...review.propertyValues, ...changedPropertyValues(baseline.propertyValues, draft.propertyValues) } }));
+            setBaseline(taskDraftBaseline(review)); setReview(null); setError("");
+          }}>Keep my edits over this reviewed version</button></section>}
+          <fieldset disabled={locked} className={s.taskFields}>
+          <label className={`${s.field} ${s.taskTitle}`}>
+            <span>Task name</span>
             <input
               autoFocus
               required
-              maxLength={160}
+              maxLength={200}
               value={draft.title}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               placeholder="What needs to happen?"
             />
           </label>
-          <label className={s.field}>
-            Description
-            <textarea
-              maxLength={10000}
-              value={draft.description}
-              onChange={(e) =>
-                setDraft({ ...draft, description: e.target.value })
-              }
-              placeholder="A little context goes a long way…"
-            />
-          </label>
+          <div className={s.taskTools}>
+            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(taskDraftFields(defaults))} />
+          </div>
+          <div className={s.taskAttributes}>
           <div className={s.fieldRow}>
             <label className={s.field}>
               Status
@@ -466,13 +543,16 @@ function TaskDialog({
               <label className={s.field}>Estimate<input disabled={busy} type="number" min="0" max="1000000" step="any" value={draft.estimate??""} onChange={event=>setDraft({...draft,estimate:event.target.value===""?null:event.target.valueAsNumber})}/></label>
             </div>
           </>}
-          <TaskPropertyInputs properties={api.boardProperties} values={draft.propertyValues} disabled={busy} members={api.members} projects={api.projects} projectId={draft.projectId}
+          <TaskPropertyInputs api={api} properties={api.boardProperties} values={draft.propertyValues} disabled={locked} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
+          </div>
+          </fieldset>
+          <section className={s.taskBody} aria-label="Task body">
+            <BlockEditor value={draft.content} allowedBlockTypes={taskBlockTypes} disabled={locked} onCompositionPendingChange={setComposing} onChange={content => setDraft(previous => ({ ...previous, content }))} />
+          </section>
           {initial.id ? (
             <Attachments api={api} type="task" id={initial.id} />
-          ) : (
-            <p className={s.hint}>Save your task to add attachments.</p>
-          )}
+          ) : null}
           {initial.id ? (
             <Conversation
               key={`${api.user?.uid || "preview"}:${api.workspace!.id}:task:${initial.id}`}
@@ -482,16 +562,14 @@ function TaskDialog({
               disabled={busy}
               onRecoveryRisk={setCommentRecoveryRisk}
             />
-          ) : (
-            <p className={s.hint}>Save your task to start a conversation.</p>
-          )}
+          ) : null}
         </div>
         <div className={s.dialogActions}>
           {initial.id && (
             <button
               type="button"
               className={s.danger}
-              disabled={busy}
+              disabled={locked}
               onClick={() => void remove()}
             >
               Delete task
@@ -505,11 +583,11 @@ function TaskDialog({
           >
             Cancel
           </button>
-          <button className={s.primary} disabled={busy || !draft.title.trim()}>
-            {busy ? "Saving…" : "Save task"}
+          <button type="button" className={s.primary} onClick={() => void save()} disabled={busy || composing || !ownsDraft || !draft.title.trim() || Boolean(recovered.error)}>
+            {busy ? "Saving…" : packet ? "Retry save" : "Save task"}
           </button>
         </div>
-      </form>
+      </div>
     </dialog>
   );
 }
@@ -1773,6 +1851,8 @@ function Notes({
           api={api}
           renderBoard={(block, onViewChange, disabled) => (
             <>
+            <SavedViewLink api={api} view={block.boardView} disabled={disabled} onApply={onViewChange}/>
+            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId}/> : <>
             <LinkedBoardSettings view={block.boardView} members={api.members} disabled={disabled} onApply={onViewChange} />
             <WorkspaceBoard
               key={`${api.workspace?.id}:${block.id ?? "board"}`}
@@ -1781,7 +1861,7 @@ function Notes({
               onTask={onTask}
               view={block.boardView}
               filtered={Boolean(block.boardView)}
-            />
+            /></>}
             </>
           )}
           value={displayedContent}
@@ -2270,7 +2350,11 @@ function WorkspaceDialog({
 export default function Home() {
   const api = useTeamspace();
   const [chosenView, setView] = useState<View>("board");
-  const view = chosenView === "projects" && !api.projectsEnabled ? "board" : chosenView;
+  const view = ["projects","views"].includes(chosenView) && !api.projectsEnabled ? "board" : chosenView;
+  useEffect(()=>{
+    const open=()=>{if(new URLSearchParams(location.search).has("ticketView"))setView("views");};
+    queueMicrotask(open);window.addEventListener("popstate",open);return()=>window.removeEventListener("popstate",open);
+  },[]);
   const [projectSelection,setProjectSelection] = useState<{scope:string;id:string}|null>(null);
   const [search, setSearch] = useState("");
   const [taskSelection, setTaskSelection] = useState<{
@@ -2281,7 +2365,15 @@ export default function Home() {
   const task = taskSelection?.scope === taskScope ? taskSelection.value : null;
   function setTask(value: Partial<Task> | null) {
     setTaskSelection(value ? { scope: taskScope, value } : null);
+    const url=new URL(location.href);if(value?.id){url.searchParams.set("ticket",value.id);if(api.workspace)url.searchParams.set("workspace",api.workspace.id);}else url.searchParams.delete("ticket");history.replaceState(null,"",url);
   }
+  const restoredWorkspace=useRef("");
+  useEffect(()=>{
+    const params=new URLSearchParams(location.search),workspaceId=params.get("workspace"),ticketId=params.get("ticket"),projectId=params.get("project");
+    if(workspaceId){const key=`${api.user?.uid??"preview"}:${workspaceId}`;if(restoredWorkspace.current!==key){if(workspaceId!==api.workspace?.id){if(api.workspaces.some(workspace=>workspace.id===workspaceId)){restoredWorkspace.current=key;api.selectWorkspace(workspaceId);}return;}restoredWorkspace.current=key;}if(workspaceId!==api.workspace?.id)return;}
+    if(ticketId&&task?.id!==ticketId){const linked=api.tasks.find(item=>item.id===ticketId);if(linked)queueMicrotask(()=>setTaskSelection({scope:taskScope,value:linked}));}
+    if(projectId&&!params.has("ticketView")&&(projectSelection?.id!==projectId||projectSelection.scope!==taskScope)&&api.projectsEnabled){queueMicrotask(()=>{setProjectSelection({scope:taskScope,id:projectId});setView("projects");});}
+  },[api,task?.id,taskScope,projectSelection?.id,projectSelection?.scope]);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState(false);
   const [workspaceDialog, setWorkspaceDialog] = useState(false);
@@ -2351,7 +2443,7 @@ export default function Home() {
         t.assigneeId === (api.configured ? api.user?.uid : "preview")),
   );
   const title =
-    view === "projects" ? "Your projects" : view === "board"
+    view === "databases" ? "Your databases" : view === "views" ? "Your saved views" : view === "projects" ? "Your projects" : view === "board"
       ? "Project board"
       : view === "table"
         ? "Your task table"
@@ -2371,6 +2463,7 @@ export default function Home() {
           value={api.workspace.id}
           aria-label="Active workspace"
           onChange={(e) => {
+            const url=new URL(location.href);for(const key of ["ticket","project","ticketView","ticketQuery"])url.searchParams.delete(key);url.searchParams.set("workspace",e.target.value);history.replaceState(null,"",url);
             api.selectWorkspace(e.target.value);
             setTask(null);
           }}
@@ -2394,15 +2487,15 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {([...(api.projectsEnabled ? ["projects"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
+          {([...(api.projectsEnabled ? ["databases","projects","views"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
-              onClick={() => setView(v)}
+              onClick={() => {setView(v);if(v!=="views"){const url=new URL(location.href);for(const key of ["ticketView","ticketQuery","project"])url.searchParams.delete(key);history.replaceState(null,"",url);}}}
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
+              {v === "databases" ? "Databases" : v === "views" ? "Views" : v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2435,7 +2528,7 @@ export default function Home() {
             {api.workspace.name}
             <span>/</span>
             <strong>
-              {view === "projects" ? "Projects" : view === "board"
+              {view === "databases" ? "Databases" : view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board"
                 : view === "table"
                   ? "Table"
@@ -2492,7 +2585,7 @@ export default function Home() {
               <p className={s.eyebrow}>LET’S MAKE SOMETHING GREAT</p>
               <h1>{title}</h1>
               <p className={s.subtitle}>
-                {view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
+                {view === "databases" ? "Create collections and connect their entries." : view === "views" ? "Filter, sort and group the same tasks in reusable views." : view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
                   ? "A clear view of what’s next. One task at a time."
                   : view === "table"
                     ? "Compare tasks and custom fields in one place."
@@ -2516,7 +2609,7 @@ export default function Home() {
           <div className={s.toolbar}>
             <div className={s.viewLabel}>
               <Icon name={view} />
-              {view === "projects" ? "Projects" : view === "board"
+              {view === "databases" ? "Databases" : view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board view"
                 : view === "table"
                   ? "Table view"
@@ -2586,11 +2679,12 @@ export default function Home() {
             />
           )}
           {view === "table" && <>
-            <BoardProperties key={`table-properties:${taskScope}`} api={api} />
-            <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
+            <TaskTable key={taskScope} api={api} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
-          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} />}
+          {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
             <span>
@@ -2609,7 +2703,8 @@ export default function Home() {
           key={`${taskScope}:${task.id || "new"}`}
           api={api}
           initial={task}
-          onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");}}
+          onDuplicate={setTask}
+          onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);}}
           close={() => setTask(null)}
         />
       )}

@@ -43,6 +43,7 @@ type Menu = {
   active: number;
 };
 export type BlockEditorProps = {
+  allowedBlockTypes?: readonly string[];
   value: NoteContent;
   onChange: (content: NoteContent, base?: NoteContent) => void;
   disabled?: boolean;
@@ -137,6 +138,7 @@ function BoardContent({ block, renderBoard, onViewChange, disabled }: {
 
 export default function BlockEditor({
   value,
+  allowedBlockTypes,
   onChange,
   disabled = false,
   onCompositionPendingChange,
@@ -196,7 +198,7 @@ export default function BlockEditor({
     text: string;
   } | null>(null);
   const menuId = useId();
-  const options = commands.filter((command) =>
+  const options = commands.filter(command => !allowedBlockTypes || allowedBlockTypes.includes(command.type)).filter((command) =>
     `${command.label} ${command.type} ${command.level ? `h${command.level}` : ""}`
       .toLowerCase()
       .includes(menu?.query.toLowerCase() || ""),

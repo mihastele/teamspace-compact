@@ -9,6 +9,15 @@ const targetUrl = process.env.SUPABASE_INTERNAL_URL || url.replace('//localhost:
 const client = createClient(targetUrl, key, {auth:{persistSession:false,autoRefreshToken:false}});
 const {error} = await client.rpc('teamspace_store_prune_expired');
 if (error) throw new Error('Expired metadata could not be pruned. Check migration and server permissions.');
+// Audit contents disappear from reads at expires_at even before this physical
+// cleanup runs. Minimal retry receipts deliberately remain until workspace deletion.
+for(let batch=0;batch<100;batch++) {
+  const {data: audit,error: auditError}=await client.rpc('teamspace_agent_queue',{p_action:'prune',p_input:{}});
+  if(auditError || !audit || audit.error || !Number.isInteger(audit.deleted) || audit.deleted<0 || audit.deleted>500 || typeof audit.moreAvailable!=='boolean')
+    throw new Error('Expired agent audits could not be pruned. Check migration 014 and server permissions.');
+  if(!audit.moreAvailable) break;
+  if(batch===99) throw new Error('Agent audit cleanup reached its batch budget. Rerun cleanup to finish the backlog.');
+}
 const {data: result,error: readError} = await client.rpc('teamspace_store_read', {
   p_epoch:null,p_path:'workspaces',p_query:{path:'workspaces',filters:[],limit:null},
 });

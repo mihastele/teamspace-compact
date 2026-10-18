@@ -14,7 +14,7 @@ try {
   const result = spawnSync('docker', ['compose', '--env-file', environment,
     '-f', 'docker.compose.supabase.yml', 'config', '--format', 'json'], {
     cwd: root, encoding: 'utf8',
-    env: { ...process.env, SUPABASE_COMPOSE_ENV_FILE: environment, PORT: '8088', WEB_BIND_ADDRESS: '127.0.0.1' },
+    env: { ...process.env, SUPABASE_COMPOSE_ENV_FILE: environment, PORT: '8088', WEB_BIND_ADDRESS: '127.0.0.1', AGENT_AUDIT_RETENTION_DAYS: '17' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   // Never print resolved Compose configuration: it contains service credentials.
@@ -28,6 +28,7 @@ try {
     if (!port || String(port.published) !== '8088' || port.host_ip !== '127.0.0.1'
       || web.environment.SUPABASE_INTERNAL_URL !== 'http://api-gw:8000'
       || web.environment.DEV_AUTO_JOIN_WORKSPACE_ID !== ''
+      || String(web.environment.AGENT_AUDIT_RETENTION_DAYS) !== '17'
       || Object.keys(web.build.args).some(key => !key.startsWith('NEXT_PUBLIC_'))) {
       console.error('Website port, private transport, production configuration or build arguments failed validation.');
       process.exitCode = 1;

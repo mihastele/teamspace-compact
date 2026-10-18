@@ -2,6 +2,38 @@
 
 A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel or self-hosted Docker hosting.
 
+## Set up staging or production
+
+The deployment generator creates a standard Docker Compose file, isolated data
+directories and a private `.env` with fresh cryptographic keys for each environment:
+
+```sh
+npm ci
+npm run deploy:setup -- staging
+npm run deploy:setup -- production --site-url https://notes.your-domain.com --api-url https://api.your-domain.com
+```
+
+Staging captures confirmation/reset email locally at `http://localhost:8025`,
+so no SMTP account is needed. For an older staging profile, run
+`npm run deploy -- staging mail-local` once before `up`.
+Production requires external mail credentials in `deployments/production/.env`;
+optional OAuth/API credentials stay blank. Staging defaults to localhost ports 3100/8100,
+production to 3000/8000 behind your HTTPS reverse proxy. Setup never overwrites
+existing keys or copies production data into staging.
+
+```sh
+npm run deploy -- staging doctor
+npm run deploy -- staging up
+```
+
+Use `production` instead of `staging` for production. `up` builds, waits for the
+backend, backs up PostgreSQL, applies tracked migrations and auth policy, then
+starts the website and hourly cleanup. `build` builds without launching;
+`status`, `backup` and `stop` cover daily operations. See the
+[deployment guide](deploy/README.md) for HTTPS, required external settings,
+backup/restore and upgrade instructions. Legacy Docker commands below remain
+available for existing installations.
+
 ## Plan work in the calendar
 
 Open **Calendar** in workspace navigation for a Monday-first month view. Select a
@@ -24,10 +56,40 @@ Use Node 22.13+ or Node 24 LTS, npm, and Java 21 for emulator tests.
 
 ```sh
 npm ci
-npm run dev
+npm run dev:preview
 ```
 
-Open http://localhost:3000. Without backend configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
+Open **http://127.0.0.1:3107**. This is the same browser-local environment used
+for UI checks: instant source updates, seeded example tasks, and data saved in
+this browser. It needs no Docker, account or backend credentials. The launcher
+overrides provider configuration for its child process without editing `.env`
+files. Shared authentication, file storage, Projects, saved views and agents
+require a connected backend. Stop with **Ctrl+C**.
+
+Run `npm ci` on first setup and whenever the lockfile changes; day to day, just
+run `npm run dev:preview`. Use the same browser and exact URL to keep your preview
+data. `localhost`, `127.0.0.1` and different ports have separate browser storage.
+If 3107 is busy, use `npm run dev:preview -- 3200` and open port 3200 instead.
+The launcher binds to loopback and never stops another application to free a port.
+
+For authenticated development, put your chosen backend's app settings in
+gitignored **`.env.local`**, following [Choose a backend](#choose-a-backend), then
+run **`npm run dev:connected`**. It also opens on `http://127.0.0.1:3107`, but reads
+the configured backend and uses real workspace data. For self-hosted Supabase,
+start the backend services using the Docker instructions below; Next runs directly
+on your machine, so you do not need to rebuild the website container for each edit.
+Copy only the app settings from `.env.supabase` to `.env.local`; keep both provider
+URLs and the browser anonymous/server service keys aligned. Leave
+`SUPABASE_INTERNAL_URL` empty when the private Docker hostname is inaccessible
+from the host. Configure Auth's allowed redirect URLs for your dev URL. Restart
+Next after changing environment variables. Migrations and policy publication are
+explicit setup/upgrade steps, never performed by the dev launcher.
+
+`npm run dev` remains the standard configured Next development server on port 3000.
+Java 21 and Docker are for the integration checks, not the browser-only preview.
+
+Before committing, run `npm test`, `npm run lint`, `npm run build`, then
+`npm run typecheck` (after the build, to avoid generated-type races).
 
 ## Workspace administration and direct membership
 
@@ -90,7 +152,9 @@ role key from that same project. Keep the service role key server-only. Apply
 `migrations/007-supabase-backend.sql`, followed by
 `migrations/008-workspace-administration.sql` and
 `migrations/009-board-properties.sql` and
-`migrations/012-canonical-projects-fields.sql`, using the administrative SQL
+`migrations/012-canonical-projects-fields.sql` and
+`migrations/013-ticket-queries-views.sql` and
+`migrations/014-agent-queue.sql`, using the administrative SQL
 connection, then publish the authentication security policy as described in the migration.
 The application uses a private `teamspace-private` Storage bucket. Configure
 email/password, confirmation policy, redirect URLs and SMTP in Supabase Auth;
@@ -147,7 +211,8 @@ upgrades**. It serializes runs, records checksums atomically with each migration
 and safely skips completed migrations. A failed migration rolls back; earlier
 completed migrations remain applied. Retry after correcting the failure.
 It refuses an existing application schema without its ledger. For installations
-where 007 was previously applied manually, apply 008, 009 and 012 manually following
+where 007 was previously applied manually, apply each unapplied SQL migration
+(008, 009, 012, 013, 014, 015 and 016) in order following
 [its upgrade guide](migrations/008-workspace-administration.md); do not replay
 007 or delete existing tables to make the runner accept them. See
 [migration bookkeeping](migrations/000-supabase-migration-ledger.md).
@@ -161,6 +226,8 @@ preserve tasks and reject new assignments. Task details also includes priority
 and a numeric estimate; Table includes these fields and Project names.
 
 Open **Properties → Add property** on Board, Table or a `/kanban` embed.
+Table uses this same menu to show/hide columns and edit custom fields. On a task,
+choose **Add property**, or click an existing property's name to edit its options.
 PostgreSQL supports Text, Long text, Number, Date, Checkbox, Select, Multi-select,
 Person, Project relation and URL fields. Scope a field to the workspace or one
 Project. Rename/reorder/color/archive select options without changing their IDs;
@@ -168,9 +235,18 @@ archived options retain historical values but cannot be newly selected. Field
 scope/type and option IDs cannot be replaced. Values appear on cards and in the
 table; numeric sorting compares signed decimal values correctly.
 
+Relations currently select **one Project per relation field** in the same
+workspace. The built-in Project field links a task to its primary Project;
+additional Project relation fields can reference other Projects. Trusted writes
+reject unavailable or archived Projects for new links, while existing archived
+links remain readable. PostgreSQL foreign keys enforce the referenced Project.
+Independent databases have their own entry relations, described below.
+Task-to-task relations, automatic reciprocal relation properties, rollups and
+formulas are not implemented. Linked board views show the same workspace tasks.
+
 Limits remain 32 fields per workspace and 50 options per field. Text/URL values
 allow 2,000 characters; Long text allows 10,000. Custom dates are date-only;
-Calendar uses the built-in Due date. **Download board JSON** exports saved
+Calendar uses the built-in Due date. **Properties → Export data → Download board JSON** exports saved
 Projects, tasks and field definitions, excluding attachments/conversations.
 
 Apply [migration 012](migrations/012-canonical-projects-fields.md) before deploying
@@ -180,8 +256,47 @@ direct readers of the old document table must use the compatibility view or APIs
 The migration runner includes this upgrade. No installation is migrated by a build.
 Firebase and local preview retain the existing Text/Select/Multi-select/Date
 workspace fields; Firebase still requires the migration 009 rules. Authenticated
-Project/field UI and two-user browser acceptance remain open. Nested composable
-filters, reusable saved views and agent integrations are later milestones.
+Project/field UI and two-user browser acceptance remain open. Composable filters and saved views are described below; agent integrations remain
+later milestones.
+
+### Independent databases and entry relations
+
+On PostgreSQL deployments, open **Databases → New database**. Name the collection
+and add properties; **Properties** edits names/options or archives/restores it.
+Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
+relations use the existing property controls. A relation chooses one target
+database and can select multiple entries, including entries in the same database.
+Property types, relation targets and saved option IDs stay stable.
+
+**Add entry** opens a rich page body with explicit Save. Table relation values and
+the entry's **Linked from** section open related pages. Renaming entries/properties
+preserves links. Archived databases/entries retain their links; new links cannot
+select archived targets. Restore a database before editing its entries. Search
+filters loaded entry titles; **Show archived entries** reveals loaded archives.
+**Load more entries** continues a live keyset page. The first page refreshes every
+30 seconds; after loading more, **Refresh** restarts the loaded pages. Existing
+Tasks/Projects remain separate.
+
+Drafts and exact save retries are stored on this device, scoped by account and
+workspace, with one editor per draft across tabs. Reopen **New database** or
+**Add entry** to recover an unsaved new record. Conflicts preserve the draft;
+download it and reopen the latest record before reapplying edits. Browser Web
+Locks are required; clearing browser data removes recovery. **Download draft**
+exports current unsaved work. **Export loaded JSON** exports the selected database's
+saved definition and loaded entries with full bodies, including loaded archives
+and outgoing relation IDs. Its `truncated` flag reports more available entries;
+load the remaining pages before exporting the full collection. Export target
+databases separately for their content. Pages are live, not a frozen backup.
+
+Apply [migration 016](migrations/016-independent-databases.md) and earlier unapplied
+migrations, then deploy the paired API/client. Foreign keys enforce entry links;
+member/confirmation RLS covers definitions, entries and the derived relation
+index. Workspace deletion removes content/links/receipts. Limits are 64 databases
+per workspace, 32 properties per database and 1,000 entries per database, including
+archives. Formulas, rollups, database-specific saved layouts/templates and entry
+comments/attachments remain future work. Firebase/local preview do not expose
+independent databases. Live migration and authenticated browser/two-user acceptance
+remain open; isolated PostgreSQL checks are separate from deployed acceptance.
 
 The website uses the private Docker gateway for server requests, while browser
 requests and signed attachment links retain the configured public API URL.
@@ -282,6 +397,17 @@ UI saves retain selective patch behavior; durable task-form recovery and agent
 confirmation UI are later work. See [migration 011](migrations/011-task-durability.md)
 for schema, access, receipt lifetime and coordinated rollout details.
 
+The agent implementation now has internal, tested hosted/local provider and
+read-only tool adapters, including indexed ticket searches and typed proposals
+that do not save tickets. [Migration 014](migrations/014-agent-queue.md) adds private
+run/audit storage, fenced leases, cancellation, bounded retries, authorized exports
+and configurable 30-day content expiry. Apply it before using the updated hourly
+cleanup script. These components are not exposed as an agent feature yet: the
+separate worker, checkpoint engine and run UI remain M4 work. See the
+[provider/read-tool contracts](.agentic/AGENT-PROVIDER.md) for limits, compatibility,
+server-only future runtime settings and remaining work. No credentials or live
+model calls are required by these tests.
+
 Local table/calendar keyboard, task persistence and mobile navigation checks are
 recorded in [.agentic/BROWSER-ACCEPTANCE.md](.agentic/BROWSER-ACCEPTANCE.md).
 Mobile workspace navigation wraps to keep every destination on screen. These
@@ -363,6 +489,44 @@ Deploy the rules/index configuration in `migrations/006-conversations.md` before
 
   docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build
 
+## Task pages and templates
+
+Open a task from Board, Table, Calendar or a saved view to edit its blocks. Use `/`
+for text, headings, lists, checklists, quotes, code, dividers or Markdown, then choose
+**Save task**. Existing descriptions open as literal text. Attributes appear once
+below the title; click a custom property's name to edit its definition and options,
+or **Add property** to create one. Notes retain their richer board/synced/subpage capabilities.
+
+Use the **··· Task actions** menu to **Duplicate task**. Save any edits first, then
+review the independent copy and choose **Save task** to create it. The copy keeps
+the title with a `(copy)` suffix, body, status, assignee, dates, Project and property
+values; attachments, conversation and audit identity stay with the original.
+Copies get new block IDs and retain normal server validation. If you already have
+a new-task draft, finish it from **Add task** before duplicating. Prefilled new tasks
+and copies participate in device-local draft recovery as soon as they open.
+
+**Templates** saves a shared template from the current task, edits its default
+properties/body, and archives/restores it. When creating a task, choose **Use
+template** and review the replacement. Each task gets an independent copy; editing
+a template never rewrites existing tasks. Workspace templates are capped at 64,
+including archived templates. Invalid or unavailable defaults need review before
+application; server validation remains authoritative.
+
+A newer task revision blocks a stale Save and preserves your draft. **Review latest
+saved task** shows the saved values/body; **Keep my edits over this reviewed version**
+keeps your changes while preserving unrelated changes, then Save checks the new
+revision again. Device-local drafts and exact uncertain save requests survive
+reopening; **Retry save** reuses the same request to prevent duplicates. **Download
+task draft** exports recovery JSON. One tab owns each task draft; other tabs wait.
+Web Locks are required for editing. Clearing browser storage removes local recovery.
+
+Board JSON includes full task bodies and templates. Existing search/cards/agent
+text uses the first 10,000 body characters, so it is not full-body search. This is
+explicit-save editing, not simultaneous typing. Deploy the matching API/client and
+[migration 015 / Firestore rules](migrations/015-task-pages-templates.md); no live
+installation is upgraded automatically. Authenticated two-user acceptance remains
+required alongside local checks.
+
 ## Task table
 
 Choose **Table** in workspace navigation to compare tasks and custom fields in columns. Click a task title to use the existing editor. Column headings cycle ascending, descending and board order; empty values stay last. **Columns** controls visibility, and status/deadline filters combine with search and My tasks. **Reset table** restores local defaults. Table settings reset when you leave the view; task edits update Board and Calendar too. On narrow screens, scroll within the table to reach additional columns.
@@ -376,3 +540,40 @@ Use `/synced` or **Synced content** in the block menu to choose a saved text blo
 Sources can be paragraphs, headings, lists, checklists, quotes, code or Markdown. Boards, dividers and other synced references cannot be sources. Deleted sources show unavailable and keep their reference. Each page supports 100 links from 20 source notes. Configured saved sources synchronize through their existing journals; preview source edits use revision-checked saves, while self-links in preview stay in the current note draft until Save. Unfinished composition and failed drafts show recovery controls; download them before leaving. Linked source controllers stay open until the destination page closes so pending recovery remains accessible.
 
 Page history and Markdown downloads retain reference IDs and view settings. Restoring a linked page leaves source content and board tasks unchanged; export the original separately for its text. Deploy the updated client and trusted API together as documented in [migration 010](migrations/010-linked-content.md). No new SQL migration or live database backfill is needed. Browser/IME/mobile and authenticated two-user acceptance remain open checks.
+
+
+## Saved ticket views (PostgreSQL)
+
+Open **Views** for a recursive AND/OR filter builder over built-in and custom
+fields. Choose board/table/list, group by status or priority, select visible
+columns and up to three sorts, then **Apply settings** locally or **Save changes**
+to the shared view. **Save as new view** creates another definition over the same
+tasks. Anyone in the workspace can use/edit these views; edits check revisions.
+Archive/restore preserves the view and tasks.
+
+**Add default views** creates missing Engineering Kanban, Project board, My open
+work, This week and Overdue definitions without replacing customized defaults.
+Choose a Project when using Project board. Views store an editable IANA timezone
+(default UTC); This week includes today through today + 7, including completed
+work. Overdue and My open work exclude done. The older board deadline filter
+retains its original next-seven-calendar-dates behavior.
+
+Custom filters support typed equality, emptiness, text contains, select choices,
+multi-select any/all, date bounds and numeric comparisons. Archived options remain
+searchable. Empty values also match negative comparisons. Numbers sort numerically;
+text uses case-insensitive deterministic database ordering; nulls stay last.
+A saved view's changes appear in all linked representations. In a `/kanban` note
+block, choose **Shared saved view** to reference one; clearing it restores that
+block's independent settings. Note history/export retains the reference.
+
+Views query canonical PostgreSQL rows with bounded keyset paging, rather than
+loading the full task snapshot for filtering. Counts/exports describe **loaded
+rows**, with Load more for additional pages. Concurrent edits can move rows across
+page boundaries; refresh for a new first page. Board drag/drop and the accessible
+Move selector change only status/priority through existing task services. URLs
+retain workspace/view/Project/task IDs and validated local override settings.
+
+Apply [migration 013](migrations/013-ticket-queries-views.md) after 012 before the
+paired API/client deployment. It adds the shared-view table with RLS and private
+query RPCs; no build modifies a live database. Full browser/two-user acceptance
+and live rollout remain open. Firebase/local preview keep their existing views.
