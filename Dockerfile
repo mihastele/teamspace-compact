@@ -17,6 +17,12 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+# Next bundles this SDK into route chunks. The standalone operator scripts need
+# its real packages too; copy only the existing locked SDK dependency closure.
+COPY --from=build --chown=node:node /app/node_modules/@supabase ./node_modules/@supabase
+COPY --from=build --chown=node:node /app/node_modules/iceberg-js ./node_modules/iceberg-js
+COPY --from=build --chown=node:node /app/node_modules/tslib ./node_modules/tslib
+COPY --chown=node:node scripts/prune-supabase.mjs scripts/cleanup-loop.mjs ./scripts/
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -2,6 +2,35 @@
 
 A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel or self-hosted Docker hosting.
 
+## Set up staging or production
+
+The deployment generator creates a standard Docker Compose file, isolated data
+directories and a private `.env` with fresh cryptographic keys for each environment:
+
+```sh
+npm ci
+npm run deploy:setup -- staging
+npm run deploy:setup -- production --site-url https://notes.your-domain.com --api-url https://api.your-domain.com
+```
+
+Fill external mail/OAuth credentials in the selected `deployments/<environment>/.env`;
+those are deliberately blank. Staging defaults to localhost ports 3100/8100,
+production to 3000/8000 behind your HTTPS reverse proxy. Setup never overwrites
+existing keys or copies production data into staging.
+
+```sh
+npm run deploy -- staging doctor
+npm run deploy -- staging up
+```
+
+Use `production` instead of `staging` for production. `up` builds, waits for the
+backend, backs up PostgreSQL, applies tracked migrations and auth policy, then
+starts the website and hourly cleanup. `build` builds without launching;
+`status`, `backup` and `stop` cover daily operations. See the
+[deployment guide](deploy/README.md) for HTTPS, required external settings,
+backup/restore and upgrade instructions. Legacy Docker commands below remain
+available for existing installations.
+
 ## Plan work in the calendar
 
 Open **Calendar** in workspace navigation for a Monday-first month view. Select a

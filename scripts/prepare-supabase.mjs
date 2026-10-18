@@ -22,6 +22,7 @@ function git(args, capture = false) {
   return result.stdout?.trim();
 }
 
+export function prepareSupabase({ quiet = false } = {}) {
 if (!existsSync(checkout)) {
   mkdirSync(resolve(root, '.supabase'), { recursive: true });
   git(['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', SUPABASE_TAG,
@@ -34,5 +35,9 @@ git(['-C', checkout, 'sparse-checkout', 'set', 'docker']);
 if (!existsSync(resolve(checkout, 'docker/volumes/db/roles.sql'))) {
   throw new Error('Supabase database initialization files are missing.');
 }
-console.log('Pinned Supabase configuration prepared in .supabase/upstream (gitignored).');
-console.log('Configure .env.supabase before starting. No credentials were generated or printed.');
+if (!quiet) {
+  console.log('Pinned Supabase configuration prepared in .supabase/upstream (gitignored).');
+  console.log('Configure .env.supabase before starting. No credentials were generated or printed.');
+}
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) prepareSupabase();

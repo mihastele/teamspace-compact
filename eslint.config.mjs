@@ -21,6 +21,7 @@ const eslintConfig = defineConfig([
     ".agentic/verification/**",
     ".storage-test-build/**",
     ".supabase/**",
+    "deployments/**",
   ]),
 ]);
 

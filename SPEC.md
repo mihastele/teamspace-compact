@@ -125,6 +125,13 @@ If time runs short, defer attachments first; label incomplete work explicitly. N
 
 ## Current implementation milestone
 
+- Staging/production setup: `deploy:setup` generates isolated Compose/config/data
+  roots and fresh internal keys, leaving external credentials blank. `deploy`
+  checks configuration, builds optimized images and coordinates startup,
+  database backups, tracked migrations/auth policy and hourly existing cleanup.
+  Existing legacy environments remain untouched. HTTPS/DNS, real mail delivery,
+  restore and authenticated live acceptance remain operator release checks.
+
 The application UI, Firebase client integration, trusted API handlers, default-deny rules, indexes and baseline schema are implemented. Automated validation/rules/API checks pass. Earlier local browser checks covered the previous interface; collaboration browser acceptance remains open. Without Firebase configuration the app remains a clearly labeled device-local preview. Production release still requires project provisioning, deployed Google sign-in, real two-user acceptance, Storage CORS/lifecycle setup and dependency-audit review. See README.md and .agentic/PROJECT-STATE.md.
 
 ### Notes interaction refinement — 2026-10-03

@@ -11,3 +11,5 @@ node_modules
 coverage
 *-debug.log
 *.tsbuildinfo
+deployments
+.test-build-database
