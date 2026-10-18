@@ -24,6 +24,7 @@ export type Task = {
   revision?: number;
   title: string;
   description: string;
+  content?: NoteContent;
   status: Status;
   assigneeId: string | null;
   dueDate: string | null;
@@ -54,6 +55,13 @@ export type NoteBlock = {
   source?: BlockSource;
 };
 export type NoteContent = { blocks: NoteBlock[] };
+export type TaskTemplate = {
+  id: string;
+  name: string;
+  revision: number;
+  archived?: boolean;
+  defaults: Pick<Task, "title" | "description" | "status" | "assigneeId" | "dueDate" | "propertyValues" | "projectId" | "priority" | "estimate"> & { content: NoteContent };
+};
 export type Note = {
   id: string;
   parentId: string | null;

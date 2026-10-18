@@ -1,6 +1,6 @@
 # Specification work queue
 
-Updated 2026-10-17. PROJECT-STATE.md remains the append-only continuity record;
+Updated 2026-10-18. PROJECT-STATE.md remains the append-only continuity record;
 this queue identifies the next actionable tickets and keeps automated evidence
 separate from browser/deployed acceptance.
 
@@ -14,6 +14,7 @@ separate from browser/deployed acceptance.
 | R6 — Repository license | User decision required | Select and add a license before public distribution, reconciling existing dependency/upstream notices. An agent must not silently select legal terms. |
 | R7 — Complete workspace/account export and deletion | Scope/policy decision required | Define attachment/history/conversation export scope and ownership/retention rules before schema/auth/deletion work. Current per-note, board and conversation downloads are partial exports. |
 | R8 — Older conversation messages | Deferred feature | Design bounded stable pagination on both backends, live-window reconciliation and deletion handling; current latest-50 UI remains documented. Notifications and block comments stay deferred. |
+| R10 — Editable task pages and shared templates | Implemented/tested locally; live acceptance open | Explicit Save/revision conflict review, rich task blocks, task-local property management, shared template create/edit/apply/archive/restore and durable task draft/retry packets. Migration 015 and matching client/API required; authenticated live two-user acceptance remains open. See TASK-PAGES-PLAN.md and migrations/015-task-pages-templates.md. |
 | R9 — Agentic projects/tickets and reusable views | M1a/M1b, M2/M3 and internal M4a/M4b implemented; acceptance open | [Implementation progress](AGENTIC-TICKETS-IMPLEMENTATION.md): shared services, durable Task mutations, canonical PostgreSQL Projects/ten normalized field types, indexed queries/shared layouts and note references. M4a adds bounded hosted/local transport and seven read/proposal tools; M4b adds private queue/audit storage, fenced leases/retries, revocation, quotas, cancellation, retention/export/workspace deletion. Migration 014 is prepared, not live-applied. Next: checkpoint engine/provenance resume, separate worker/process/Compose wiring and run UI, then M5 confirmed writes. Full ticket remains incomplete. |
 
 MFA enrollment, independent databases and public publishing remain outside

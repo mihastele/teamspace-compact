@@ -1374,3 +1374,26 @@
 .previewSurface {
   padding-bottom: 110px;
 }
+
+/* Task bodies share the note editor while keeping properties in a compact form. */
+.taskPage { width: 960px; }
+.taskFields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.taskTemplates { margin: 14px 0 22px; padding: 12px; border: 1px solid #e1e5ef; border-radius: 8px; }
+.taskTemplates summary { cursor: pointer; font-weight: 600; }
+.taskTemplates button { padding: 7px 10px; border: 1px solid #dfe4ee; border-radius: 6px; background: white; margin: 4px; }
+.templateRow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 0; }
+.templateRow strong { margin-right: auto; overflow-wrap: anywhere; }
+.taskReview { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.taskPage .dialogBody { min-width: 0; }
+@media (max-width: 600px) {
+  .taskPage .dialogBody { padding: 16px; }
+  .taskPage .fieldRow { grid-template-columns: minmax(0, 1fr); }
+  .taskPage .dialogActions { flex-wrap: wrap; }
+}
+
+.taskPage[open] { display: flex; flex-direction: column; overflow: hidden; }
+.taskFrame { display: flex; flex-direction: column; max-height: calc(90vh - 2px); min-height: 0; }
+.taskPage .dialogHeader, .taskPage .dialogActions { flex-shrink: 0; }
+.taskPage .dialogBody { overflow-y: auto; min-height: 0; flex: 1; }
+.taskPage .field { margin-bottom: 12px; }
+.taskPage .taskTemplates { margin: 10px 0 14px; }

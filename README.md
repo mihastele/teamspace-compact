@@ -376,6 +376,36 @@ Deploy the rules/index configuration in `migrations/006-conversations.md` before
 
   docker compose --env-file .env.supabase -f docker.compose.supabase.yml up -d --build
 
+## Task pages and templates
+
+Open a task from Board, Table, Calendar or a saved view to edit its blocks. Use `/`
+for text, headings, lists, checklists, quotes, code, dividers or Markdown, then choose
+**Save task**. Existing descriptions open as literal text. **Manage properties and
+options** lets you create/edit fields such as Select and Multi-select without
+leaving the task page. Notes retain their richer board/synced/subpage capabilities.
+
+**Task templates** saves a shared template from the current task, edits its default
+properties/body, and archives/restores it. When creating a task, choose **Use
+template** and review the replacement. Each task gets an independent copy; editing
+a template never rewrites existing tasks. Workspace templates are capped at 64,
+including archived templates. Invalid or unavailable defaults need review before
+application; server validation remains authoritative.
+
+A newer task revision blocks a stale Save and preserves your draft. **Review latest
+saved task** shows the saved values/body; **Keep my edits over this reviewed version**
+keeps your changes while preserving unrelated changes, then Save checks the new
+revision again. Device-local drafts and exact uncertain save requests survive
+reopening; **Retry save** reuses the same request to prevent duplicates. **Download
+task draft** exports recovery JSON. One tab owns each task draft; other tabs wait.
+Web Locks are required for editing. Clearing browser storage removes local recovery.
+
+Board JSON includes full task bodies and templates. Existing search/cards/agent
+text uses the first 10,000 body characters, so it is not full-body search. This is
+explicit-save editing, not simultaneous typing. Deploy the matching API/client and
+[migration 015 / Firestore rules](migrations/015-task-pages-templates.md); no live
+installation is upgraded automatically. Authenticated two-user acceptance remains
+required alongside local checks.
+
 ## Task table
 
 Choose **Table** in workspace navigation to compare tasks and custom fields in columns. Click a task title to use the existing editor. Column headings cycle ascending, descending and board order; empty values stay last. **Columns** controls visibility, and status/deadline filters combine with search and My tasks. **Reset table** restores local defaults. Table settings reset when you leave the view; task edits update Board and Calendar too. On narrow screens, scroll within the table to reach additional columns.

@@ -297,3 +297,33 @@ The application UI, Firebase client integration, trusted API handlers, default-d
   and workspace deletion cascade. Board export includes saved definitions; loaded
   query export includes applied settings/rows/completeness. Full account/workspace
   export/deletion and real browser/two-user acceptance remain open.
+
+
+## Save-based task pages and workspace templates (2026-10-18)
+
+- User selected explicit Save with reviewed revision conflicts, ahead of live
+  simultaneous task-body editing. Tasks retain their own IDs, comments, attachments,
+  Project links and shared views; do not introduce hidden backing notes.
+- Reuse the note block editor for editable task text, H1–H6, lists, checklists,
+  quotes, code, dividers and Markdown. Existing descriptions remain literal.
+  Board/synced/subpage blocks remain note capabilities in this iteration.
+- Manage existing configurable properties/options inside task pages. Preserve
+  Firebase/preview's four field types and PostgreSQL's ten-field capability gate.
+- Share named workspace task templates with default properties and block bodies,
+  revision-checked edits and reversible archive/restore. Copy content and values
+  into new task drafts; never link or rewrite existing task content on template edit.
+  Do not copy comments, attachments, task IDs or authority. Maximum 64 definitions
+  including archived entries; validate current references again at task creation.
+- Save task bodies only against reviewed revisions. Keep drafts on conflicts;
+  display the latest saved task and rebase edited fields only after explicit review.
+  Persist exact operation UUID/payload before sending; retries must not duplicate
+  creates or undo later edits. Late acknowledgements cannot close another editor.
+- Scope local draft recovery and Web Locks by account/workspace/task. Waiting tabs
+  reload recovery/current data after acquiring ownership; browsers without locking
+  remain read-only. Expose JSON draft recovery and reload-loss warnings. Device
+  storage clearing can remove unsaved work.
+- Export full bodies/templates through board JSON version 4. Derive a bounded
+  10,000-character description excerpt for compatibility search/cards/tools; no
+  full-body indexing claim. Template archive retains content; task deletion removes
+  its body; workspace deletion removes template records as documented in migration
+  015. Full workspace/account export/deletion UI remains separate scope.

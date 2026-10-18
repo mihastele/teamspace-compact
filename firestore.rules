@@ -43,6 +43,10 @@ service cloud.firestore {
         allow read: if isMember(workspaceId);
         allow write: if false;
       }
+      match /taskTemplates/{templateId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
 
       match /notes/{noteId} {
         allow read: if isMember(workspaceId);

@@ -10,7 +10,7 @@ export function updateTaskStatus(
     throw new Error(
       "This task no longer exists. Refresh the board before trying again.",
     );
-  return tasks.map((task) => (task.id === id ? { ...task, status } : task));
+  return tasks.map((task) => (task.id === id ? { ...task, status, revision: (task.revision ?? 0) + 1 } : task));
 }
 
 type EditableTask = Pick<

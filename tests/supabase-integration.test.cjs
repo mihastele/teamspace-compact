@@ -69,6 +69,7 @@ before(async () => {
   await sql(readFileSync('migrations/012-canonical-projects-fields.sql', 'utf8'));
   await sql(readFileSync('migrations/013-ticket-queries-views.sql', 'utf8'));
   await sql(readFileSync('migrations/014-agent-queue.sql', 'utf8'));
+  await sql(readFileSync('migrations/015-task-pages-templates.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -101,6 +102,7 @@ require('./agent-tools-cases.cjs')(test,{api,db:()=>db,createReadOnlyAgentTools,
 require('./agent-queue-cases.cjs')(test,{db:()=>db,rpc,sql,member,owner,outsider,prefix,createAgentQueue});
 require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
 require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
+require('./task-page-api-cases.cjs')(test, { api, member: member, outsider: outsider, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
@@ -131,7 +133,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'6');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'7');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -184,6 +186,7 @@ test('canonical migration upgrades populated legacy records atomically without c
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/notes/legacy-board';`)),records.at(-1)[1]);
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_saved_views';"),'t');
     await query(readFileSync('migrations/014-agent-queue.sql','utf8'));
+    await query(readFileSync('migrations/015-task-pages-templates.sql','utf8'));
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
     assert.equal(await query('select count(*) from public.teamspace_agent_runs;'),'0');
     assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_agent_runs','teamspace_agent_events','teamspace_agent_requests');"),'t');
@@ -386,4 +389,19 @@ test('tightening the email policy aborts a concurrent unconfirmed durable mutati
   await db.runTransaction(async tx=>tx.set(db.doc('security/policy'),{emailConfirmationRequired:true}));
   release();await assert.rejects(operation,error=>error.code==='policy_mismatch');
   assert.equal((await value(`${prefix}/tasks/task`)).title,'Original');
+});
+
+
+test('task templates retain member/confirmation RLS, deny SDK writes and cascade on workspace root deletion', async () => {
+  const id = randomUUID(), path = `${prefix}/taskTemplates/${id}`;
+  const defaults = { title: 'Shared template', content: { blocks: [{ type: 'paragraph', text: 'Private body' }] } };
+  assert.equal((await api(member, 'PUT', path, { name: 'Template', defaults, expectedRevision: 0 })).status, 200);
+  const count = async uid => (await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_documents where path='${path}';`)).split('\n').at(-1);
+  assert.equal(await count(member), '1'); assert.equal(await count(outsider), '0');
+  await sql(`update auth.users set email_confirmed_at=null where id='${member}';`);
+  assert.equal(await count(member), '0');
+  for (const role of ['authenticated','service_role']) await assert.rejects(sql(`set role ${role}; update public.teamspace_documents set data='{}' where path='${path}';`), /permission denied/);
+  assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_tasks');"), 't');
+  await sql(`delete from public.teamspace_documents where path='${prefix}';`);
+  assert.equal(await value(path), undefined);
 });

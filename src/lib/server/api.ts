@@ -1,4 +1,5 @@
 import "server-only";
+import { saveTaskTemplate, templateView } from "./task-template-service";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import {
@@ -1652,7 +1653,7 @@ export async function handleTrustedApi(
     if (resource === "snapshot" && !itemId && method === "GET") {
       const result = await db.runTransaction(async tx => {
         await member(tx,workspace,user.uid);
-        const names = ["tasks","notes","members","attachments","boardProperties"];
+        const names = ["tasks","notes","members","attachments","boardProperties","taskTemplates"];
         if (db.capabilities?.projects) names.push("projects","savedViews");
         const collections = await Promise.all(names.map(name => tx.get(workspace.collection(name))));
         return Object.fromEntries(names.map((name,index) => [name, collections[index].docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))]));
@@ -1662,6 +1663,15 @@ export async function handleTrustedApi(
     if (resource === "boardProperties" && itemId && !action && method === "PUT") {
       const property = await saveBoardProperty(db, workspace, user, itemId, await body(request));
       return json({ property }, property.revision === 1 ? 201 : 200);
+    }
+    if (resource === "taskTemplates" && !action) {
+      if (itemId && method === "PUT") return json({ template: await saveTaskTemplate(db, workspace, user, itemId, await body(request)) });
+      if (!itemId && method === "GET") return json({ templates: await db.runTransaction(async tx => {
+        await member(tx, workspace, user.uid);
+        const rows = await tx.get(workspace.collection("taskTemplates"));
+        return rows.docs.map(row => templateView(row.id, row.data()));
+      }) });
+      throw new ApiError(405, "method_not_allowed", "Templates support read, save and reversible archive.");
     }
     if (resource === "projects" && !action) {
       requireProjects(db);

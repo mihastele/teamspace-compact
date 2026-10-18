@@ -23,6 +23,7 @@ export function nextTaskRevision(value: Record<string, unknown>): number {
 function taskView(id: string, value: Record<string, unknown>) {
   return {
     id, title: value.title, description: value.description, status: value.status,
+    ...(value.content !== undefined ? { content: value.content } : {}),
     assigneeId: value.assigneeId ?? null, dueDate: value.dueDate ?? null,
     position: value.position, propertyValues: value.propertyValues ?? {}, revision: taskRevision(value),
     ...(value.projectId !== undefined ? { projectId: value.projectId } : {}),
@@ -92,6 +93,8 @@ export async function saveTask(
     if (prior.data()?.deleting)
       throw new ApiError(409, "deleting", "This task is being deleted.");
     const previous = prior.data() ?? {};
+    if (taskId && ("content" in value || (previous.content && "description" in value)) && expectedRevision === undefined)
+      throw new ApiError(409, "revision_required", "Reopen this task and review its latest version before editing the body.");
     if (["projectId", "priority", "estimate"].some(key => key in value)) requireProjects(db);
     const projectId = ("projectId" in value ? value.projectId : previous.projectId) as string | null | undefined;
     if (projectId && (projectId !== previous.projectId || !taskId)) {
@@ -102,6 +105,8 @@ export async function saveTask(
     if (expectedRevision !== undefined && taskRevision(previous) !== expectedRevision)
       throw new ApiError(409, "revision_conflict", "This task changed. Review the latest version before applying these changes.");
     const patch = { ...value };
+    if (previous.content && "description" in value && !("content" in value))
+      patch.content = { blocks: [{ type: "paragraph", text: value.description }] };
     if ("propertyValues" in value) {
       const properties = await tx.get(workspace.collection("boardProperties"));
       const definitions = properties.docs.map(row => ({ ...row.data(), id: row.id }) as BoardProperty);
