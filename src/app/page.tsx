@@ -36,6 +36,7 @@ import TaskCalendar from "./components/TaskCalendar";
 import TicketViews, { SavedViewLink } from "./components/TicketViews";
 import TaskTable from "./components/TaskTable";
 import Projects from "./components/Projects";
+import Databases from "./components/Databases";
 import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
@@ -53,7 +54,7 @@ import { taskEditPatch } from "@/lib/task-status";
 import { buildInviteUrl } from "@/lib/app-url";
 
 type Api = ReturnType<typeof useTeamspace>;
-type View = "views" | "projects" | "board" | "table" | "calendar" | "notes" | "members";
+type View = "views" | "projects" | "databases" | "board" | "table" | "calendar" | "notes" | "members";
 type Status = Task["status"];
 const columns: { id: Status; label: string }[] = [
   { id: "todo", label: "To do" },
@@ -2442,7 +2443,7 @@ export default function Home() {
         t.assigneeId === (api.configured ? api.user?.uid : "preview")),
   );
   const title =
-    view === "views" ? "Your saved views" : view === "projects" ? "Your projects" : view === "board"
+    view === "databases" ? "Your databases" : view === "views" ? "Your saved views" : view === "projects" ? "Your projects" : view === "board"
       ? "Project board"
       : view === "table"
         ? "Your task table"
@@ -2486,7 +2487,7 @@ export default function Home() {
         )}
         <p className={s.sideLabel}>WORKSPACE</p>
         <nav className={s.nav} aria-label="Main navigation">
-          {([...(api.projectsEnabled ? ["projects","views"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
+          {([...(api.projectsEnabled ? ["databases","projects","views"] : []), "board", "table", "calendar", "notes", "members"] as View[]).map((v) => (
             <button
               key={v}
               className={view === v ? s.active : ""}
@@ -2494,7 +2495,7 @@ export default function Home() {
               aria-current={view === v ? "page" : undefined}
             >
               <Icon name={v} />
-              {v === "views" ? "Views" : v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
+              {v === "databases" ? "Databases" : v === "views" ? "Views" : v === "projects" ? "Projects" : v === "board" ? "Board" : v === "table" ? "Table" : v === "calendar" ? "Calendar" : v === "notes" ? "Notes" : "Members"}
               {v === "board" && (
                 <span className={s.navCount}>{api.tasks.length}</span>
               )}
@@ -2527,7 +2528,7 @@ export default function Home() {
             {api.workspace.name}
             <span>/</span>
             <strong>
-              {view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
+              {view === "databases" ? "Databases" : view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board"
                 : view === "table"
                   ? "Table"
@@ -2584,7 +2585,7 @@ export default function Home() {
               <p className={s.eyebrow}>LET’S MAKE SOMETHING GREAT</p>
               <h1>{title}</h1>
               <p className={s.subtitle}>
-                {view === "views" ? "Filter, sort and group the same tasks in reusable views." : view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
+                {view === "databases" ? "Create collections and connect their entries." : view === "views" ? "Filter, sort and group the same tasks in reusable views." : view === "projects" ? "Organize shared work and follow its linked tasks." : view === "board"
                   ? "A clear view of what’s next. One task at a time."
                   : view === "table"
                     ? "Compare tasks and custom fields in one place."
@@ -2608,7 +2609,7 @@ export default function Home() {
           <div className={s.toolbar}>
             <div className={s.viewLabel}>
               <Icon name={view} />
-              {view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
+              {view === "databases" ? "Databases" : view === "views" ? "Saved views" : view === "projects" ? "Projects" : view === "board"
                 ? "Board view"
                 : view === "table"
                   ? "Table view"
@@ -2682,6 +2683,7 @@ export default function Home() {
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
           {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} />}
           {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>

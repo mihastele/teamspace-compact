@@ -512,6 +512,7 @@ export function useTeamspace() {
   },[ticketRequest]);
   const seedViews = useCallback(async()=>{await ticketRequest("views/seed","POST",{});},[ticketRequest]);
   return {
+    databaseRequest: ticketRequest,
     queryTickets, listViews, saveView, seedViews, savedViews,
     configured,
     provider: browserProvider,

@@ -46,6 +46,7 @@ async function rpc(name, value) {
   expressions.teamspace_ticket_context=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified}`;
   expressions.teamspace_ticket_query=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified},${literal(value.p_epoch)},${literal(value.p_where)},${literal(value.p_order)},${literal(value.p_keys)},${json(value.p_parameters)},${value.p_limit}`;
   expressions.teamspace_agent_queue=()=>`${literal(value.p_action)},${json(value.p_input)}`;
+  expressions.teamspace_database_entry=()=>`${literal(value.p_workspace)},${literal(value.p_uid)},${value.p_required},${value.p_verified},${literal(value.p_entry)}`;
   assert.ok(expressions[name], 'Only the service RPC contract is allowed');
   return JSON.parse(await sql(`set role service_role; select public.${name}(${expressions[name]()});`));
 }
@@ -70,6 +71,7 @@ before(async () => {
   await sql(readFileSync('migrations/013-ticket-queries-views.sql', 'utf8'));
   await sql(readFileSync('migrations/014-agent-queue.sql', 'utf8'));
   await sql(readFileSync('migrations/015-task-pages-templates.sql', 'utf8'));
+  await sql(readFileSync('migrations/016-independent-databases.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -101,6 +103,7 @@ require('./ticket-query-api-cases.cjs')(test,{api,member,outsider,owner,prefix,r
 require('./agent-tools-cases.cjs')(test,{api,db:()=>db,createReadOnlyAgentTools,guardedDocumentStore,member,outsider,prefix,sql});
 require('./agent-queue-cases.cjs')(test,{db:()=>db,rpc,sql,member,owner,outsider,prefix,createAgentQueue});
 require('./project-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
+require('./database-api-cases.cjs')(test,{api,member,outsider,prefix,read:value,sql,db:new Proxy({}, {get:(_,key)=>(...args)=>db[key](...args)})});
 require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, prefix, read: value });
 require('./task-page-api-cases.cjs')(test, { api, member: member, outsider: outsider, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
@@ -133,7 +136,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'7');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'8');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -187,6 +190,8 @@ test('canonical migration upgrades populated legacy records atomically without c
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_saved_views';"),'t');
     await query(readFileSync('migrations/014-agent-queue.sql','utf8'));
     await query(readFileSync('migrations/015-task-pages-templates.sql','utf8'));
+    await query(readFileSync('migrations/016-independent-databases.sql','utf8'));
+    assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_database_links';"),'t');
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
     assert.equal(await query('select count(*) from public.teamspace_agent_runs;'),'0');
     assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_agent_runs','teamspace_agent_events','teamspace_agent_requests');"),'t');

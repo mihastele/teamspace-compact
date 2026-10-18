@@ -23,7 +23,7 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-Multiple independent custom databases, notifications and public publishing remain outside scope. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+Notifications and public publishing remain outside scope. On October 18 the user approved independent databases alongside Tasks/Projects; the first PostgreSQL increment adds named collections, rich entry bodies, typed properties and multi-entry relations with incoming links. Migration 016 and matching deployment/authenticated acceptance remain required. Formulas/rollups and generic entry comments/attachments/saved layouts are future increments. See `.agentic/DATABASES-PLAN.md`. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
 
 ### Custom board fields
 

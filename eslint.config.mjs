@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".test-build/**",
+    ".test-build-database/**",
     ".agentic/verification/**",
     ".storage-test-build/**",
     ".supabase/**",

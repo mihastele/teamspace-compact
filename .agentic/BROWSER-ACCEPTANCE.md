@@ -109,3 +109,19 @@ creation with unavailable/archived scoped references and two-user acceptance.
 Automated tests cover independent field/block copying, metadata exclusion, limits,
 legacy literal text and preview argument/environment isolation. Existing trusted
 create validation/retry tests remain separate from browser-local evidence.
+
+# Independent databases — 2026-10-18 acceptance scope
+
+Migration 016 implements PostgreSQL-only collections alongside Tasks/Projects.
+No authenticated browser fixture/live stack was exercised for this increment;
+unit/real PostgreSQL/API/build evidence does not establish DOM acceptance.
+
+Pending browser checks: create Clients/Documents databases; add scalar/select
+and cross-database relation fields; rich entry Save/reopen; select two related
+entries and follow outgoing/incoming links; rename a target/property; archive,
+retain/clear links, reject new archived links and restore; recover a new-record
+draft after reload; competing-tab Web Lock handover; stale schema/body saves,
+outage/response-loss retry, quota/read failure and IME recovery. Verify Load more,
+loaded-title search, the export truncation flag, 30-second refresh versus expanded
+pages, downloads, Escape/focus restoration, 390px overflow and authenticated
+two-user propagation/revocation. No screenshot or manual-acceptance claim.

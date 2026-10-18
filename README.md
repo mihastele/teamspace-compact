@@ -179,7 +179,8 @@ upgrades**. It serializes runs, records checksums atomically with each migration
 and safely skips completed migrations. A failed migration rolls back; earlier
 completed migrations remain applied. Retry after correcting the failure.
 It refuses an existing application schema without its ledger. For installations
-where 007 was previously applied manually, apply 008, 009, 012 and 013 manually following
+where 007 was previously applied manually, apply each unapplied SQL migration
+(008, 009, 012, 013, 014, 015 and 016) in order following
 [its upgrade guide](migrations/008-workspace-administration.md); do not replay
 007 or delete existing tables to make the runner accept them. See
 [migration bookkeeping](migrations/000-supabase-migration-ledger.md).
@@ -202,6 +203,15 @@ archived options retain historical values but cannot be newly selected. Field
 scope/type and option IDs cannot be replaced. Values appear on cards and in the
 table; numeric sorting compares signed decimal values correctly.
 
+Relations currently select **one Project per relation field** in the same
+workspace. The built-in Project field links a task to its primary Project;
+additional Project relation fields can reference other Projects. Trusted writes
+reject unavailable or archived Projects for new links, while existing archived
+links remain readable. PostgreSQL foreign keys enforce the referenced Project.
+Independent databases have their own entry relations, described below.
+Task-to-task relations, automatic reciprocal relation properties, rollups and
+formulas are not implemented. Linked board views show the same workspace tasks.
+
 Limits remain 32 fields per workspace and 50 options per field. Text/URL values
 allow 2,000 characters; Long text allows 10,000. Custom dates are date-only;
 Calendar uses the built-in Due date. **Properties → Export data → Download board JSON** exports saved
@@ -216,6 +226,45 @@ Firebase and local preview retain the existing Text/Select/Multi-select/Date
 workspace fields; Firebase still requires the migration 009 rules. Authenticated
 Project/field UI and two-user browser acceptance remain open. Composable filters and saved views are described below; agent integrations remain
 later milestones.
+
+### Independent databases and entry relations
+
+On PostgreSQL deployments, open **Databases → New database**. Name the collection
+and add properties; **Properties** edits names/options or archives/restores it.
+Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
+relations use the existing property controls. A relation chooses one target
+database and can select multiple entries, including entries in the same database.
+Property types, relation targets and saved option IDs stay stable.
+
+**Add entry** opens a rich page body with explicit Save. Table relation values and
+the entry's **Linked from** section open related pages. Renaming entries/properties
+preserves links. Archived databases/entries retain their links; new links cannot
+select archived targets. Restore a database before editing its entries. Search
+filters loaded entry titles; **Show archived entries** reveals loaded archives.
+**Load more entries** continues a live keyset page. The first page refreshes every
+30 seconds; after loading more, **Refresh** restarts the loaded pages. Existing
+Tasks/Projects remain separate.
+
+Drafts and exact save retries are stored on this device, scoped by account and
+workspace, with one editor per draft across tabs. Reopen **New database** or
+**Add entry** to recover an unsaved new record. Conflicts preserve the draft;
+download it and reopen the latest record before reapplying edits. Browser Web
+Locks are required; clearing browser data removes recovery. **Download draft**
+exports current unsaved work. **Export loaded JSON** exports the selected database's
+saved definition and loaded entries with full bodies, including loaded archives
+and outgoing relation IDs. Its `truncated` flag reports more available entries;
+load the remaining pages before exporting the full collection. Export target
+databases separately for their content. Pages are live, not a frozen backup.
+
+Apply [migration 016](migrations/016-independent-databases.md) and earlier unapplied
+migrations, then deploy the paired API/client. Foreign keys enforce entry links;
+member/confirmation RLS covers definitions, entries and the derived relation
+index. Workspace deletion removes content/links/receipts. Limits are 64 databases
+per workspace, 32 properties per database and 1,000 entries per database, including
+archives. Formulas, rollups, database-specific saved layouts/templates and entry
+comments/attachments remain future work. Firebase/local preview do not expose
+independent databases. Live migration and authenticated browser/two-user acceptance
+remain open; isolated PostgreSQL checks are separate from deployed acceptance.
 
 The website uses the private Docker gateway for server requests, while browser
 requests and signed attachment links retain the configured public API URL.
