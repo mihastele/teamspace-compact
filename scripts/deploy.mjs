@@ -18,9 +18,24 @@ export function composeCommand(deployment,args) {
 function compose(deployment,args,input, capture=true) {
   const result=spawnSync('docker',composeCommand(deployment,args),{cwd:deployment.directory,env:deployment.environment,input,encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024});
   // Compose config, SQL diagnostics and container output can contain credentials.
-  if(result.error||result.status!==0)throw new Error(`Docker operation failed (${args[0]}). Inspect Docker readiness, private configuration and deployment instructions. Raw output was suppressed to protect secrets.`);
+  if(result.error||result.status!==0)throw new Error(dockerFailure(args[0],result));
   if(!capture&&result.stdout)process.stdout.write(result.stdout);
   return result.stdout;
+}
+export function dockerFailure(operation,result) {
+  // Classify known failures without ever echoing potentially private child output.
+  const diagnostic=`${result.error?.code??''}\n${result.stderr??''}\n${result.stdout??''}`;
+  let hint='Check Docker readiness and the selected deployment configuration.';
+  if(/ENOENT/.test(diagnostic))hint='Docker CLI was not found. Install Docker with Compose and ensure docker is on PATH.';
+  else if(/cannot connect|error during connect|is the docker daemon running|dockerDesktopLinuxEngine/i.test(diagnostic))hint='Docker Engine is unavailable. Start Docker Desktop with Linux containers, then retry.';
+  else if(/port is already allocated|address already in use|ports are not available/i.test(diagnostic))hint='A host port is already occupied. Check the selected website/API ports and other running services.';
+  else if(/unauthorized|authentication required|pull access denied|toomanyrequests/i.test(diagnostic))hint='The container registry refused the image pull. Check registry authentication and pull limits.';
+  else if(/unhealthy|dependency failed|did not start|is not running/i.test(diagnostic))hint='A service failed to become healthy. Run the deployment status command to identify it; inspect its logs privately.';
+  return `Docker operation failed (${operation}). ${hint} Raw output was suppressed to protect secrets.`;
+}
+export function preflightFailure(name,directory,problems) {
+  const mail=problems.some(problem=>/SMTP_/.test(problem));
+  return `${name} configuration is incomplete:\n${problems.join('\n')}\nEdit ${resolve(directory,'.env')}.${mail?' Email confirmation requires a working SMTP provider; setup deliberately leaves external credentials blank. See deploy/README.md.':''}\nNo services were started by this command.`;
 }
 export function validateCompose(model,deployment) {
   const project=deployment.values.COMPOSE_PROJECT_NAME,services=model.services;
@@ -39,7 +54,7 @@ export function validateCompose(model,deployment) {
 }
 function doctor(deployment,name,launch) {
   const problems=deploymentProblems(name,deployment.values,launch);
-  if(problems.length)throw new Error(problems.join('\n'));
+  if(problems.length)throw new Error(preflightFailure(name,deployment.directory,problems));
   const configuration=JSON.parse(compose(deployment,['config','--format','json']));
   validateCompose(configuration,deployment);
   console.log(`${name}: keys, public settings, isolated storage/network, private ports and Compose configuration pass.`);
@@ -90,9 +105,12 @@ export async function runDeployment(name,action) {
   // Build before taking an existing website offline. Never expose old writers during migrations.
   compose(deployment,['stop','web','cleanup']);
   try{
+    console.log(`Starting ${name} backend services; first startup may download images and take several minutes.`);
     compose(deployment,['up','-d','--wait','--wait-timeout','240',...backend]);
+    console.log('Backend is healthy. Backing up the database before applying migrations.');
     await migrate(deployment,name);
     if(action==='migrate'){console.log('Website/cleanup remain stopped. Use deploy up to build and start the matching client/API.');return;}
+    console.log(`Starting ${name} website and scheduled cleanup.`);
     compose(deployment,['up','-d','--wait','--wait-timeout','180','web','cleanup']);
   }catch(error){throw new Error(`${error.message}\nWebsite/cleanup may remain stopped. Earlier numbered migrations may have committed. Preserve data and consult the backup/upgrade instructions before restarting.`);}
   console.log(`${name} is running. Website/API bindings are loopback only. Verify HTTPS, email delivery and authenticated two-user flows before release.`);

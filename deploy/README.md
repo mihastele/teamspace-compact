@@ -154,6 +154,21 @@ wrapper because shell variables override dotenv values in plain Compose. Do not
 paste `docker compose config` output into logs: it resolves private credentials.
 The wrapper suppresses raw build/SQL/Compose failure output for the same reason.
 
+### When `up` stops
+
+If the command lists missing `SMTP_*` settings, it stopped during preflight,
+before building or starting services. Edit `deployments/<environment>/.env`
+with your mail provider's settings, run `doctor`, then retry `up`. Generated
+staging credentials do not include an external SMTP account. Email confirmation
+requires mail delivery; a successful image build alone does not make signup ready.
+
+Startup reports the build, backend, backup/migration and website stages. Docker
+failures identify common daemon, port, registry and health problems without
+printing raw child output. For an unhealthy service, run
+`npm run deploy -- staging status` (or `production status`) and inspect that
+service's logs privately on the deployment host. Do not paste unredacted logs
+or resolved Compose configuration into a public issue.
+
 Automated evidence covers generation, overwrite protection, isolation, config
 and image/runtime checks. A healthy container does not establish release
 acceptance. Verify public HTTPS, actual mail delivery, OAuth if enabled, private

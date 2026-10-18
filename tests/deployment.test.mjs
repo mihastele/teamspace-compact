@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { deploymentEnvironment, deploymentProblems, deploymentProcessEnvironment, deploymentPath, publicUrl, scopedSupabaseCompose } from '../scripts/deployment-config.mjs';
 import { setupArguments } from '../scripts/setup-deployment.mjs';
-import { commandArguments } from '../scripts/deploy.mjs';
+import { commandArguments, dockerFailure, preflightFailure } from '../scripts/deploy.mjs';
 
 test('staging and production receive independent aligned secrets with external credentials blank',()=>{
   const staging=parseEnv(deploymentEnvironment('staging'));
@@ -66,4 +66,22 @@ test('scheduled cleanup suppresses raw child failures and shuts down on SIGTERM'
     assert.ok(!output.includes('do-not-log-this-marker'));
     assert.match(output,/failed; retrying/);
   }finally{clearTimeout(timer);child.kill();}
+});
+test('deployment failures explain recovery without disclosing raw Docker output',()=>{
+  for(const [diagnostic,expected]of [
+    ['error during connect: private-token','Start Docker Desktop'],
+    ['port is already allocated private-token','port is already occupied'],
+    ['container private-token is unhealthy','status command'],
+    ['pull access denied private-token','registry'],
+    ['unexpected private-token','configuration'],
+  ]){
+    const message=dockerFailure('up',{status:1,stderr:diagnostic});
+    assert.match(message,new RegExp(expected));
+    assert.ok(!message.includes('private-token'));
+  }
+  assert.match(dockerFailure('config',{error:{code:'ENOENT'}}),/not found/);
+  const message=preflightFailure('staging',deploymentPath('staging'),['Set SMTP_HOST.']);
+  assert.ok(message.includes(deploymentPath('staging')));
+  assert.match(message,/external credentials blank/);
+  assert.match(message,/No services were started/);
 });
