@@ -1742,7 +1742,7 @@ function Notes({
             </button>
           </div>
         )}
-        {liveEnabled && selected && api.user && api.workspace && <RecoveryArchives key={`${api.user.uid}:${key}`}
+        {liveEnabled && selected && api.user && api.workspace && <RecoveryArchives key={`recovery-archives:${api.user.uid}:${key}`}
           scope={`${api.user.uid}:${api.workspace.id}:${selected}:archive-browser`} title={draft.title || "Untitled note"} />}
         {children.length > 0 && (
           <p className={s.hint} style={{ marginBottom: 14 }}>
@@ -1842,7 +1842,7 @@ function Notes({
           disabled={api.loading || draft.state === "Saving"}
           onChange={(e) => update({ title: e.target.value })}
         />
-        <SyncedContentScope key={`${api.user?.uid ?? "preview"}:${key}`} api={api} noteId={selected} content={displayedContent}
+        <SyncedContentScope key={`synced-content:${api.user?.uid ?? "preview"}:${key}`} api={api} noteId={selected} content={displayedContent}
           main={liveEnabled ? collaboration : null}
           onChangeMain={(content, base) => liveEnabled ? changeLiveContent(content, base) : update({ content })}
           onOpen={id => selectNote(id)} onRiskChange={reportLinkedRisk}>
