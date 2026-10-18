@@ -1397,3 +1397,28 @@
 .taskPage .dialogBody { overflow-y: auto; min-height: 0; flex: 1; }
 .taskPage .field { margin-bottom: 12px; }
 .taskPage .taskTemplates { margin: 10px 0 14px; }
+
+.taskPage { border-radius: 18px; border-color: #e5e5e8; color: #1d1d1f; }
+.taskPage .dialogHeader { background: white; border-bottom: 1px solid #f0f0f2; padding: 16px 24px; }
+.taskPage .dialogHeader h2 { font-size: 13px; font-weight: 500; color: #76767e; }
+.taskPage .dialogBody { padding: 30px 64px; }
+.taskPage .taskTitle > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.taskPage .taskTitle input { padding: 8px 0; border: 0; background: transparent; font-size: 32px; line-height: 1.25; font-weight: 650; letter-spacing: -.9px; color: #1d1d1f; border-radius: 4px; }
+.taskTools { display: flex; margin-bottom: 16px; }
+.taskPage .taskTools .taskTemplates { margin: 0; padding: 0; border: 0; border-radius: 0; width: 100%; }
+.taskTools .taskTemplates summary { width: fit-content; font-size: 13px; font-weight: 400; color: #737680; padding: 6px 0; }
+.taskTools .taskTemplates[open] { padding-bottom: 16px; border-bottom: 1px solid #f0f0f2; }
+.taskAttributes { max-width: 600px; margin: 0 0 24px; }
+.taskAttributes .fieldRow { display: contents; }
+.taskPage .taskAttributes .field { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; gap: 16px; margin: 0; font-size: 13px; font-weight: 400; color: #737680; }
+.taskAttributes .field input, .taskAttributes .field select { width: 100%; min-width: 0; padding: 9px 10px; font-size: 14px; color: #292b30; background: transparent; border: 1px solid transparent; border-radius: 7px; }
+.taskAttributes .field input:hover, .taskAttributes .field select:hover { background: #f5f5f7; }
+.taskAttributes .field input:focus-visible, .taskAttributes .field select:focus-visible { outline: 2px solid #007aff; outline-offset: 1px; }
+.taskBody { border-top: 1px solid #eeeef0; padding-top: 24px; min-height: 180px; }
+.draftDownload { margin-top: 24px; border: 0; background: transparent; color: #737680; font: inherit; font-size: 12px; cursor: pointer; padding: 8px 0; }
+.taskPage .dialogActions { border-top: 1px solid #eeeef0; background: #fafafa; padding: 16px 24px; }
+@media (max-width: 600px) {
+  .taskPage .dialogBody { padding: 20px; }
+  .taskPage .taskTitle input { font-size: 27px; }
+  .taskPage .taskAttributes .field { grid-template-columns: 110px minmax(0, 1fr); gap: 8px; }
+}

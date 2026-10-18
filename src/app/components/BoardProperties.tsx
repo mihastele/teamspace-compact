@@ -61,22 +61,28 @@ function PropertyEditor({ api, initial, close }: { api: Api; initial?: BoardProp
           <button type="button" disabled={options.length >= 50} onClick={() => setOptions(previous => [...previous, { id: crypto.randomUUID(), name: "" }])}>Add option</button>
         </div>}
       </fieldset>
-      <p className={s.hint}>Names can change. Existing field types and options are retained to preserve task values. Custom dates are date-only; the calendar uses Due date.</p>
+      <p className={s.hint}>Changes apply to every task using this property.</p>
       <div className={s.actions}><button type="button" disabled={busy} onClick={attemptClose}>Cancel</button><button disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save property"}</button></div>
     </form>
   </dialog>;
 }
 
-export function BoardProperties({ api }: { api: Api }) {
+export function BoardProperties({ api, columns, hidden = [], onVisibilityChange }: { api: Api; columns?: { id: string; label: string }[]; hidden?: string[]; onVisibilityChange?: (id: string, visible: boolean) => void }) {
   const [editing, setEditing] = useState<BoardProperty | "new" | null>(null);
   const [exportError, setExportError] = useState("");
   return <div className={s.manager}>
-    <details><summary>Properties ({api.boardProperties.length})</summary>
+    <details onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const details = event.currentTarget; details.open = false; details.querySelector("summary")?.focus(); } }}><summary>Properties</summary>
       <div className={s.list}>
-        {api.boardProperties.length === 0 && <p>Add fields such as Priority, Labels or Release date.</p>}
-        {api.boardProperties.map(property => <button key={property.id} onClick={() => setEditing(property)}>{property.name} · {labels[property.type]}{property.projectId ? ` · ${api.projects.find(project=>project.id===property.projectId)?.name??"Project"}` : ""}</button>)}
-        <button disabled={api.boardProperties.length >= MAX_PROPERTIES} onClick={() => setEditing("new")}>+ Add property</button>
-        <button onClick={() => {
+        {columns ? columns.map(column => {
+          const property = api.boardProperties.find(field => column.id === `property:${field.id}`);
+          return <div className={s.propertyRow} key={column.id}>
+            <label><input type="checkbox" checked={!hidden.includes(column.id)} disabled={column.id === "title"} onChange={event => onVisibilityChange?.(column.id, event.target.checked)} />{column.label}</label>
+            {property && <button type="button" aria-label={`Edit ${property.name}`} onClick={() => setEditing(property)}>Edit</button>}
+          </div>;
+        }) : api.boardProperties.map(property => <button type="button" className={s.definition} key={property.id} onClick={() => setEditing(property)}><span>{property.name}</span><small>{labels[property.type]}{property.projectId ? ` · ${api.projects.find(project=>project.id===property.projectId)?.name??"Project"}` : ""}</small></button>)}
+        {api.boardProperties.length === 0 && !columns && <p className={s.hint}>Add the details your team needs.</p>}
+        <button type="button" disabled={api.boardProperties.length >= MAX_PROPERTIES} onClick={() => setEditing("new")}>+ Add property</button>
+        <details className={s.export}><summary>Export data</summary><button type="button" onClick={() => {
           setExportError("");
           let url: string | undefined;
           try {
@@ -87,27 +93,29 @@ export function BoardProperties({ api }: { api: Api }) {
         }}>Download board JSON</button>
         <p className={s.hint}>Exports all saved views, projects, task templates, tasks (including full block bodies) and field definitions. Attachments and conversations are separate.</p>
         {exportError && <p role="alert">{exportError}</p>}
+        </details>
       </div>
     </details>
     {editing && <PropertyEditor key={editing === "new" ? "new" : editing.id} api={api} initial={editing === "new" ? undefined : editing} close={() => setEditing(null)} />}
   </div>;
 }
 
-export function TaskPropertyInputs({properties,values,onChange,disabled,members=[],projects=[],projectId}: {
-  properties:BoardProperty[];values:Record<string,PropertyValue>;onChange:(id:string,value:PropertyValue)=>void;disabled:boolean;members?:Member[];projects?:Project[];projectId?:string|null;
+export function TaskPropertyInputs({properties,values,onChange,disabled,members=[],projects=[],projectId,api}: {
+  properties:BoardProperty[];values:Record<string,PropertyValue>;onChange:(id:string,value:PropertyValue)=>void;disabled:boolean;members?:Member[];projects?:Project[];projectId?:string|null;api?:Api;
 }) {
+  const [editing, setEditing] = useState<BoardProperty | "new" | null>(null);
   const available=properties.filter(property=>!property.projectId||property.projectId===projectId);
+  const name = (property: BoardProperty) => api ? <button type="button" className={s.propertyName} aria-label={`Edit ${property.name} property`} onClick={() => setEditing(property)}>{property.name}<span aria-hidden="true"> ···</span></button> : property.name;
   return <fieldset className={s.values} disabled={disabled}>
-    {available.length>0&&<legend>Custom properties</legend>}
     {available.map(property=>{
       const value=values[property.id];
-      if(property.type==="multiSelect")return <fieldset key={property.id} className={s.options}><legend>{property.name}</legend>
-        {property.options.length===0&&<p>No options yet. Add options from Board / Properties.</p>}
+      if(property.type==="multiSelect")return <fieldset key={property.id} className={s.options}><legend>{name(property)}</legend>
+        {property.options.length===0&&<p className={s.hint}>No options yet.{api && <button type="button" onClick={() => setEditing(property)}>Add options</button>}</p>}
         {property.options.map(option=><label key={option.id}><input type="checkbox" disabled={option.archived&&!(Array.isArray(value)&&value.includes(option.id))} checked={Array.isArray(value)&&value.includes(option.id)} onChange={event=>{
           const selected=Array.isArray(value)?value:[];onChange(property.id,event.target.checked?[...selected,option.id]:selected.filter(id=>id!==option.id));
         }}/>{option.name}{option.archived?" (archived)":""}</label>)}</fieldset>;
-      if(property.type==="checkbox")return <div key={property.id}><label><input type="checkbox" checked={value===true} onChange={event=>onChange(property.id,event.target.checked)}/>{property.name}</label>{value==null?<span>Unset</span>:<button type="button" onClick={()=>onChange(property.id,null)}>Clear {property.name}</button>}</div>;
-      return <label key={property.id}>{property.name}
+      if(property.type==="checkbox")return <div className={s.checkboxRow} key={property.id}>{api && name(property)}<label><input type="checkbox" checked={value===true} onChange={event=>onChange(property.id,event.target.checked)}/>{api ? <span className={s.srOnly}>{property.name}</span> : property.name}</label>{value==null?<span>Unset</span>:<button type="button" onClick={()=>onChange(property.id,null)}>Clear</button>}</div>;
+      return <div className={s.valueRow} key={property.id}><label><span className={api ? s.srOnly : undefined}>{property.name}</span>
         {property.type==="select"?<select value={typeof value==="string"?value:""} onChange={event=>onChange(property.id,event.target.value||null)}><option value="">No selection</option>{property.options.map(option=><option key={option.id} value={option.id} disabled={option.archived&&value!==option.id}>{option.name}{option.archived?" (archived)":""}</option>)}</select>:
           property.type==="person"||property.type==="relation"?<select value={typeof value==="string"?value:""} onChange={event=>onChange(property.id,event.target.value||null)}><option value="">No selection</option>
             {property.type==="person"?<>
@@ -119,8 +127,10 @@ export function TaskPropertyInputs({properties,values,onChange,disabled,members=
             </>}
           </select>:property.type==="longText"?<textarea maxLength={10000} value={typeof value==="string"?value:""} onChange={event=>onChange(property.id,event.target.value||null)}/>:
             <input type={property.type==="date"?"date":property.type==="number"?"number":property.type==="url"?"url":"text"} step={property.type==="number"?"any":undefined} maxLength={2000} value={typeof value==="string"||(typeof value==="number"&&Number.isFinite(value))?value:""} onChange={event=>onChange(property.id,event.target.value===""?null:property.type==="number"?event.target.valueAsNumber:event.target.value)}/>}
-      </label>;
+      </label>{api && name(property)}</div>;
     })}
+    {api && <button type="button" className={s.addProperty} disabled={properties.length >= MAX_PROPERTIES} onClick={() => setEditing("new")}>+ Add property</button>}
+    {api && editing && <PropertyEditor key={editing === "new" ? "new" : editing.id} api={api} initial={editing === "new" ? undefined : editing} close={() => setEditing(null)} />}
   </fieldset>;
 }
 

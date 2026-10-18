@@ -1,6 +1,8 @@
-.manager { margin: 0 0 12px; }
-.manager summary { cursor: pointer; font-weight: 600; width: fit-content; }
-.list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.manager { position: relative; margin: 0; align-self: end; font-size: 13px; }
+.manager summary { cursor: pointer; font-weight: 500; width: fit-content; padding: 8px 12px; border-radius: 8px; color: #62666e; list-style: none; }
+.manager summary::after { content: '⌄'; margin-left: 10px; }
+.manager summary:hover { background: #f2f3f5; }
+.list { position: absolute; z-index: 5; top: 100%; left: 0; display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding: 8px; width: min(320px, calc(100vw - 56px)); max-height: 360px; overflow: auto; border: 1px solid #e5e6e8; border-radius: 12px; background: white; box-shadow: 0 12px 36px #17233814; }
 .list p { flex-basis: 100%; margin: 0; }
 .manager button, .dialog button { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #172338; cursor: pointer; }
 .dialog { width: min(500px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; border: 1px solid #cbd5e1; border-radius: 12px; }
@@ -17,3 +19,30 @@
 .options label { display: inline-flex; align-items: center; gap: 6px; margin: 0 14px 6px 0; }
 .summary { display: grid; gap: 4px; margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; text-align: left; }
 .dialog button:disabled { opacity: .55; cursor: default; }
+.manager .list > button { text-align: left; border: 0; background: transparent; border-radius: 7px; }
+.manager .list > button:hover { background: #f5f5f7; }
+.definition { display: flex; align-items: center; justify-content: space-between; gap: 14px; overflow-wrap: anywhere; }
+.definition small { color: #747780; font-weight: 400; }
+.propertyRow { display: flex; align-items: center; gap: 8px; padding: 4px 8px; min-width: 0; }
+.propertyRow label { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow-wrap: anywhere; color: #35373d; }
+.propertyRow button { border: 0; padding: 6px; color: #747780; background: transparent; font-size: 12px; }
+.export { border-top: 1px solid #eeeef0; margin-top: 4px; padding-top: 4px; }
+.export .hint { padding: 8px; }
+.valueRow { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: start; gap: 16px; min-width: 0; }
+.valueRow > label { grid-column: 2; grid-row: 1; display: grid; min-width: 0; }
+.valueRow > label > span:not(.srOnly) { grid-column: 1; }
+.valueRow:has(> label > span:not(.srOnly)) { display: block; }
+.propertyName { grid-column: 1; grid-row: 1; text-align: left; border: 0; background: transparent; padding: 10px 0; color: #737680; font: inherit; font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.propertyName span { color: #a2a4ab; }
+.propertyName:hover { color: #1d1d1f; }
+.values .valueRow input, .values .valueRow select, .values textarea { border: 1px solid transparent; border-radius: 7px; padding: 9px 10px; background: transparent; color: #292b30; font: inherit; font-size: 14px; width: 100%; min-width: 0; }
+.values .valueRow input:hover, .values .valueRow select:hover, .values textarea:hover { background: #f5f5f7; }
+.values input:focus-visible, .values select:focus-visible, .values textarea:focus-visible { background: #f5f5f7; outline: 2px solid #007aff; outline-offset: 1px; }
+.values .options { border: 0; border-radius: 0; padding: 0; margin: 4px 0; }
+.values .options legend { margin: 0; font-size: 13px; color: #737680; }
+.options label { padding: 6px 10px; border-radius: 7px; background: #f5f5f7; font-size: 13px; }
+.checkboxRow { display: flex; align-items: center; gap: 14px; font-size: 13px; min-height: 40px; }
+.checkboxRow > .propertyName { width: 140px; flex-shrink: 0; }
+.values .addProperty { padding: 9px 0; border: 0; background: transparent; color: #737680; font: inherit; font-size: 13px; cursor: pointer; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 600px) { .valueRow { grid-template-columns: 110px minmax(0, 1fr); gap: 8px; } .checkboxRow > .propertyName { width: 110px; } }

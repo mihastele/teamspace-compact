@@ -68,7 +68,7 @@ export default function TaskTemplates({ api, current, disabled, canApply, onAppl
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState<TaskTemplate | null>(null);
-  return <details className={s.taskTemplates}><summary>Task templates ({api.taskTemplates.filter(template => !template.archived).length})</summary>
+  return <details className={s.taskTemplates}><summary>Templates</summary>
     <p className={s.hint}>Create a template from this task, or edit a shared template. Apply templates when creating a new task.</p>
     {error && <p role="alert">{error}</p>}
     {applying && <div role="group" aria-label="Apply task template"><p>Replace this new task’s title, properties and body with {applying.name}?</p><button type="button" disabled={disabled || busy} onClick={() => {

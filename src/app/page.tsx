@@ -450,7 +450,6 @@ function TaskDialog({
           {recovered.error && <button type="button" disabled={!ownsDraft} onClick={() => { if (confirm("Discard the unreadable stored task draft? Download recovery data first if you need it.")) { try { localStorage.removeItem(recoveryKey); setRecovered({ record: null, error: "" }); setStorageError(""); } catch { setStorageError("Browser storage is unavailable."); } } }}>Discard unreadable recovery data</button>}
           {recovered.record && <p className={s.hint}>Recovered a task draft from this device. Review it before saving.</p>}
           {packet && !busy && <p role="status">A save is waiting for acknowledgement. Retry sends the same request; editing is paused to avoid duplicate tasks.</p>}
-          <button type="button" className={s.secondary} onClick={downloadDraft}>Download task draft</button>
           {initial.id && error && !packet && <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { setReview(await api.readTask(initial.id!)); } catch (error) { setError(error instanceof Error ? error.message : "Could not load the latest task."); } finally { setBusy(false); } }}>Review latest saved task</button>}
           {review && <section aria-label="Review latest task"><h3>Latest saved task</h3><div className={s.taskReview}><h4>{review.title}</h4><p>Status: {columns.find(column => column.id === review.status)?.label} · Assignee: {api.members.find(member => member.id === review.assigneeId)?.displayName ?? "Unassigned"} · Due: {review.dueDate ?? "No date"}</p>{api.projectsEnabled && <p>Project: {api.projects.find(project => project.id === review.projectId)?.name ?? "None"} · Priority: {review.priority ?? "none"} · Estimate: {review.estimate ?? "Unset"}</p>}<TaskPropertySummary task={review} properties={api.boardProperties} members={api.members} projects={api.projects} /><MarkdownText text={exportNoteMarkdown(review.title, taskContent(review)).markdown} /></div><button type="button" disabled={busy} onClick={() => {
             const intent = taskEditPatch(baseline, { title: draft.title, description: taskDescription(draft.content), status: draft.status, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}) });
@@ -459,8 +458,8 @@ function TaskDialog({
             setBaseline(taskDraftBaseline(review)); setReview(null); setError("");
           }}>Keep my edits over this reviewed version</button></section>}
           <fieldset disabled={locked} className={s.taskFields}>
-          <label className={s.field}>
-            Task name
+          <label className={`${s.field} ${s.taskTitle}`}>
+            <span>Task name</span>
             <input
               autoFocus
               required
@@ -470,8 +469,10 @@ function TaskDialog({
               placeholder="What needs to happen?"
             />
           </label>
-          <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(taskDraftFields(defaults))} />
-          <details className={s.taskTemplates}><summary>Manage properties and options</summary><BoardProperties api={api} /></details>
+          <div className={s.taskTools}>
+            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(taskDraftFields(defaults))} />
+          </div>
+          <div className={s.taskAttributes}>
           <div className={s.fieldRow}>
             <label className={s.field}>
               Status
@@ -523,17 +524,16 @@ function TaskDialog({
               <label className={s.field}>Estimate<input disabled={busy} type="number" min="0" max="1000000" step="any" value={draft.estimate??""} onChange={event=>setDraft({...draft,estimate:event.target.value===""?null:event.target.valueAsNumber})}/></label>
             </div>
           </>}
-          <TaskPropertyInputs properties={api.boardProperties} values={draft.propertyValues} disabled={busy} members={api.members} projects={api.projects} projectId={draft.projectId}
+          <TaskPropertyInputs api={api} properties={api.boardProperties} values={draft.propertyValues} disabled={locked} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
+          </div>
           </fieldset>
-          <section aria-label="Task body"><h3>Task body</h3><p className={s.hint}>Use / to insert blocks. Changes are saved with Save task.</p>
+          <section className={s.taskBody} aria-label="Task body">
             <BlockEditor value={draft.content} allowedBlockTypes={taskBlockTypes} disabled={locked} onCompositionPendingChange={setComposing} onChange={content => setDraft(previous => ({ ...previous, content }))} />
           </section>
           {initial.id ? (
             <Attachments api={api} type="task" id={initial.id} />
-          ) : (
-            <p className={s.hint}>Save your task to add attachments.</p>
-          )}
+          ) : null}
           {initial.id ? (
             <Conversation
               key={`${api.user?.uid || "preview"}:${api.workspace!.id}:task:${initial.id}`}
@@ -543,9 +543,8 @@ function TaskDialog({
               disabled={busy}
               onRecoveryRisk={setCommentRecoveryRisk}
             />
-          ) : (
-            <p className={s.hint}>Save your task to start a conversation.</p>
-          )}
+          ) : null}
+          <button type="button" className={s.draftDownload} onClick={downloadDraft}>Download task draft</button>
         </div>
         <div className={s.dialogActions}>
           {initial.id && (
@@ -2662,8 +2661,7 @@ export default function Home() {
             />
           )}
           {view === "table" && <>
-            <BoardProperties key={`table-properties:${taskScope}`} api={api} />
-            <TaskTable key={taskScope} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
+            <TaskTable key={taskScope} api={api} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
           {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}

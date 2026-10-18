@@ -163,6 +163,8 @@ preserve tasks and reject new assignments. Task details also includes priority
 and a numeric estimate; Table includes these fields and Project names.
 
 Open **Properties → Add property** on Board, Table or a `/kanban` embed.
+Table uses this same menu to show/hide columns and edit custom fields. On a task,
+choose **Add property**, or click an existing property's name to edit its options.
 PostgreSQL supports Text, Long text, Number, Date, Checkbox, Select, Multi-select,
 Person, Project relation and URL fields. Scope a field to the workspace or one
 Project. Rename/reorder/color/archive select options without changing their IDs;
@@ -172,7 +174,7 @@ table; numeric sorting compares signed decimal values correctly.
 
 Limits remain 32 fields per workspace and 50 options per field. Text/URL values
 allow 2,000 characters; Long text allows 10,000. Custom dates are date-only;
-Calendar uses the built-in Due date. **Download board JSON** exports saved
+Calendar uses the built-in Due date. **Properties → Export data → Download board JSON** exports saved
 Projects, tasks and field definitions, excluding attachments/conversations.
 
 Apply [migration 012](migrations/012-canonical-projects-fields.md) before deploying
@@ -380,11 +382,11 @@ Deploy the rules/index configuration in `migrations/006-conversations.md` before
 
 Open a task from Board, Table, Calendar or a saved view to edit its blocks. Use `/`
 for text, headings, lists, checklists, quotes, code, dividers or Markdown, then choose
-**Save task**. Existing descriptions open as literal text. **Manage properties and
-options** lets you create/edit fields such as Select and Multi-select without
-leaving the task page. Notes retain their richer board/synced/subpage capabilities.
+**Save task**. Existing descriptions open as literal text. Attributes appear once
+below the title; click a custom property's name to edit its definition and options,
+or **Add property** to create one. Notes retain their richer board/synced/subpage capabilities.
 
-**Task templates** saves a shared template from the current task, edits its default
+**Templates** saves a shared template from the current task, edits its default
 properties/body, and archives/restores it. When creating a task, choose **Use
 template** and review the replacement. Each task gets an independent copy; editing
 a template never rewrites existing tasks. Workspace templates are capped at 64,
