@@ -12,7 +12,7 @@ import { useTeamspace, RequestError } from "@/lib/client";
 import { useTaskDraftLock } from "@/lib/use-task-draft-lock";
 import MarkdownText from "./components/MarkdownText";
 import TaskTemplates from "./components/TaskTemplates";
-import { taskContent, taskDescription, taskBlockTypes, templateDefaults } from "@/lib/task-pages";
+import { taskContent, taskDescription, taskBlockTypes, templateDefaults, duplicateTask } from "@/lib/task-pages";
 import { decodeTaskDraft, taskDraftBaseline, type TaskSavePacket, type TaskDraftRecord } from "@/lib/task-drafts";
 import { useCollaborativeNote } from "@/lib/use-collaborative-note";
 import type { Task, NoteContent, Attachment, BoardView } from "@/lib/model";
@@ -254,9 +254,11 @@ function TaskDialog({
   initial,
   close,
   onProject,
+  onDuplicate,
 }: {
   api: Api;
   onProject: (id: string) => void;
+  onDuplicate: (task: Partial<Task>) => void;
   initial: Partial<Task>;
   close: () => void;
 }) {
@@ -272,7 +274,7 @@ function TaskDialog({
       return { record: raw ? decodeTaskDraft(raw, initial.id) : null, error: "" };
     } catch (error) { return { record: null, error: error instanceof Error ? error.message : "Task recovery could not be read." }; }
   });
-  const [baseline, setBaseline] = useState(() => recovered.record?.baseline ?? taskDraftBaseline(initial));
+  const [baseline, setBaseline] = useState(() => recovered.record?.baseline ?? taskDraftBaseline(initial.id ? initial : {}));
   const [draft, setDraft] = useState(() => taskDraftFields(recovered.record?.draft ?? initial));
   const [packet, setPacket] = useState<TaskSavePacket | null>(() => recovered.record?.packet ?? null);
   const [storageError, setStorageError] = useState(recovered.error);
@@ -281,6 +283,7 @@ function TaskDialog({
   const saved = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [copyError, setCopyError] = useState("");
   const [commentRecoveryRisk, setCommentRecoveryRisk] = useState(false);
   const changed = JSON.stringify(templateDefaults({ ...draft, projectId: draft.projectId || undefined })) !==
     JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined }));
@@ -433,6 +436,20 @@ function TaskDialog({
           <h2 id="task-dialog-title">
             {initial.id ? "Task page" : "Create a task"}
           </h2>
+          <details className={s.taskActions} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+            <summary aria-label="Task actions">···</summary>
+            <div>
+              {initial.id && <button type="button" disabled={locked || changed || composing || commentRecoveryRisk || Boolean(recovered.error)} title={changed ? "Save your changes before duplicating" : "Open an independent copy to review before saving"} onClick={event => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                try {
+                  const newKey = `teamspace-task-draft-v1:${api.user?.uid ?? "preview"}:${api.workspace!.id}:new`;
+                  if (localStorage.getItem(newKey)) { setCopyError("You already have a new-task draft on this device. Finish it from Add task before making a copy."); return; }
+                  onDuplicate(duplicateTask({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) }));
+                } catch { setCopyError("The copy could not be opened. Your task is unchanged."); }
+              }}>Duplicate task</button>}
+              <button type="button" onClick={downloadDraft}>Download task draft</button>
+            </div>
+          </details>
           <button
             type="button"
             className={s.close}
@@ -445,6 +462,7 @@ function TaskDialog({
         </div>
         <div className={s.dialogBody}>
           {error && <ErrorMessage message={error} />}
+          {copyError && <ErrorMessage message={copyError} />}
           {!ownsDraft && <p role="status">This task draft is read-only while another tab owns it or browser locking is unavailable. Close its other editor to continue here. Draft recovery reloads when ownership transfers.</p>}
           {storageError && <p role="alert">{storageError}</p>}
           {recovered.error && <button type="button" disabled={!ownsDraft} onClick={() => { if (confirm("Discard the unreadable stored task draft? Download recovery data first if you need it.")) { try { localStorage.removeItem(recoveryKey); setRecovered({ record: null, error: "" }); setStorageError(""); } catch { setStorageError("Browser storage is unavailable."); } } }}>Discard unreadable recovery data</button>}
@@ -544,7 +562,6 @@ function TaskDialog({
               onRecoveryRisk={setCommentRecoveryRisk}
             />
           ) : null}
-          <button type="button" className={s.draftDownload} onClick={downloadDraft}>Download task draft</button>
         </div>
         <div className={s.dialogActions}>
           {initial.id && (
@@ -2684,6 +2701,7 @@ export default function Home() {
           key={`${taskScope}:${task.id || "new"}`}
           api={api}
           initial={task}
+          onDuplicate={setTask}
           onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);}}
           close={() => setTask(null)}
         />

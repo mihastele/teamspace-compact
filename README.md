@@ -24,10 +24,40 @@ Use Node 22.13+ or Node 24 LTS, npm, and Java 21 for emulator tests.
 
 ```sh
 npm ci
-npm run dev
+npm run dev:preview
 ```
 
-Open http://localhost:3000. Without backend configuration, the clearly labeled local preview saves tasks and notes only in this browser. It has no shared storage, authentication or attachments.
+Open **http://127.0.0.1:3107**. This is the same browser-local environment used
+for UI checks: instant source updates, seeded example tasks, and data saved in
+this browser. It needs no Docker, account or backend credentials. The launcher
+overrides provider configuration for its child process without editing `.env`
+files. Shared authentication, file storage, Projects, saved views and agents
+require a connected backend. Stop with **Ctrl+C**.
+
+Run `npm ci` on first setup and whenever the lockfile changes; day to day, just
+run `npm run dev:preview`. Use the same browser and exact URL to keep your preview
+data. `localhost`, `127.0.0.1` and different ports have separate browser storage.
+If 3107 is busy, use `npm run dev:preview -- 3200` and open port 3200 instead.
+The launcher binds to loopback and never stops another application to free a port.
+
+For authenticated development, put your chosen backend's app settings in
+gitignored **`.env.local`**, following [Choose a backend](#choose-a-backend), then
+run **`npm run dev:connected`**. It also opens on `http://127.0.0.1:3107`, but reads
+the configured backend and uses real workspace data. For self-hosted Supabase,
+start the backend services using the Docker instructions below; Next runs directly
+on your machine, so you do not need to rebuild the website container for each edit.
+Copy only the app settings from `.env.supabase` to `.env.local`; keep both provider
+URLs and the browser anonymous/server service keys aligned. Leave
+`SUPABASE_INTERNAL_URL` empty when the private Docker hostname is inaccessible
+from the host. Configure Auth's allowed redirect URLs for your dev URL. Restart
+Next after changing environment variables. Migrations and policy publication are
+explicit setup/upgrade steps, never performed by the dev launcher.
+
+`npm run dev` remains the standard configured Next development server on port 3000.
+Java 21 and Docker are for the integration checks, not the browser-only preview.
+
+Before committing, run `npm test`, `npm run lint`, `npm run build`, then
+`npm run typecheck` (after the build, to avoid generated-type races).
 
 ## Workspace administration and direct membership
 
@@ -385,6 +415,14 @@ for text, headings, lists, checklists, quotes, code, dividers or Markdown, then 
 **Save task**. Existing descriptions open as literal text. Attributes appear once
 below the title; click a custom property's name to edit its definition and options,
 or **Add property** to create one. Notes retain their richer board/synced/subpage capabilities.
+
+Use the **··· Task actions** menu to **Duplicate task**. Save any edits first, then
+review the independent copy and choose **Save task** to create it. The copy keeps
+the title with a `(copy)` suffix, body, status, assignee, dates, Project and property
+values; attachments, conversation and audit identity stay with the original.
+Copies get new block IDs and retain normal server validation. If you already have
+a new-task draft, finish it from **Add task** before duplicating. Prefilled new tasks
+and copies participate in device-local draft recovery as soon as they open.
 
 **Templates** saves a shared template from the current task, edits its default
 properties/body, and archives/restores it. When creating a task, choose **Use

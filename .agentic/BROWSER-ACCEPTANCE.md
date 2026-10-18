@@ -81,3 +81,31 @@ Open: authenticated two-user/template Realtime acceptance on Firebase/Supabase,
 provider outage/response-loss/storage-quota/IME UI scenarios and a persisted automated
 React/browser suite. Actual database revision/replay/access/migration behavior has
 separate integration tests; local UI checks are not deployed acceptance.
+
+## 2026-10-18 — Task duplication and repeatable preview
+
+- Started using `npm run dev:preview` on http://127.0.0.1:3107. The config API
+  returned provider=firebase, configured=false. No Docker/backend was started or
+  configured data modified. The script never edits environment files.
+- Opened seeded Shape the project brief, chose Task actions / Duplicate task,
+  and verified the copy title, body, assignee and Design review custom value.
+  Closing offered to retain the draft; after accepting and reloading, Add task
+  recovered the copy before its first Save.
+- Before finishing that draft, attempting a second duplicate preserved the source
+  and displayed the existing-new-draft message. The retained copy was unchanged.
+- Saved the recovered copy as Duplicate acceptance copy with Independent copied
+  body. Board showed four tasks, independent copied text and the original source
+  title/body unchanged. This synthetic local task remains for review.
+- Unsaved source-title edits disabled Duplicate task; restored the original title
+  without saving. Escape dismissed the actions menu and restored its trigger focus.
+- At 390x844, dialog clientWidth=scrollWidth=341px; actions menu and fixed Save/Cancel
+  footer fit the viewport. Screenshots: `.agentic/verification/task-copy-desktop.png`
+  and `task-copy-mobile.png` (gitignored). Reset the viewport afterward.
+- Stopped the owned npm/Next preview with Ctrl+C; no listening socket remained on
+  3107. The unrelated port-3000 application was untouched.
+
+Open: persisted React/browser automation, authenticated Firebase/Supabase duplicate
+creation with unavailable/archived scoped references and two-user acceptance.
+Automated tests cover independent field/block copying, metadata exclusion, limits,
+legacy literal text and preview argument/environment isolation. Existing trusted
+create validation/retry tests remain separate from browser-local evidence.

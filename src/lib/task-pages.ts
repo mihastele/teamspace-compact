@@ -28,3 +28,12 @@ export function applyTaskTemplate(template: TaskTemplate): TaskTemplate["default
   copy.content.blocks = copy.content.blocks.map(block => ({ ...block, id: crypto.randomUUID() }));
   return copy;
 }
+
+/** Copies editable content only; identity, audit, attachments and conversation stay with the source. */
+export function duplicateTask(task: Partial<Task>): TaskTemplate["defaults"] {
+  const copy = templateDefaults({ ...task, content: taskContent({ description: task.description ?? "", content: task.content }) });
+  const title = (task.title?.trim() || "Untitled task").slice(0, 193).replace(/[\uD800-\uDBFF]$/, "");
+  copy.title = `${title} (copy)`;
+  copy.content.blocks = copy.content.blocks.map(block => ({ ...block, id: crypto.randomUUID() }));
+  return copy;
+}

@@ -1,9 +1,32 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { taskContent, taskDescription, templateDefaults, applyTaskTemplate } = require('../.test-build/task-pages.js');
+const { taskContent, taskDescription, templateDefaults, applyTaskTemplate, duplicateTask } = require('../.test-build/task-pages.js');
 const { decodeTaskDraft, taskDraftBaseline } = require('../.test-build/task-drafts.js');
 const { taskInput, taskMutationInput } = require('../.test-build/server/validation.js');
+
+test('duplicated tasks copy editable fields independently and exclude identity and audit data', () => {
+  const source = { id: 'source', title: 'Release', status: 'doing', assigneeId: 'member', dueDate: '2026-10-18',
+    projectId: 'project', priority: 'high', estimate: 3, propertyValues: { labels: ['a'] },
+    description: 'old excerpt', content: { blocks: [{ id: randomUUID(), type: 'heading', level: 2, text: 'Plan' }, { type: 'todo', checked: true, text: 'Ship' }] },
+    revision: 9, createdBy: 'owner', createdAt: 42, attachments: ['private'], comments: ['private'] };
+  const copy = duplicateTask(source), second = duplicateTask(source);
+  assert.equal(copy.title, 'Release (copy)');
+  assert.equal(copy.status, 'doing'); assert.equal(copy.projectId, 'project');
+  assert.equal(copy.assigneeId, 'member'); assert.equal(copy.dueDate, '2026-10-18');
+  assert.equal(copy.priority, 'high'); assert.equal(copy.estimate, 3);
+  assert.equal(copy.description, 'Plan\nShip');
+  assert.equal(copy.content.blocks[0].level, 2); assert.equal(copy.content.blocks[1].checked, true);
+  assert.notEqual(copy.content.blocks[0].id, source.content.blocks[0].id);
+  assert.notEqual(copy.content.blocks[1].id, second.content.blocks[1].id);
+  for (const key of ['id', 'revision', 'createdBy', 'createdAt', 'attachments', 'comments']) assert.equal(Object.hasOwn(copy, key), false, key);
+  copy.content.blocks[0].text = 'Changed'; copy.propertyValues.labels.push('b');
+  assert.equal(source.content.blocks[0].text, 'Plan'); assert.deepEqual(second.propertyValues.labels, ['a']);
+  const legacy = duplicateTask({ title: 'x'.repeat(200), description: '# Literal' });
+  assert.equal(legacy.title.length, 200); assert.equal(legacy.content.blocks[0].text, '# Literal');
+  assert.equal(duplicateTask({ title: '🌿'.repeat(100) }).title.isWellFormed(), true);
+  assert.equal(duplicateTask({}).title, 'Untitled task (copy)');
+});
 
 test('task pages preserve legacy literal descriptions and independently copy template blocks and values', () => {
   const description = '# Literal heading\n- literal list\n\nMore';

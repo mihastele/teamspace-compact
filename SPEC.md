@@ -327,3 +327,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
   full-body indexing claim. Template archive retains content; task deletion removes
   its body; workspace deletion removes template records as documented in migration
   015. Full workspace/account export/deletion UI remains separate scope.
+- Duplicate saved tasks from the task actions menu into independent, reviewable
+  new drafts. Copy editable fields/body with fresh block IDs and a bounded title
+  suffix; leave identity, audit, comments and attachments with the original. Require
+  saving source edits first, protect an existing new-task draft, and retain copied
+  or prefilled drafts locally before their first Save. Normal creation validation
+  and durable retry semantics apply when the user saves the copy.
