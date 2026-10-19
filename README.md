@@ -563,8 +563,30 @@ multi-select any/all, date bounds and numeric comparisons. Archived options rema
 searchable. Empty values also match negative comparisons. Numbers sort numerically;
 text uses case-insensitive deterministic database ordering; nulls stay last.
 A saved view's changes appear in all linked representations. In a `/kanban` note
-block, choose **Shared saved view** to reference one; clearing it restores that
-block's independent settings. Note history/export retains the reference.
+block, use **Named board / saved view** to choose one, or **New named board** to
+create and link a board directly from the note. Choose a name, status/priority
+grouping, timezone and nested property/Project filters before creating it. Multiple
+blocks can choose different named boards over the same tickets. **Refresh boards**
+retries loading the picker. **This block’s basic settings** restores its previous
+independent settings. Creating a named board starts with fresh filters; it does not
+convert the basic block's older deadline/search settings.
+
+Embedded named boards expose **Filters and presentation**: property/Project filters,
+AND/OR groups, layouts, sorts and visible fields. **Apply settings** previews the
+configuration in this instance; **Save changes** updates every reference to the
+named view. **Save as new view** saves and links a separate view to this block.
+Newer remote definitions preserve unapplied edits and require **Reopen saved
+settings** before a reviewed overwrite. Ticket relation fields select Projects;
+filtering properties inside a related record is not implemented.
+
+Create retries retain the original request while the dialog stays open, including
+when the response is lost. If the board was saved but the block changed before
+linking, select the saved board from the picker. Closing/reloading can lose local
+setup drafts/retry identity; saved boards remain available in Views. Note
+history/export retains the view reference, and removing a block never removes its
+saved view or tickets. This flow needs a configured PostgreSQL workspace; Firebase
+and browser-local preview retain basic linked-board controls. No new migration is
+needed beyond existing saved-view migration 013.
 
 Views query canonical PostgreSQL rows with bounded keyset paging, rather than
 loading the full task snapshot for filtering. Counts/exports describe **loaded

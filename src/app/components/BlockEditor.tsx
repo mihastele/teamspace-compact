@@ -116,8 +116,8 @@ const commands: Command[] = [
   },
   {
     type: "board",
-    label: "Kanban / linked board",
-    description: "Embed the live shared workspace board",
+    label: "Kanban / named board",
+    description: "Choose or create a board with ticket and Project filters",
     symbol: "▥",
   },
   {
@@ -834,8 +834,8 @@ export default function BlockEditor({
                 if (!commit(blocks.map((item, i) => i === index ? { ...item, boardView } : item))) throw new Error("The view could not be applied. Your settings are still here.");
               }} disabled={disabled} />
               <small>
-                Changes here update the shared workspace board. Removing this
-                block keeps its tasks.
+                Ticket edits appear in every board. Removing this block keeps
+                its tickets and saved view.
               </small>
             </div>
           ) : block.type === "synced" ? (

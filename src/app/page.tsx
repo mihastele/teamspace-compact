@@ -1852,7 +1852,7 @@ function Notes({
           renderBoard={(block, onViewChange, disabled) => (
             <>
             <SavedViewLink api={api} view={block.boardView} disabled={disabled} onApply={onViewChange}/>
-            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId}/> : <>
+            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId} disabled={disabled} onLink={id=>onViewChange({...block.boardView!,savedViewId:id},block.boardView)}/> : <>
             <LinkedBoardSettings view={block.boardView} members={api.members} disabled={disabled} onApply={onViewChange} />
             <WorkspaceBoard
               key={`${api.workspace?.id}:${block.id ?? "board"}`}

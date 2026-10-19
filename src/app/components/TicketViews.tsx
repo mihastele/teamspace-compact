@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { useTeamspace } from "@/lib/client";
 import type { BoardView, Task } from "@/lib/model";
 import { defaultBoardView } from "@/lib/linked-content";
@@ -7,6 +7,7 @@ import { defaultTicketViews, validateViewConfig, mergeSavedViews, ticketViewUrl,
 import { propertyDisplay } from "@/lib/board-properties";
 import { statusLabels } from "@/lib/task-table";
 import TicketFilters, { queryFields } from "./TicketFilters";
+import NewNamedBoard from "./NewNamedBoard";
 
 import s from "./TicketViews.module.css";
 type Api=ReturnType<typeof useTeamspace>;
@@ -14,14 +15,27 @@ const configOf=(view:ViewConfig):ViewConfig=>({name:view.name,layout:view.layout
 
 export function SavedViewLink({api,view,disabled,onApply}: {api:Api;view?:BoardView;disabled:boolean;onApply:(next:BoardView,baseline:BoardView|undefined)=>void}){
   const [views,setViews]=useState<SavedView[]>([]),[error,setError]=useState("");
+  const [creating,setCreating]=useState(false);
   const {projectsEnabled,listViews}=api;
   useEffect(()=>{let active=true;if(projectsEnabled)listViews().then(rows=>{if(active)setViews(rows);}).catch(()=>{if(active)setError("Saved views could not be loaded.");});return()=>{active=false;};},[projectsEnabled,listViews]);
   const available=mergeSavedViews(api.savedViews,views);
   if(!api.projectsEnabled)return null;
-  return <div className={s.controls}><label>Shared saved view<select disabled={disabled} value={view?.savedViewId??""} onChange={event=>{try{const next={...(view??defaultBoardView)};if(event.target.value)next.savedViewId=event.target.value;else delete next.savedViewId;onApply(next,view);setError("");}catch(error){setError(error instanceof Error?error.message:"View could not be linked.");}}}><option value="">Independent board settings</option>{view?.savedViewId&&!available.some(item=>item.id===view.savedViewId)&&<option value={view.savedViewId}>Unavailable saved view</option>}{available.map(item=><option key={item.id} value={item.id} disabled={item.archived&&item.id!==view?.savedViewId}>{item.name}{item.archived?" (archived)":""}</option>)}</select></label>{error&&<p role="alert">{error}</p>}</div>;
+  return <div className={s.views}><div className={s.controls}>
+    <label>Named board / saved view<select disabled={disabled} value={view?.savedViewId??""} onChange={event=>{try{const next={...(view??defaultBoardView)};if(event.target.value)next.savedViewId=event.target.value;else delete next.savedViewId;onApply(next,view);setError("");}catch(error){setError(error instanceof Error?error.message:"View could not be linked.");}}}>
+      <option value="">This block’s basic settings</option>
+      {view?.savedViewId&&!available.some(item=>item.id===view.savedViewId)&&<option value={view.savedViewId}>Unavailable saved view</option>}
+      {available.map(item=><option key={item.id} value={item.id} disabled={item.archived&&item.id!==view?.savedViewId}>{item.name}{item.archived?" (archived)":""}</option>)}
+    </select></label>
+    <button type="button" disabled={disabled} onClick={()=>setCreating(true)}>New named board</button>
+    <button type="button" disabled={disabled} onClick={async()=>{try{setViews(await listViews());setError("");}catch{setError("Saved views could not be loaded. Try refreshing boards again.");}}}>Refresh boards</button>
+  </div>
+    {!view?.savedViewId&&<p className={s.hint}>Choose or create a named board to filter by ticket properties and linked Projects. Each block can show a different board over the same tickets.</p>}
+    {creating&&<NewNamedBoard api={api} initial={view} disabled={disabled} onApply={onApply} onCreated={row=>setViews(previous=>mergeSavedViews(previous,[row]))} close={()=>setCreating(false)}/>}
+    {error&&<p role="alert">{error}</p>}
+  </div>;
 }
 
-export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:Partial<Task>)=>void;viewId?:string}){
+export default function TicketViews({api,onTask,viewId,disabled=false,onLink}: {api:Api;onTask:(task:Partial<Task>)=>void;viewId?:string;disabled?:boolean;onLink?:(id:string)=>void}){
   const [views,setViews]=useState<SavedView[]>([]),[selected,setSelected]=useState<SavedView|null>(null);
   const [config,setConfig]=useState<ViewConfig|null>(null),[draft,setDraft]=useState<ViewConfig|null>(null);
   const [projectId,setProjectId]=useState("");
@@ -30,7 +44,11 @@ export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:P
   const [notice,setNotice]=useState("");
   const [refresh,setRefresh]=useState(0),[showArchived,setShowArchived]=useState(false);
   const [pending,setPending]=useState<{id:string;patch:Partial<Task>;acknowledged:boolean}|null>(null);
-  const requestSequence=useRef(0),creation=useRef<{digest:string;id:string}|null>(null);
+  const requestSequence=useRef(0),creation=useRef<{digest:string;id:string;row?:SavedView}|null>(null);
+  const saveScope=useRef(0),savingRef=useRef(false);
+  useLayoutEffect(()=>{saveScope.current++;return()=>{saveScope.current++;};},[api.saveView,viewId]);
+  const linkState=useRef({onLink,disabled});
+  useLayoutEffect(()=>{linkState.current={onLink,disabled};},[onLink,disabled]);
   const embedded=Boolean(viewId);
   const fields=queryFields(api.boardProperties,api.projects);
   const schemaSignature=api.boardProperties.map(field=>`${field.id}:${field.revision}`).join(";");
@@ -59,7 +77,7 @@ export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:P
     if(!latest||latest.revision<=selected.revision)return;
     queueMicrotask(()=>{
       setViews(api.savedViews);
-      if(embedded||(config&&draft&&JSON.stringify(config)===JSON.stringify(configOf(selected))&&JSON.stringify(draft)===JSON.stringify(config))){
+      if(config&&draft&&JSON.stringify(config)===JSON.stringify(configOf(selected))&&JSON.stringify(draft)===JSON.stringify(config)){
         const next=configOf(latest);setSelected(latest);setConfig(next);setDraft(next);
       }else setError("The saved view changed. Reopen it to review the latest settings before saving.");
     });
@@ -88,14 +106,24 @@ export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:P
   }
   function choose(row:SavedView){if(draft&&config&&(JSON.stringify(draft)!==JSON.stringify(config)||(selected&&JSON.stringify(config)!==JSON.stringify(configOf(selected))))&&!confirm("Discard unapplied view settings?"))return;setSelected(row);const next=configOf(row);setConfig(next);setDraft(next);remember(next,row.id,projectId,true);}
   async function save(asNew:boolean){
-    if(!draft)return;setSaving(true);setError("");
+    if(!draft||disabled||savingRef.current)return;
+    const scope=saveScope.current;
+    savingRef.current=true;setSaving(true);setError("");
     try{
       const valid=validateViewConfig(draft,api.boardProperties),digest=JSON.stringify(valid);
       if(!creation.current||creation.current.digest!==digest)creation.current={digest,id:crypto.randomUUID()};
-      const row=await api.saveView(valid,!asNew&&selected?{id:selected.id,expectedRevision:selected.revision}:{operationId:creation.current.id});
-      creation.current=null;setViews(previous=>[...previous.filter(item=>item.id!==row.id),row]);setSelected(row);setConfig(valid);setDraft(valid);remember(valid,row.id,projectId,true);
-    }catch(error){setError(error instanceof Error?error.message:"View could not be saved. Your settings are still here.");}
-    finally{setSaving(false);}
+      const creating=asNew||!selected;
+      const row=creating?(creation.current.row??await api.saveView(valid,{operationId:creation.current.id})):await api.saveView(valid,{id:selected!.id,expectedRevision:selected!.revision});
+      if(scope!==saveScope.current)return;
+      if(creating)creation.current.row=row;
+      setViews(previous=>mergeSavedViews(previous,[row]));
+      if(embedded&&asNew){
+        if(linkState.current.disabled)throw new Error("The view was saved. Wait until the note is editable before linking it.");
+        linkState.current.onLink?.(row.id);
+      }
+      creation.current=null;setSelected(row);setConfig(configOf(row));setDraft(configOf(row));remember(configOf(row),row.id,projectId,true);
+    }catch(error){if(scope===saveScope.current)setError(error instanceof Error?error.message:"View could not be saved. Your settings are still here.");}
+    finally{savingRef.current=false;if(scope===saveScope.current)setSaving(false);}
   }
   async function move(task:Task,value:string){
     if(pending||!config)return;
@@ -115,7 +143,7 @@ export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:P
   const groups=!config||config.groupBy==="none"?[{id:"all",name:"Tasks"}]:config.groupBy==="status"?Object.entries(statusLabels).map(([id,name])=>({id,name})):["none","low","medium","high","urgent"].map(id=>({id,name:id}));
   return <section className={s.views} aria-label={embedded?"Linked saved view":"Saved ticket views"}>
     {!embedded&&<div className={s.controls}>
-      <label>Saved view<select value={selected?.id??""} onChange={event=>{const row=listed.find(row=>row.id===event.target.value);if(row)choose(row);}}><option value="">Unsaved view</option>{listed.filter(view=>showArchived||!view.archived||view.id===selected?.id).map(view=><option key={view.id} value={view.id}>{view.name}{view.archived?" (archived)":""}</option>)}</select></label>
+      <label>Saved view<select disabled={saving||disabled} value={selected?.id??""} onChange={event=>{const row=listed.find(row=>row.id===event.target.value);if(row)choose(row);}}><option value="">Unsaved view</option>{listed.filter(view=>showArchived||!view.archived||view.id===selected?.id).map(view=><option key={view.id} value={view.id}>{view.name}{view.archived?" (archived)":""}</option>)}</select></label>
       <button disabled={!selected||saving} onClick={async()=>{if(!selected)return;try{const rows=await api.listViews();setViews(rows);const row=rows.find(row=>row.id===selected.id);if(row)choose(row);else setError("Saved view is unavailable.");}catch(error){setError(error instanceof Error?error.message:"Saved settings could not be reloaded.");}}}>Reopen saved settings</button>
       <label><input type="checkbox" checked={showArchived} onChange={event=>setShowArchived(event.target.checked)}/> Show archived</label>
       <button disabled={saving} onClick={async()=>{setSaving(true);try{await api.seedViews();setViews(await api.listViews());setError("");}catch(error){setError(error instanceof Error?error.message:"Default views could not be created.");}finally{setSaving(false);}}}>Add default views</button>
@@ -123,8 +151,9 @@ export default function TicketViews({api,onTask,viewId}: {api:Api;onTask:(task:P
     </div>}
     {config&&<><h2>{config.name}{selected?.archived?" (archived)":""}</h2>
       <div className={s.controls}><label>Selected Project<select value={projectId} onChange={event=>{setProjectId(event.target.value);remember(config,selected?.id,event.target.value);}}><option value="">Choose a Project</option>{api.projects.map(project=><option key={project.id} value={project.id}>{project.name}{project.archived?" (archived)":""}</option>)}</select></label><button disabled={busy} onClick={()=>setRefresh(value=>value+1)}>Refresh results</button></div>
-      {!embedded&&draft&&<details><summary>Filters and presentation{JSON.stringify(draft)!==JSON.stringify(config)?" · Unapplied changes":""}</summary>
-        <fieldset disabled={saving}><div className={s.controls}>
+      {embedded&&<div className={s.controls}><p className={s.hint}>Filters and presentation are shared with every note using this named view. Save as new view to give this block its own settings.</p><button type="button" disabled={saving||disabled} onClick={async()=>{try{const rows=await api.listViews();setViews(rows);const row=rows.find(row=>row.id===viewId);if(row)choose(row);else setError("Saved view is unavailable.");}catch{setError("Saved settings could not be reloaded.");}}}>Reopen saved settings</button></div>}
+      {draft&&<details><summary>Filters and presentation{JSON.stringify(draft)!==JSON.stringify(config)?" · Unapplied changes":""}</summary>
+        <fieldset disabled={saving||disabled||Boolean(selected?.archived)}><div className={s.controls}>
           <label>View name<input maxLength={80} value={draft.name} onChange={event=>setDraft({...draft,name:event.target.value})}/></label>
           <label>Layout<select value={draft.layout} onChange={event=>setDraft({...draft,layout:event.target.value as ViewConfig["layout"],...(event.target.value==="board"&&draft.groupBy==="none"?{groupBy:"status"}:{} )})}><option value="board">Board</option><option value="table">Table</option><option value="list">List</option></select></label>
           <label>Group by<select value={draft.groupBy} onChange={event=>setDraft({...draft,groupBy:event.target.value as ViewConfig["groupBy"]})}>{draft.layout!=="board"&&<option value="none">No grouping</option>}<option value="status">Status</option><option value="priority">Priority</option></select></label>

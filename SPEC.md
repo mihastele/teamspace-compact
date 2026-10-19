@@ -296,6 +296,17 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Existing note board blocks optionally store savedViewId; shared settings stay
   authoritative while independent legacy settings remain intact. History/downloads
   preserve reference IDs. Changing/removing a reference never deletes tasks/views.
+- Notes can create and link named saved boards in place, choosing name, grouping,
+  timezone and typed property/Project filters. Multiple embeds select independent
+  definitions over shared tickets. Basic legacy settings remain intact on unlink.
+- Embedded saved views expose the shared filter/presentation editor. Apply previews
+  locally; Save changes uses reviewed revisions; Save as new view links the copied
+  definition to this block. New remote definitions preserve dirty view settings.
+- New-board creation freezes the exact request on first send and retains its UUID
+  across dialog-local retries; acknowledged creation survives a stale link failure.
+  Unmount/account/workspace changes fence late linking. Setup drafts are not durable
+  across reload. Closing an uncertain creation may leave a saved unlinked view.
+  PostgreSQL only; existing Firebase/preview basic-board behavior is retained.
 - Views uses typed filters and canonical indexed queries; board moves persist only
   intended status/priority fields. Counts and exports describe loaded rows. URLs
   retain authorized workspace/view/Project/task context and validated overrides.

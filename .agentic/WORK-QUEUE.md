@@ -33,3 +33,13 @@ authenticated two-user/browser/mobile acceptance and a persisted React/browser s
 remain open. Formulas/rollups, Task/Project relation targets and database-specific
 layouts/templates/comments/attachments are future increments. M4c is deferred while
 this database work is prioritized.
+
+
+R13 — Named boards directly in notes: create/link named boards from a note,
+configure existing ticket-property/Project relation filters, and edit shared
+filter/presentation settings in embeds. User selected shared tickets and existing
+Project/property filtering on October 19. Implemented with existing saved-view
+APIs; no schema migration. See NOTE-BOARDS-PLAN.md. Authenticated two-user/deployed
+acceptance, cancellation/focus completion and a persisted DOM suite remain open.
+New relation targets, related-record property traversal, database layouts and
+rollups remain later increments.

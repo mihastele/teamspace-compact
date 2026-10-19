@@ -125,3 +125,33 @@ outage/response-loss retry, quota/read failure and IME recovery. Verify Load mor
 loaded-title search, the export truncation flag, 30-second refresh versus expanded
 pages, downloads, Escape/focus restoration, 390px overflow and authenticated
 two-user propagation/revocation. No screenshot or manual-acceptance claim.
+
+
+## 2026-10-19 — Named board React component fixture
+
+Tested actual SavedViewLink/NewNamedBoard/TicketViews/TicketFilters components
+bundled by the installed Next webpack/TypeScript tools in a gitignored fixture
+on 127.0.0.1:3118. Its in-memory API is synthetic, with two tasks, two Projects
+and relation/number fields; this is not authenticated API/CRDT/two-user acceptance.
+
+- PASS: initial name focus; create Website work with Project equals Website,
+  automatic linking, one matching task and unchanged second block.
+- PASS: second board, synthetic accepted save with lost response, frozen settings
+  and Retry create and link; write/board counters prove retry made no duplicate.
+- PASS: embedded Filters and presentation exposes property/Project controls,
+  sorting/grouping/visible fields; remote update retains a dirty name and exposes
+  a review warning. Pristine second board follows the newer shared name.
+- PASS: disabled note editing disables new/link/save/filter controls. Stale shared
+  Save rejects; Save as new view creates and links an independent definition.
+- PASS: at 390x844 the new-board dialog clientWidth/scrollWidth are both 339px;
+  document width 375px stays within 390px. Initial name focus remains correct.
+- UNVERIFIED: Escape/confirmation/focus restoration. Browser CDP commands stalled
+  when the native discard confirmation opened; subsequent dialog/cleanup/viewport
+  reset calls timed out and the tool reset. No successful cancellation or final
+  viewport-reset claim. The temporary browser tab is agent-created; fixture server
+  was stopped through its owned process session. No live data was involved.
+- No screenshot file was saved. Fixture CSS was loaded from the real components;
+  whole-app styling, note CRDT/history integration, IME and authenticated two-user
+  acceptance remain open, as does a persisted automated DOM suite. UI checks
+  preceded the final save-lifetime/ref guard refinement; final production build
+  and typecheck cover that refinement, not a new browser rerun.
