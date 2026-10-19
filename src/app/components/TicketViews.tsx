@@ -46,7 +46,7 @@ export default function TicketViews({api,onTask,viewId,disabled=false,onLink}: {
   const [pending,setPending]=useState<{id:string;patch:Partial<Task>;acknowledged:boolean}|null>(null);
   const requestSequence=useRef(0),creation=useRef<{digest:string;id:string;row?:SavedView}|null>(null);
   const saveScope=useRef(0),savingRef=useRef(false);
-  useLayoutEffect(()=>{saveScope.current++;return()=>{saveScope.current++;};},[api.saveView,viewId]);
+  useLayoutEffect(()=>{const scope=saveScope;scope.current++;return()=>{scope.current++;};},[api.saveView,viewId]);
   const linkState=useRef({onLink,disabled});
   useLayoutEffect(()=>{linkState.current={onLink,disabled};},[onLink,disabled]);
   const embedded=Boolean(viewId);

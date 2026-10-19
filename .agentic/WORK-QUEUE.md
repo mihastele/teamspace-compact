@@ -1,6 +1,6 @@
 # Specification work queue
 
-Updated 2026-10-18. PROJECT-STATE.md remains the append-only continuity record;
+Updated 2026-10-19. PROJECT-STATE.md remains the append-only continuity record;
 this queue identifies the next actionable tickets and keeps automated evidence
 separate from browser/deployed acceptance.
 
@@ -35,11 +35,13 @@ layouts/templates/comments/attachments are future increments. M4c is deferred wh
 this database work is prioritized.
 
 
-R13 — Named boards directly in notes: create/link named boards from a note,
+R14 — Named boards directly in notes: create/link named boards from a note,
 configure existing ticket-property/Project relation filters, and edit shared
 filter/presentation settings in embeds. User selected shared tickets and existing
 Project/property filtering on October 19. Implemented with existing saved-view
-APIs; no schema migration. See NOTE-BOARDS-PLAN.md. Authenticated two-user/deployed
-acceptance, cancellation/focus completion and a persisted DOM suite remain open.
+APIs; no schema migration. See NOTE-BOARDS-PLAN.md. Cancellation/repeated Escape,
+focus and mobile checks now pass in a maintained manual component fixture
+(`npm run test:ui:named-boards`). Authenticated two-user/deployed acceptance and an
+automated DOM suite remain open.
 New relation targets, related-record property traversal, database layouts and
 rollups remain later increments.

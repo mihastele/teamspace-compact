@@ -18,14 +18,28 @@ export default function NewNamedBoard({ api, initial, disabled, onApply, onCreat
   const [draft, setDraft] = useState(newNamedBoard);
   const [creation] = useState(() => new NamedBoardCreation());
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [closing, setClosing] = useState(false);
+  const keepEditing = useRef<HTMLButtonElement>(null), cancel = useRef<HTMLButtonElement>(null), closeOrigin = useRef<HTMLElement | null>(null);
   const dialog = useRef<HTMLDialogElement>(null), sending = useRef(false), active = useRef(false);
   const latest = useRef({ onApply, onCreated, disabled });
   useLayoutEffect(() => { latest.current = { onApply, onCreated, disabled }; }, [onApply, onCreated, disabled]);
-  const heading = useId();
-  const locked = disabled || busy || creation.started;
+  const heading = useId(), closeHeading = useId();
+  const locked = disabled || busy || creation.started || closing;
+  useLayoutEffect(() => {
+    if (closing) keepEditing.current?.focus();
+    else if (closeOrigin.current) {
+      (closeOrigin.current.isConnected && !closeOrigin.current.matches(":disabled") ? closeOrigin.current : cancel.current)?.focus();
+      closeOrigin.current = null;
+    }
+  }, [closing]);
+  function resumeEditing() {
+    setClosing(false);
+  }
   function attemptClose() {
     if (sending.current) return;
-    if (confirm(creation.started ? "Close board setup? A saved board may already exist in Views. It will be kept even if it is not linked here." : "Discard this new board setup?")) close();
+    if (closing) { resumeEditing(); return; }
+    closeOrigin.current = document.activeElement as HTMLElement | null;
+    setClosing(true);
   }
   useEffect(() => {
     active.current = true;
@@ -39,7 +53,7 @@ export default function NewNamedBoard({ api, initial, disabled, onApply, onCreat
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
   async function create() {
-    if (disabled || sending.current) return;
+    if (disabled || closing || sending.current) return;
     sending.current = true; setBusy(true); setError("");
     try {
       const row = await creation.save(draft, api.boardProperties, () => crypto.randomUUID(), api.saveView);
@@ -55,7 +69,13 @@ export default function NewNamedBoard({ api, initial, disabled, onApply, onCreat
       if (active.current) setBusy(false);
     }
   }
-  return <dialog ref={dialog} className={`${s.dialog} ${s.views}`} aria-labelledby={heading} onCancel={event => { event.preventDefault(); attemptClose(); }}>
+  return <dialog ref={dialog} className={`${s.dialog} ${s.views}`} aria-labelledby={heading}
+    onKeyDown={event => {
+      if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+        event.preventDefault(); event.stopPropagation(); attemptClose();
+      }
+    }}
+    onCancel={event => { event.preventDefault(); attemptClose(); }}>
     <h2 id={heading}>New named board</h2>
     <p className={s.hint}>Choose which shared tickets to show. This creates a reusable board without copying tickets. Existing block filters stay available when you switch back to block settings.</p>
     <fieldset disabled={locked} className={s.group}>
@@ -68,6 +88,10 @@ export default function NewNamedBoard({ api, initial, disabled, onApply, onCreat
     </fieldset>
     <p className={s.hint}>Filter by Project, status, assignee, dates, priority, estimates or custom properties. Relation properties select linked Projects. Add AND/OR groups to combine conditions.</p>
     {error && <p className={s.error} role="alert">{error}{creation.started && " Retry keeps the original settings and request. If linking fails because the block changed, close this dialog and select the saved board from the picker."}</p>}
-    <div className={s.controls}><button type="button" disabled={busy} onClick={attemptClose}>Cancel</button><button type="button" disabled={disabled || busy || !draft.name.trim()} onClick={() => void create()}>{busy ? "Creating…" : creation.started ? "Retry create and link" : "Create and link board"}</button></div>
+    {closing ? <div className={s.group} role="group" aria-labelledby={closeHeading}>
+      <h3 id={closeHeading}>{creation.started ? "Close board setup?" : "Discard this board setup?"}</h3>
+      <p className={s.hint}>{creation.started ? "A saved board may already exist in Views. Closing keeps it there, even if it is not linked here. You can select it from the board picker." : "Your board name and filters will be discarded. No board has been saved."}</p>
+      <div className={s.controls}><button ref={keepEditing} type="button" onClick={resumeEditing}>Keep editing</button><button type="button" onClick={close}>{creation.started ? "Close setup" : "Discard setup"}</button></div>
+    </div> : <div className={s.controls}><button ref={cancel} type="button" disabled={busy} onClick={attemptClose}>Cancel</button><button type="button" disabled={disabled || busy || !draft.name.trim()} onClick={() => void create()}>{busy ? "Creating…" : creation.started ? "Retry create and link" : "Create and link board"}</button></div>}
   </dialog>;
 }

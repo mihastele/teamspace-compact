@@ -155,3 +155,42 @@ and relation/number fields; this is not authenticated API/CRDT/two-user acceptan
   acceptance remain open, as does a persisted automated DOM suite. UI checks
   preceded the final save-lifetime/ref guard refinement; final production build
   and typecheck cover that refinement, not a new browser rerun.
+
+## 2026-10-19 — Named board cancellation and maintained fixture
+
+R14 (renumbered from the duplicate R13 label; deployment setup remains R13).
+Added the maintained `tests/fixtures/named-boards/` harness, launched through
+`npm run test:ui:named-boards` at 127.0.0.1:3118. Real components run under Strict
+Mode with a synthetic in-memory API. It is a manual fixture, not an automated
+browser suite. CSS source injection does not reproduce Next's module scoping.
+
+- PASS: initial Board name focus, Escape opens an in-dialog confirmation with
+  Keep editing focused; draft fields are disabled during review.
+- PASS: second Escape keeps the native dialog open/modal and returns to the
+  original Board name input, preserving its name and Project equals Website
+  filter. Subsequent creation displays only Design homepage; slot 2 is unchanged.
+- PASS: Cancel / Keep editing restores Cancel focus; Cancel / Discard setup
+  removes the dialog and focuses its own New named board trigger. No writes or
+  boards are added by discard (`0` writes / `1` initial board).
+- PASS: accepted save with synthetic lost response freezes the original request;
+  cancellation warns that a board may already exist. Keep editing then Retry
+  create and link adds exactly one board/write. Closing another uncertain setup
+  retains its saved board in the picker and leaves the slot's selection unchanged.
+- PASS: at 390x844, dialog clientWidth=scrollWidth=324px, page width=375px;
+  both confirmation actions end at y786 within the viewport. Tab moves from Keep
+  editing to Discard setup; Shift+Tab returns. Viewport reset succeeded afterward.
+  Screenshot: `.agentic/verification/board-cancel-mobile.png` (gitignored).
+- Initial testing exposed repeated native Escape closing the dialog despite the
+  cancel handler while CSS kept the closed element visible. Intercepting Escape
+  at keydown and hiding closed dialogs fixed it; the final maintained fixture
+  verifies the corrected open/modal state and restored input focus.
+- A reload while setup was open retained the earlier page through its unsaved
+  warning; discarded that synthetic draft before reloading and rerunning. A
+  request to press Tab on the inert body failed; used the enabled dialog actions
+  to finish successfully. No browser setting/security workaround was used.
+
+The final fixture includes explicit errors for unsupported synthetic filters/task
+mutations. It does not establish backend authorization, CRDT/history/IME behavior,
+durable setup recovery, whole-app styling or authenticated two-user acceptance.
+The complete automated unit suite, build/typecheck/lint and HTTP smoke remain
+separate evidence. No live accounts, database or deployed application changed.

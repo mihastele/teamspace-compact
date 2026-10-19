@@ -22,6 +22,7 @@
 .error { color:#a02539; }
 .dialog { width:min(820px,calc(100vw - 32px)); max-height:calc(100dvh - 48px); padding:24px; overflow:auto; border:1px solid #cbd5e1; border-radius:12px; color:#202c42; }
 .dialog::backdrop { background:#10203980; }
+.dialog:not([open]) { display:none; }
 .dialog h2 { margin:0; }
 .controls>label,.filterRow>label { min-width:0; max-width:100%; }
 .views fieldset { min-width:0; }

@@ -306,6 +306,9 @@ The application UI, Firebase client integration, trusted API handlers, default-d
   across dialog-local retries; acknowledged creation survives a stale link failure.
   Unmount/account/workspace changes fence late linking. Setup drafts are not durable
   across reload. Closing an uncertain creation may leave a saved unlinked view.
+  Cancel/Escape opens an in-dialog review focused on Keep editing; Escape again
+  returns to the unchanged draft and restores focus. Confirmed discard returns to
+  the opener. After a send, Close setup warns that any saved view remains available.
   PostgreSQL only; existing Firebase/preview basic-board behavior is retained.
 - Views uses typed filters and canonical indexed queries; board moves persist only
   intended status/priority fields. Counts and exports describe loaded rows. URLs

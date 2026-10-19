@@ -381,6 +381,12 @@ after the build and starts an isolated loopback production server without backen
 credentials, checks PUT in the framework's Allow header and verifies that it
 reaches the guarded API. It does not write data or replace authenticated acceptance.
 
+For a repeatable manual check of note-board dialogs, run
+`npm run test:ui:named-boards` and open http://127.0.0.1:3118. This mounts the real
+components with synthetic in-memory data; it never connects to your backend.
+Follow [the fixture checklist](tests/fixtures/named-boards/README.md), then stop
+with Ctrl+C. This is separate from automated tests and authenticated acceptance.
+
 Task/field operations and conversations share server-only services in
 `src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated
 `GET /api/workspaces/:workspaceId/tasks/:taskId` detail endpoint returns current
@@ -587,6 +593,12 @@ history/export retains the view reference, and removing a block never removes it
 saved view or tickets. This flow needs a configured PostgreSQL workspace; Firebase
 and browser-local preview retain basic linked-board controls. No new migration is
 needed beyond existing saved-view migration 013.
+
+**Cancel** or Escape opens a confirmation inside board setup. **Keep editing**
+preserves the name, filters and exact pending retry; Escape from the confirmation
+also returns to editing. Discarding unsaved setup returns focus to its opener.
+After an attempted save, **Close setup** explains that any saved board is kept
+and can be selected from the picker.
 
 Views query canonical PostgreSQL rows with bounded keyset paging, rather than
 loading the full task snapshot for filtering. Counts/exports describe **loaded

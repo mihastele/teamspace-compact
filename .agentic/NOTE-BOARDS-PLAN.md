@@ -2,6 +2,13 @@
 
 Status: user chose named views over shared tickets and existing Project/property filters. First note-board increment implemented; authenticated deployment acceptance remains open.
 
+Cancellation/focus follow-up: in-dialog Keep editing / Discard setup (or Close
+setup after an attempted save), repeated Escape preserving the modal and draft,
+focus restoration and 390px layout verified on October 19. Maintained manual
+fixture: `npm run test:ui:named-boards`; checklist in
+`tests/fixtures/named-boards/README.md`. Automated DOM and authenticated whole-app
+acceptance remain open.
+
 ## Existing implementation
 
 - Notes accept multiple `/kanban` blocks. Each can keep basic local settings or link to a workspace-shared saved view.
