@@ -1,12 +1,12 @@
 # Specification work queue
 
-Updated 2026-10-19. PROJECT-STATE.md remains the append-only continuity record;
+Updated 2026-10-20. PROJECT-STATE.md remains the append-only continuity record;
 this queue identifies the next actionable tickets and keeps automated evidence
 separate from browser/deployed acceptance.
 
 | Ticket | Status | Next action / completion evidence |
 | --- | --- | --- |
-| R1 — Browse every local recovery archive | Implemented; browser acceptance open | Dated metadata pages, selected Markdown downloads, scope isolation, corruption recovery and unchanged active journals have real IndexedDB tests. Verify dialog focus/Escape, downloads, paging and linked-source recovery in browser. |
+| R1 — Browse every local recovery archive | Component browser acceptance passed; full-app acceptance open | Real browser IndexedDB/Strict Mode fixture verifies focus/Escape, paging across another tab's archive, refreshed/Unicode Markdown downloads, corrupt-record recovery, page/source/account/workspace isolation, unchanged active journal and 390px layout. Repeat with `npm run test:ui:recovery-archives`. Full-app authenticated linked-source placement and delayed-read close/navigation remain open; no automated DOM suite. |
 | R2 — Browser and two-user acceptance | Partially verified locally; authenticated acceptance open | [2026-10-17 browser evidence](BROWSER-ACCEPTANCE.md) covers table sorting/filter/columns/dialog focus, calendar keyboard/date-prefill/persistence and mobile navigation. Fixed mobile page overflow; current browser access works. Remaining: shared task moves, typing/IME, restore/recovery, conversations, fields, linked sources, exports and authenticated two-user/mobile flows. |
 | R3 — Update configured self-hosted installation | Administrator action pending | Apply each unapplied migration through 016 after backup/review, deploy matching client/API, then verify Auth/Storage and two-user flows. Confirm expiry/staging cleanup scheduling. Do not hand-edit the database or infer deployment authorization. |
 | R13 — Repeatable staging/production setup | Implemented; external/live acceptance open | `deploy:setup` generates private keys/env and isolated Compose/data roots; `deploy` validates/builds/backs up/migrates/publishes policy/starts web and hourly cleanup. Both images and isolation checks pass. Staging now runs with local Mailpit capture: full up, backup, migrations through 016, HTTP 200, confirmation-link delivery/verification and first scheduled cleanup pass. Production retains blank external credentials and placeholder URLs; production launch, external SMTP/HTTPS, restore and authenticated two-user acceptance remain open. Follow deploy/README.md for domains, SMTP, HTTPS, backup/restore and two-user acceptance. Legacy installation remains unchanged. |

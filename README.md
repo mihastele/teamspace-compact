@@ -387,6 +387,12 @@ components with synthetic in-memory data; it never connects to your backend.
 Follow [the fixture checklist](tests/fixtures/named-boards/README.md), then stop
 with Ctrl+C. This is separate from automated tests and authenticated acceptance.
 
+For the recovery archive browser, run `npm run test:ui:recovery-archives` and open
+http://127.0.0.1:3119. Follow [the recovery checklist](tests/fixtures/recovery-archives/README.md)
+for real IndexedDB paging, Markdown downloads, corruption and scope isolation.
+It uses synthetic device-local records; stop with Ctrl+C. Full-app authenticated
+recovery remains a separate check.
+
 Task/field operations and conversations share server-only services in
 `src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated
 `GET /api/workspaces/:workspaceId/tasks/:taskId` detail endpoint returns current

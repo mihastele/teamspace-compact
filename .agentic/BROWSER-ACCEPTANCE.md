@@ -194,3 +194,39 @@ mutations. It does not establish backend authorization, CRDT/history/IME behavio
 durable setup recovery, whole-app styling or authenticated two-user acceptance.
 The complete automated unit suite, build/typecheck/lint and HTTP smoke remain
 separate evidence. No live accounts, database or deployed application changed.
+
+## 2026-10-20 — R1 recovery archive component acceptance
+
+Maintained fixture: `npm run test:ui:recovery-archives`, loopback:3119. Real
+RecoveryArchives, IndexedDB, Yjs decode and Markdown export under React Strict
+Mode, with synthetic device-local records. No backend or live account involved.
+
+- PASS: initial Close focus; Tab to Refresh and Shift+Tab back; Escape removes
+  dialog and restores its Local recovery archives trigger; close/reopen works.
+- PASS: first page has 20 archives; Load older yields 25 and removes the button.
+  Actual downloaded Markdown contains archive 25's `café 🐈` text and current
+  fixture title/timestamp. Downloaded files were read from disk for verification.
+- PASS: second tab adds a newer archive while the original first page is open.
+  Continuation still yields the original 25; Refresh then downloads the new
+  `NEW ARCHIVE FROM ANOTHER TAB` content.
+- PASS: newest corrupt checkpoint reports Invalid base64 collaboration payload
+  and keeps data/retry guidance. Next valid archive still downloads successfully.
+- PASS: page/source/account/workspace selections remain separate. The latter
+  three each list one archive; actual files contain the corresponding isolated
+  scope text. Active page journal compares byte-for-byte equal to its saved JSON
+  baseline after all paging, downloads and corrupt reads.
+- PASS: 390x844 dialog clientWidth=scrollWidth=339px, page width=390px. Close,
+  scrolling content and download controls remain usable. Screenshot at
+  `.agentic/verification/recovery-archives-mobile.jpg` (gitignored). Browser
+  viewport reset, both temporary tabs closed and owned fixture server stopped.
+- Tooling correction: viewport first applied to the other open fixture tab;
+  measurements still showed 1280px. Closed that tab and reapplied; final 390px
+  measurements/screenshot above are from the intended tab. No app change needed.
+
+All 229 unit/model/controller/provider/setup cases and warning-free lint pass.
+Production code/schema is unchanged; prior build/backend evidence remains
+historical. This manual fixture is not an automated DOM suite. It uses CSS source
+injection, so full-app CSS module integration is not established. Source scope
+checks do not establish linked-source recovery-panel placement, controller/restore
+or IME integration. Full-app authenticated recovery and deliberately delayed-read
+close/navigation checks remain open; R1/R2 are not closed as a whole.
