@@ -273,6 +273,13 @@ the entry's **Linked from** section open related pages. Renaming entries/propert
 preserves links. Archived databases/entries retain their links; new links cannot
 select archived targets. Restore a database before editing its entries. Search
 filters loaded entry titles; **Show archived entries** reveals loaded archives.
+Click a table heading to sort loaded entries by that property; click again for
+descending order, then return to title order. **Reset sort** restores natural
+title order. Numbers sort numerically; options, people and relations use current
+display names. Empty values stay last in either direction. Sort settings stay
+local to this table and reset when switching databases; loading more rows or
+refreshing keeps the active sort. Sorting/search never changes which server page
+is fetched or the saved/exported record order.
 **Load more entries** continues a live keyset page. The first page refreshes every
 30 seconds; after loading more, **Refresh** restarts the loaded pages. Existing
 Tasks/Projects remain separate.

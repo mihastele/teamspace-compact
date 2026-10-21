@@ -1,6 +1,6 @@
 # Specification work queue
 
-Updated 2026-10-20. PROJECT-STATE.md remains the append-only continuity record;
+Updated 2026-10-21. PROJECT-STATE.md remains the append-only continuity record;
 this queue identifies the next actionable tickets and keeps automated evidence
 separate from browser/deployed acceptance.
 
@@ -30,7 +30,9 @@ architecture on October 18. First PostgreSQL implementation adds named collectio
 rich pages, typed properties, multi-entry relations and incoming links, safe saves,
 archives and JSON export. See DATABASES-PLAN.md and migration 016. Live migration,
 authenticated two-user/browser/mobile acceptance and a persisted React/browser suite
-remain open. Formulas/rollups, Task/Project relation targets and database-specific
+remain open. October 21 adds local typed column sorting over loaded rows, with
+nulls last and stable ID ties; header/reset/paging/refresh/mobile browser
+acceptance for sorting remains open. Formulas/rollups, Task/Project relation targets and database-specific
 layouts/templates/comments/attachments are future increments. M4c is deferred while
 this database work is prioritized.
 

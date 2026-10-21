@@ -24,3 +24,12 @@ relation projection/FK validation, retry/CAS, archived/foreign links, RLS,
 root deletion, clean/populated migrations; lint/typecheck/build; browser/manual
 acceptance if an authenticated fixture is available. Never treat preview or a
 successful build as evidence that live migrations or two-user flows passed.
+
+2026-10-21: database table headers now sort loaded entries by title or any typed
+property. Numeric values use numeric order; other fields use display text, with
+relation name lists normalized independently of selection order. Empty values
+stay last in both directions and equal values use stable entry IDs. Headers
+expose aria-sort; a live count names loaded scope and current order. Reset or
+switching databases returns to natural title order. Paging/refresh retain the
+selected sort without changing cursor/query/export contracts or saved records.
+No saved-layout schema or migration is introduced.

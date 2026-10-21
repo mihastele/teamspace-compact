@@ -230,3 +230,15 @@ injection, so full-app CSS module integration is not established. Source scope
 checks do not establish linked-source recovery-panel placement, controller/restore
 or IME integration. Full-app authenticated recovery and deliberately delayed-read
 close/navigation checks remain open; R1/R2 are not closed as a whole.
+
+
+## 2026-10-21 — Independent database table sorting: acceptance pending
+
+Typed loaded-row sorting has unit coverage, but no new browser interaction
+acceptance is claimed for this increment. Verify on an authenticated PostgreSQL
+workspace: keyboard header activation, ascending/descending/default cycling and
+aria-sort, Reset sort, renamed option/person/relation labels, search/archive
+filters, Load more and Refresh retaining order, database switching resetting it,
+and narrow-screen table scrolling. Confirm the loaded-entry count and more
+available indicator do not imply sorting the entire server collection. Existing
+R12 two-user/access/recovery/mobile acceptance remains open.
