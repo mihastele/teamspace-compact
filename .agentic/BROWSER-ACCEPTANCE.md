@@ -242,3 +242,30 @@ filters, Load more and Refresh retaining order, database switching resetting it,
 and narrow-screen table scrolling. Confirm the loaded-entry count and more
 available indicator do not imply sorting the entire server collection. Existing
 R12 two-user/access/recovery/mobile acceptance remains open.
+
+
+## 2026-10-21 — Searchable database relation picker component
+
+Real DatabaseRelationPicker rendered under React Strict Mode with synthetic
+60-entry targets, retained archived/unavailable selections and read-state
+controls. Repeat with `npm run test:ui:database-relations`; checklist in
+`tests/fixtures/database-relations/README.md`.
+
+- Case-insensitive Unicode search retains selected entries outside the query.
+  Selecting a result updates exact IDs; removing unavailable/archived entries
+  clears their IDs, and unselected archived entries are disabled.
+- At 50 selections a new target is disabled; removing one enables its replacement
+  and the count returns to 50. Loading/failure leave selections unchanged; Retry
+  restores names while keeping the query/IDs.
+- Archived target database blocks new links while retaining removal controls.
+  Disabled editing blocks checkboxes and Clear links. Search remains local.
+- Tab from search focuses Client 1; Space removes it. Clear links clears filtered
+  selections; an unmatched query shows No matching entries and disabled Clear.
+- At 390x844: page width 390px; picker client/scroll widths 358px. Screenshot:
+  `.agentic/verification/relation-picker-mobile.jpg` (gitignored). Viewport reset,
+  temporary tab closed and owned fixture server stopped; no port-3120 listener.
+
+This verifies the component only. The fixture uses CSS source injection, not
+production module scoping, and does not exercise parent target-fetch fencing,
+entry locks/draft saves, real providers or two-user acceptance. Those and the
+persisted automated DOM suite remain open. No live workspace data changed.

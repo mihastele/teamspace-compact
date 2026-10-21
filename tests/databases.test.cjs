@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const {randomUUID}=require('node:crypto');
 const {databaseFields,databaseValues,databaseFieldInput}=require('../.test-build/databases.js');
 const {databaseColumns,sortDatabaseEntries}=require('../.test-build/database-table.js');
+const {databaseRelationChoices,changeDatabaseRelation}=require('../.test-build/database-relations.js');
 test('database relations use distinct bounded entry identities and immutable target databases',()=>{
   const target=randomUUID(),id=randomUUID(),entry=randomUUID();
   const fields=databaseFields([{id,name:'Customers',type:'relation',options:[],targetDatabaseId:target}]);
@@ -18,6 +19,48 @@ test('database relations use distinct bounded entry identities and immutable tar
 const row=(id,propertyValues={},title=id)=>({id,databaseId:'collection',title,content:{blocks:[]},propertyValues,archived:false,revision:1});
 const field=(id,type,options=[])=>({id,name:id,type,options,revision:1});
 const sorted=(rows,column,direction,fields,members=[],targets={})=>sortDatabaseEntries(rows,{column,direction},fields,members,targets).map(row=>row.id);
+
+test('relation search keeps selected and unavailable identities visible without modifying links',()=>{
+  const entries=[row('b',{},'Client 10'),row('a',{},'Client 2'),row('unicode',{},'Čebelica\n  Team')];
+  const selected=['b','missing'];
+  const before=structuredClone(entries);
+  const matches=databaseRelationChoices(entries,selected,'  čEBELICA   team  ');
+  assert.deepEqual(matches.map(choice=>choice.id),['b','missing','unicode']);
+  assert.equal(matches[1].unavailable,true);assert.equal(matches[1].disabled,false);
+  const all=databaseRelationChoices(entries,[], '').map(choice=>choice.id);
+  assert.deepEqual(all.filter(id=>id!=='unicode'),['a','b']);assert.ok(all.includes('unicode'));
+  assert.deepEqual(databaseRelationChoices(entries,[],'no match'),[]);
+  assert.deepEqual(entries,before);assert.deepEqual(selected,['b','missing']);
+});
+
+test('relation selection prevents new archived links while allowing removal of retained and unavailable links',()=>{
+  const entries=[row('active'),{...row('archived'),archived:true}];
+  const choices=databaseRelationChoices(entries,['archived','missing'],'');
+  const archived=choices.find(choice=>choice.id==='archived'),missing=choices.find(choice=>choice.id==='missing');
+  assert.deepEqual(changeDatabaseRelation(['archived','missing'],archived,false),['missing']);
+  assert.deepEqual(changeDatabaseRelation(['missing'],missing,false),[]);
+  const available=databaseRelationChoices(entries,[],'');
+  assert.equal(available.find(choice=>choice.id==='archived').disabled,true);
+  assert.deepEqual(changeDatabaseRelation([],available.find(choice=>choice.id==='archived'),true),[]);
+  const archivedDatabase=databaseRelationChoices(entries,[],'',true);
+  assert.equal(archivedDatabase.find(choice=>choice.id==='active').disabled,true);
+  assert.deepEqual(changeDatabaseRelation([],archivedDatabase.find(choice=>choice.id==='active'),true),[]);
+});
+
+test('relation cap disables only new links and selection changes remain distinct and immutable',()=>{
+  const selected=Array.from({length:50},(_,i)=>`entry-${i}`);
+  const entries=[...selected.map(id=>row(id)),row('new')];
+  const choices=databaseRelationChoices(entries,selected,'');
+  const next=choices.find(choice=>choice.id==='new'),retained=choices.find(choice=>choice.id===selected[0]);
+  assert.equal(next.disabled,true);assert.equal(retained.disabled,false);
+  assert.deepEqual(changeDatabaseRelation(selected,next,true),selected);
+  assert.equal(changeDatabaseRelation(selected,retained,false).length,49);
+  const allowed=databaseRelationChoices(entries,selected.slice(1),'').find(choice=>choice.id==='new');
+  const added=changeDatabaseRelation(selected.slice(1),allowed,true);
+  assert.equal(added.length,50);assert.equal(new Set(added).size,50);
+  assert.deepEqual(changeDatabaseRelation(added,allowed,true),added);
+  assert.equal(selected.length,50);assert.notEqual(added,selected);
+});
 
 test('database table orders signed numbers, zero and dates with missing values last in both directions',()=>{
   const fields=[field('cost','number'),field('date','date')];

@@ -32,7 +32,11 @@ archives and JSON export. See DATABASES-PLAN.md and migration 016. Live migratio
 authenticated two-user/browser/mobile acceptance and a persisted React/browser suite
 remain open. October 21 adds local typed column sorting over loaded rows, with
 nulls last and stable ID ties; header/reset/paging/refresh/mobile browser
-acceptance for sorting remains open. Formulas/rollups, Task/Project relation targets and database-specific
+acceptance for sorting remains open. Searchable relation pickers now retain
+selected/unavailable links, allow explicit clearing and target-read retry, and
+enforce the existing cap/archive controls in the UI. Manual component checks
+pass via `npm run test:ui:database-relations`; full authenticated editor/save
+acceptance remains open. Formulas/rollups, Task/Project relation targets and database-specific
 layouts/templates/comments/attachments are future increments. M4c is deferred while
 this database work is prioritized.
 

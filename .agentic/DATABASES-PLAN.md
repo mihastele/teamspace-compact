@@ -33,3 +33,13 @@ expose aria-sort; a live count names loaded scope and current order. Reset or
 switching databases returns to natural title order. Paging/refresh retain the
 selected sort without changing cursor/query/export contracts or saved records.
 No saved-layout schema or migration is introduced.
+
+Relation picker follow-up (2026-10-21): local target-title search retains all
+selected identities, including unavailable targets, with explicit uncheck/Clear
+links. New archived targets and selections beyond 50 are disabled; removals
+remain available. Failed reads preserve selections and offer retry. Existing
+trusted save/archive validation, schema, export and recovery contracts remain.
+Maintained Strict Mode manual fixture: npm run test:ui:database-relations;
+component search/limits/archive/disabled/loading/retry/keyboard/390px checks pass.
+Full editor, authenticated saves/two-user/recovery and automated DOM acceptance
+remain open.

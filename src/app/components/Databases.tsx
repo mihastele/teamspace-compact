@@ -11,6 +11,7 @@ import { noteContent } from "@/lib/server/validation";
 import { useTaskDraftLock } from "@/lib/use-task-draft-lock";
 import type { NoteContent, PropertyValue } from "@/lib/model";
 import BlockEditor from "./BlockEditor";
+import DatabaseRelationPicker from "./DatabaseRelationPicker";
 import s from "./Databases.module.css";
 type Api = ReturnType<typeof useTeamspace>;
 const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Relation", url:"URL" };
@@ -47,6 +48,8 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
   const [dirty,setDirty]=useState(false);
   const [composition,setComposition]=useState(false);
   const [targets,setTargets]=useState<Record<string,DatabaseEntry[]>>({});
+  const [relationError,setRelationError]=useState("");
+  const [relationRefresh,setRelationRefresh]=useState(0);
   const [incoming,setIncoming]=useState<IncomingRelation[]>([]);
   const [incomingTruncated,setIncomingTruncated]=useState(false);
   const [newType,setNewType]=useState<DatabaseField["type"]>("text");
@@ -77,11 +80,11 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
     let live=true;
     if(entry){
       const ids=[...new Set(database.fields.flatMap(field=>field.targetDatabaseId?[field.targetDatabaseId]:[]))];
-      void Promise.all(ids.map(async id=>[id,await relationChoices(request,id)] as const)).then(rows=>{if(live)setTargets(Object.fromEntries(rows));}).catch(error=>{if(live)setError(error.message);});
+      void Promise.all(ids.map(async id=>[id,await relationChoices(request,id)] as const)).then(rows=>{if(live){setTargets(Object.fromEntries(rows));setRelationError("");}}).catch(()=>{if(live)setRelationError("Could not load relation entries. Existing links are preserved.");});
       if(entry.revision)void request(`databaseEntries/${entry.id}`,"GET").then(result=>{if(live){setIncoming(result.incoming);setIncomingTruncated(result.truncated);}}).catch(error=>{if(live)setError(error.message);});
     }
     return ()=>{live=false;};
-  },[request,database.fields,entry]);
+  },[request,database.fields,entry,relationRefresh]);
   useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dirty||busy||composition){event.preventDefault();}};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[dirty,busy,composition]);
   function persist(next:Packet) {
     try { localStorage.setItem(key,JSON.stringify(next));setStorageError(false);return true; }
@@ -119,7 +122,7 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
         {["select","multiSelect"].includes(field.type)&&<div>{field.options.map((option,i)=><div key={option.id}><input disabled={disabled} aria-label="Option name" value={option.name} maxLength={80} onChange={event=>updateField(index,{options:field.options.map((old,j)=>j===i?{...old,name:event.target.value}:old)})}/><label><input type="checkbox" disabled={disabled} checked={option.archived??false} onChange={event=>updateField(index,{options:field.options.map((old,j)=>j===i?{...old,archived:event.target.checked}:old)})}/>Archived</label></div>)}<button disabled={disabled||field.options.length>=50} onClick={()=>updateField(index,{options:[...field.options,{id:crypto.randomUUID(),name:`Option ${field.options.length+1}`} ]})}>Add option</button></div>}
       </div>)}
       <div className={s.toolbar}><select disabled={disabled} aria-label="New property type" value={newType} onChange={event=>setNewType(event.target.value as DatabaseField["type"])}>{propertyTypes.map(type=><option key={type} value={type}>{labels[type]}</option>)}</select><button disabled={disabled||form.fields.length>=32} onClick={()=>change({fields:[...form.fields,{id:crypto.randomUUID(),name:`Property ${form.fields.length+1}`,type:newType,options:[],revision:1,...(newType==="relation"?{targetDatabaseId:""}:{})}]})}>Add property</button></div></>}
-    {entry&&<>{database.fields.map(field=><div className={s.property} role="group" aria-label={field.name} key={field.id}><span>{field.name}</span><span>{field.type==="relation"?<span className={s.choices}>{(targets[field.targetDatabaseId!]??[]).map(target=>{const selected=Array.isArray(form.propertyValues[field.id])?(form.propertyValues[field.id] as string[]):[];return <label key={target.id}><input type="checkbox" disabled={disabled||((target.archived||definitions.find(item=>item.id===field.targetDatabaseId)?.archived===true)&&!selected.includes(target.id))} checked={selected.includes(target.id)} onChange={event=>value(field,event.target.checked?[...selected,target.id]:selected.filter(id=>id!==target.id))}/>{target.title}{target.archived?" (archived)":""}</label>;})}<small>Link entries from {definitions.find(item=>item.id===field.targetDatabaseId)?.name??"this database"}.</small></span>
+    {entry&&<>{database.fields.map(field=><div className={s.property} role="group" aria-label={field.name} key={field.id}><span>{field.name}</span><span>{field.type==="relation"?<DatabaseRelationPicker name={field.name} targetName={definitions.find(item=>item.id===field.targetDatabaseId)?.name??"this database"} entries={targets[field.targetDatabaseId!]} selected={Array.isArray(form.propertyValues[field.id])?form.propertyValues[field.id] as string[]:[]} disabled={disabled} targetArchived={definitions.find(item=>item.id===field.targetDatabaseId)?.archived===true} error={relationError} retry={()=>{setTargets({});setRelationError("");setRelationRefresh(value=>value+1);}} onChange={ids=>value(field,ids)}/>
       :field.type==="checkbox"?<input aria-label={field.name} type="checkbox" disabled={disabled} checked={form.propertyValues[field.id]===true} onChange={event=>value(field,event.target.checked)}/>
       :field.type==="multiSelect"?<span className={s.choices}>{field.options.map(option=>{const selected=(form.propertyValues[field.id]??[]) as string[];return <label key={option.id}><input type="checkbox" disabled={disabled||(option.archived&&!selected.includes(option.id))} checked={selected.includes(option.id)} onChange={event=>value(field,event.target.checked?[...selected,option.id]:selected.filter(id=>id!==option.id))}/>{option.name}{option.archived?" (archived)":""}</label>;})}</span>
       :field.type==="select"||field.type==="person"?<select aria-label={field.name} disabled={disabled} value={String(form.propertyValues[field.id]??"")} onChange={event=>value(field,event.target.value||null)}><option value="">No selection</option>{(field.type==="person"?api.members.map(member=>({id:member.id,name:member.displayName,archived:false})):field.options).map(option=><option key={option.id} value={option.id} disabled={option.archived&&form.propertyValues[field.id]!==option.id}>{option.name}{option.archived?" (archived)":""}</option>)}</select>

@@ -19,6 +19,11 @@
 .field input { min-width:0; }
 .choices { display:grid; gap:7px; max-height:180px; overflow:auto; }
 .choices label { display:flex; gap:8px; align-items:center; overflow-wrap:anywhere; }
+.relationPicker { display:grid; gap:8px; min-width:0; }
+.relationPicker > input { width:100%; min-width:0; }
+.relationPicker .choices { max-height:240px; }
+.relationPicker .choices input { flex:none; }
+.relationPicker .choices label > span { min-width:0; }
 .error { color:#b3283e; margin:10px 0; }
 .muted { color:#637083; font-size:13px; }
 .incoming { border-top:1px solid #e4e8ed; margin-top:25px; padding-top:14px; }

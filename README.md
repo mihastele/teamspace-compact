@@ -266,7 +266,13 @@ and add properties; **Properties** edits names/options or archives/restores it.
 Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
 relations use the existing property controls. A relation chooses one target
 database and can select multiple entries, including entries in the same database.
-Property types, relation targets and saved option IDs stay stable.
+Property types, relation targets and saved option IDs stay stable. Relation
+pickers search target titles while keeping selected links visible. Uncheck a
+selected link or use **Clear links** to remove it, including unavailable entries.
+Archived entries/databases cannot be newly linked; selected archived links can
+be removed. Each relation accepts up to 50 entries. Failed target reads preserve
+selections and offer **Retry loading entries**; search never saves or changes
+the selection. Existing explicit Save and draft recovery still apply.
 
 **Add entry** opens a rich page body with explicit Save. Table relation values and
 the entry's **Linked from** section open related pages. Renaming entries/properties
@@ -399,6 +405,11 @@ http://127.0.0.1:3119. Follow [the recovery checklist](tests/fixtures/recovery-a
 for real IndexedDB paging, Markdown downloads, corruption and scope isolation.
 It uses synthetic device-local records; stop with Ctrl+C. Full-app authenticated
 recovery remains a separate check.
+
+For relation search/selection, run `npm run test:ui:database-relations` and open
+http://127.0.0.1:3120. Follow [the relation picker checklist](tests/fixtures/database-relations/README.md).
+Targets/read states are synthetic; this does not connect to a backend or save
+entries. Stop with Ctrl+C. Full-editor/authenticated acceptance remains separate.
 
 Task/field operations and conversations share server-only services in
 `src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated
