@@ -7,7 +7,7 @@
 | Project | Teamspace | 2026-10-03 |
 | Frontend | Next.js 16 / React 19 / TypeScript / plain CSS | 2026-10-03 |
 | Backend | Supabase/PostgreSQL is the active development target; Firebase implementation retained but not currently in development | 2026-10-29 |
-| Database | Firestore baseline or Supabase PostgreSQL canonical Projects/Tasks/custom fields plus independent database documents with FK-backed relation index; migrations through 016 prepared, live upgrades pending | 2026-10-18 |
+| Database | Supabase PostgreSQL canonical Projects/Tasks/custom fields and independent database documents; additive empty block containment migration 017 prepared, staging remains at 016 | 2026-10-29 |
 | Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
 | Hosting target | Vercel or production Docker web/Supabase; deploy:setup and deploy commands create isolated staging/production profiles, build, back up/migrate/publish policy and schedule existing hourly cleanup | 2026-10-18 |
 | Agentic ticket expansion | PostgreSQL-focused features; Firebase baseline retained. M1a/M1b/M2/M3 implemented; M4a provider/read tools and M4b private durable queue/audit lifecycle implemented/tested internally. Next M4c checkpoint engine/provenance resume, worker/process/Compose wiring and run API/UI; M5 confirmed writes remain ahead | 2026-10-17 |
@@ -25,7 +25,7 @@
 | Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Access administration | Owner/admin/member workspace roles; root IDs configured server-side; direct addition of existing registered accounts; once-only development auto-join | 2026-10-04 |
 | Secrets location | Server env only: .env.local / .env.supabase and deployments/{staging,production}/.env gitignored and Docker-excluded; planned database backups at ~/.teamspace/backups outside repo | 2026-10-18 |
-| Current milestone | Unified block architecture proposed for PostgreSQL; design decisions and implementation pending. Existing staging through 016 and DB1 remain as previously recorded; rollout and acceptance remain open. Agent M4c/M5 deferred | 2026-10-29 |
+| Current milestone | Unified block architecture: per-block Yjs and move helpers plus empty PostgreSQL containment migration prepared; legacy migration, authenticated writes, references and editor integration remain pending. Staging remains through 016; agent M4c/M5 deferred | 2026-10-29 |
 
 ## Open decisions and release gates
 
@@ -844,3 +844,14 @@
 
 - User chose parentless top-level blocks and one same-workspace parent for other blocks. Added a standalone ordered move planner for a complete single-workspace snapshot; it preserves identities, descendants and sibling order and rejects corrupt snapshots, cycles, missing targets and invalid positions. It does not authorize access, query PostgreSQL or serialize concurrent writes; storage integration and real transactional enforcement remain open.
 - PASSED 244 unit/model/controller/provider/setup cases, lint, optimized production build and standalone typecheck. No schema, live data, dependency or deployment change; no exotic technology deviation. The choice for recovery of old-client offline edits and the migration remain open.
+
+
+### 2026-10-29 - PostgreSQL block containment foundation
+
+- Added migration 017 for empty workspace-scoped block containment: parentless roots, same-workspace parent foreign keys, stable identities, sortable positions and workspace-serialized cycle checks. Existing notes, tasks, projects, histories and staging data are not migrated or modified. PostgreSQL RLS is enabled; confirmed workspace members may read, anonymous/outsider/unconfirmed reads are denied, and direct authenticated/service-role writes are denied. There is no application writer or editor integration yet. Workspace-root deletion cascades block rows; parent-only deletion cannot orphan children. User-facing deletion, reference semantics, authorized export and legacy migration remain open before block data is written.
+- Regenerated the PostgREST row type from a clean isolated PostgreSQL catalog with a checked-in generator; the integration test checks it against the schema. Updated migration runner, README, SPEC and architecture notes. No new dependency or exotic technology deviation.
+- PASSED 244 unit/model/controller/provider/setup cases, lint, optimized production build and standalone typecheck. A broad 68-case PostgreSQL regression run passed; it began before the final workspace-ID constraint and test refinements. Final focused clean/checksum migration, populated upgrade, RLS/access, generated-type and repeated concurrent-move checks passed separately on disposable PostgreSQL containers. No staging or production migration/deployment performed. Full editor, trusted writes, references, collaboration storage, export, deletion and old-client offline migration acceptance remain open.
+
+### FAILED - 2026-10-29: type generator targeted stopped fixture
+
+- A generator run targeted a disposable test container that had already stopped and correctly failed to inspect it. Re-ran the generator against the owned running PostgreSQL fixture and verified the result against a fresh clean fixture. No application data was accessed or changed.

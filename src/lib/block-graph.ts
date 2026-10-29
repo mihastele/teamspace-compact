@@ -1,5 +1,15 @@
+import type { BlockContainmentRow } from "./generated/block-containment";
+
 /** A complete, ordered snapshot of one workspace's containment graph. */
-export type BlockPlacement = { id: string; parentId: string | null };
+export type BlockPlacement = { id: BlockContainmentRow["id"]; parentId: BlockContainmentRow["parent_id"] };
+
+/** Maintained application representation of the PostgreSQL containment row. */
+export type StoredBlockPlacement = BlockPlacement & {
+  workspaceId: BlockContainmentRow["workspace_id"];
+  kind: BlockContainmentRow["kind"];
+  position: BlockContainmentRow["position"];
+  revision: BlockContainmentRow["revision"];
+};
 
 /**
  * Plan a move against a complete snapshot. `index` is measured among the

@@ -1,6 +1,6 @@
 # Unified block architecture proposal
 
-2026-10-29. Proposal for discussion; this is not an implemented schema or an assertion about Notion's internal implementation. Supabase/PostgreSQL is the active development target; Firebase remains in the repository but is not currently in development.
+2026-10-29. The overall architecture remains in progress; this is not an assertion about Notion's internal implementation. Supabase/PostgreSQL is the active development target; Firebase remains in the repository but is not currently in development. Migration 017 prepares empty containment storage but does not migrate existing content or connect the application.
 
 ## Why change
 
@@ -52,6 +52,8 @@ Before adopting the schema, specify block and edge lifecycle, reference deletion
 `src/lib/block-collaboration.ts` creates and merges checkpoints for a single plain-text Yjs block. It rejects incomplete updates, extra roots, hidden map entries, embeds, formatting, invalid text and oversized payloads. The initial checkpoint must be persisted and reused: independently creating a second checkpoint from the same visible text does not reproduce its Yjs causal identity. It does not authenticate, store state, issue receipts, define generations or connect to the editor; a trusted integration must supply those protections and test them end to end.
 
 `src/lib/block-graph.ts` plans ordered containment moves against a complete, ordered single-workspace snapshot. It rejects missing parents, duplicate identities, cycles and invalid destinations and preserves descendants and sibling order. It does not fetch a graph, establish workspace membership or serialize writes: the storage implementation must do those things transactionally and must not treat a partial snapshot as complete.
+
+Migration 017 adds an empty PostgreSQL containment table with workspace-member read RLS, denied direct application-role writes, same-workspace parents and a serialized cycle-check trigger. It is an additive foundation, not a writer, reference model, migration of existing content, or completed editor. See `migrations/017-block-containment.md` for export, deletion, rollout and type-generation boundaries.
 
 ## PostgreSQL containment experiment
 

@@ -1,6 +1,6 @@
 # Teamspace — hackathon build spec
 
-> Development direction, October 2026: Supabase/PostgreSQL is the active target. Firebase is retained in the current implementation but is not currently in development. The existing model described below remains implemented; the proposed unified block model in `.agentic/BLOCK-ARCHITECTURE.md` has not yet been implemented.
+> Development direction, October 2026: Supabase/PostgreSQL is the active target. Firebase is retained in the current implementation but is not currently in development. The existing model described below remains active; migration 017 prepares empty block containment storage, while the unified model in `.agentic/BLOCK-ARCHITECTURE.md` is not yet integrated or migrated.
 
 ## Purpose
 

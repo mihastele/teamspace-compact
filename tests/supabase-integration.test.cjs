@@ -72,6 +72,7 @@ before(async () => {
   await sql(readFileSync('migrations/014-agent-queue.sql', 'utf8'));
   await sql(readFileSync('migrations/015-task-pages-templates.sql', 'utf8'));
   await sql(readFileSync('migrations/016-independent-databases.sql', 'utf8'));
+  await sql(readFileSync('migrations/017-block-containment.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -108,6 +109,50 @@ require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, pr
 require('./task-page-api-cases.cjs')(test, { api, member: member, outsider: outsider, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
+test('block containment has member-only reads, denied direct writes and workspace-scoped parents',async()=>{
+  const first=randomUUID(), child=randomUUID(), foreign=randomUUID();
+  await sql(`insert into public.teamspace_documents(path,data,version) values('workspaces/beta','{}',1);
+    insert into public.teamspace_blocks(workspace_id,id,parent_id,kind,position) values
+      ('alpha','${first}',null,'page','a'),('alpha','${child}','${first}','paragraph','a'),('beta','${foreign}',null,'page','a');`);
+  assert.equal(await sql("select relrowsecurity from pg_class where oid='public.teamspace_blocks'::regclass;"),'t');
+  const count=uid=>sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.teamspace_blocks;`).then(result=>result.split('\n').at(-1));
+  assert.equal(await count(member),'2');
+  assert.equal(await count(outsider),'0');
+  await sql(`update auth.users set email_confirmed_at=now() where id='${outsider}'; update auth.users set email_confirmed_at=null where id='${member}';`);
+  assert.equal(await count(outsider),'0');
+  assert.equal(await count(member),'0');
+  await assert.rejects(sql('set role anon; select * from public.teamspace_blocks;'),/permission denied/);
+  await assert.rejects(sql(`set role authenticated; insert into public.teamspace_blocks(workspace_id,id,kind,position) values('alpha','${randomUUID()}','page','a');`),/permission denied/);
+  await assert.rejects(sql(`set role service_role; update public.teamspace_blocks set parent_id=null where id='${child}';`),/permission denied/);
+  await assert.rejects(sql(`insert into public.teamspace_blocks(workspace_id,id,kind,position) values('alpha/notes/note','${randomUUID()}','page','a');`),/check constraint/);
+  await assert.rejects(sql(`insert into public.teamspace_blocks(workspace_id,id,kind,position,revision) values('alpha','${randomUUID()}','page','a',9007199254740992);`),/check constraint/);
+  await assert.rejects(sql(`update public.teamspace_blocks set parent_id='${foreign}' where workspace_id='alpha' and id='${child}';`),/parent not found/);
+  await assert.rejects(sql(`update public.teamspace_blocks set parent_id='${child}' where workspace_id='alpha' and id='${first}';`),/containment cycle/);
+  await assert.rejects(sql(`update public.teamspace_blocks set id='${randomUUID()}' where workspace_id='alpha' and id='${first}';`),/identity is immutable/);
+  await assert.rejects(sql(`delete from public.teamspace_blocks where workspace_id='alpha' and id='${first}';`),/foreign key/);
+  await sql("delete from public.teamspace_documents where path='workspaces/alpha';");
+  assert.equal(await sql("select count(*) from public.teamspace_blocks where workspace_id='alpha';"),'0');
+  assert.equal(await sql("select count(*) from public.teamspace_blocks where workspace_id='beta';"),'1');
+});
+test('generated block types match the clean PostgreSQL schema', async()=>{
+  const { spawnSync } = require('node:child_process');
+  const generated=spawnSync(process.execPath,['scripts/generate-block-types.mjs','--container',container,'--check'],{encoding:'utf8'});
+  assert.equal(generated.status,0,generated.stderr);
+});
+test('concurrent block moves cannot form a containment cycle',async()=>{
+  const a=randomUUID(), b=randomUUID();
+  await sql(`insert into public.teamspace_blocks(workspace_id,id,kind,position) values('alpha','${a}','page','a'),('alpha','${b}','page','b');`);
+  for(let attempt=0;attempt<5;attempt++){
+    await sql("update public.teamspace_blocks set parent_id=null where workspace_id='alpha';");
+    const outcomes=await Promise.allSettled([
+      sql(`begin; update public.teamspace_blocks set parent_id='${b}' where workspace_id='alpha' and id='${a}'; select pg_sleep(0.2); commit;`),
+      sql(`begin; update public.teamspace_blocks set parent_id='${a}' where workspace_id='alpha' and id='${b}'; select pg_sleep(0.2); commit;`),
+    ]);
+    assert.equal(outcomes.filter(result=>result.status==='fulfilled').length,1);
+    assert.match(outcomes.find(result=>result.status==='rejected').reason.message,/containment cycle|deadlock detected/);
+    assert.equal(await sql("select count(*) from public.teamspace_blocks a join public.teamspace_blocks b on a.workspace_id=b.workspace_id and a.parent_id=b.id and b.parent_id=a.id;"),'0');
+  }
+});
 test('custom field definitions retain member-only RLS reads and SDK write denial',async()=>{
   const id=randomUUID();
   assert.equal((await api(member,'PUT',`${prefix}/boardProperties/${id}`,{name:'Priority',type:'text',options:[],expectedRevision:0})).status,201);
@@ -136,7 +181,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'8');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'9');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -191,6 +236,8 @@ test('canonical migration upgrades populated legacy records atomically without c
     await query(readFileSync('migrations/014-agent-queue.sql','utf8'));
     await query(readFileSync('migrations/015-task-pages-templates.sql','utf8'));
     await query(readFileSync('migrations/016-independent-databases.sql','utf8'));
+    await query(readFileSync('migrations/017-block-containment.sql','utf8'));
+    assert.equal(await query('select count(*) from public.teamspace_blocks;'),'0');
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_database_links';"),'t');
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);
     assert.equal(await query('select count(*) from public.teamspace_agent_runs;'),'0');
