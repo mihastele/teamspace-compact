@@ -30,7 +30,7 @@
 ## Open decisions and release gates
 
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
-- RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
+- RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Top-level blocks have no parent; other blocks have one same-workspace parent. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
 - NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
@@ -838,3 +838,9 @@
 - Added a standalone checkpoint creation primitive for empty and Unicode plain-text blocks, with the same text and checkpoint limits as the merge helper. Initial Yjs checkpoints must be persisted and reused; independently recreating the same visible text does not preserve causal identity for existing updates. Tests verify the resulting missing-dependency rejection.
 - PASSED all 240 existing and new suite cases before the additional migration identity test, then all five targeted block collaboration cases including that test; lint, optimized production build, standalone typecheck and diff check passed. Production editor/API/storage are not connected to the helper. No schema, live data, dependency or deployment change, and no exotic technology deviation.
 - Block graph root shape and old-client offline recovery remain user decisions; migration, permissions, receipts and integration remain open.
+
+
+### 2026-10-29 - Block graph move foundation
+
+- User chose parentless top-level blocks and one same-workspace parent for other blocks. Added a standalone ordered move planner for a complete single-workspace snapshot; it preserves identities, descendants and sibling order and rejects corrupt snapshots, cycles, missing targets and invalid positions. It does not authorize access, query PostgreSQL or serialize concurrent writes; storage integration and real transactional enforcement remain open.
+- PASSED 244 unit/model/controller/provider/setup cases, lint, optimized production build and standalone typecheck. No schema, live data, dependency or deployment change; no exotic technology deviation. The choice for recovery of old-client offline edits and the migration remain open.

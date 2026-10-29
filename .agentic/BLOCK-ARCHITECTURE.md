@@ -9,7 +9,7 @@ The current model stores a flat array of content blocks inside each note, task o
 ## Proposed model
 
 - Give every block a durable, workspace-scoped identity and a type with validated, type-specific data. Pages and database entries are block entities that can contain content. Specialized task, project and database behavior can be backed by typed records attached to block identities rather than forcing all attributes into untyped text.
-- Model containment explicitly: at most one parent per block, an ordered sequence of children, workspace consistency and cycle prevention. Moving a block preserves its identity and descendants. A workspace root or an equivalent explicit root owns top-level entities.
+- Model containment explicitly: at most one parent per block, an ordered sequence of children, workspace consistency and cycle prevention. Moving a block preserves its identity and descendants. Per the user's decision on 2026-10-29, top-level blocks have no parent; every other block has exactly one same-workspace parent.
 - Model references separately from containment. References identify source and target blocks and their kind; database relation fields define which target collection is allowed. Backlinks are derived from indexed relationships. A synced presentation must have one authoritative source and defined unavailable/deleted behavior.
 - A database defines a collection and typed properties; its entries are page-like blocks. Views are saved query and presentation definitions over those entries, not copied data. Existing boards and task workflows should map onto this model only after their semantics are specified.
 - Workspace membership is enforced server-side and by PostgreSQL access controls. Define export and deletion for blocks, edges, attachments, history and collaboration state together. Deletion must not silently destroy independently owned referenced content.
@@ -50,6 +50,8 @@ Migration must account for the existing per-page Yjs generations: copying render
 Before adopting the schema, specify block and edge lifecycle, reference deletion behavior, revision and generation rules, authorization, export/deletion, bounded querying and ordering, and a phased migration. Prototype results alone do not validate resource usage or network and two-user behavior.
 
 `src/lib/block-collaboration.ts` creates and merges checkpoints for a single plain-text Yjs block. It rejects incomplete updates, extra roots, hidden map entries, embeds, formatting, invalid text and oversized payloads. The initial checkpoint must be persisted and reused: independently creating a second checkpoint from the same visible text does not reproduce its Yjs causal identity. It does not authenticate, store state, issue receipts, define generations or connect to the editor; a trusted integration must supply those protections and test them end to end.
+
+`src/lib/block-graph.ts` plans ordered containment moves against a complete, ordered single-workspace snapshot. It rejects missing parents, duplicate identities, cycles and invalid destinations and preserves descendants and sibling order. It does not fetch a graph, establish workspace membership or serialize writes: the storage implementation must do those things transactionally and must not treat a partial snapshot as complete.
 
 ## PostgreSQL containment experiment
 
