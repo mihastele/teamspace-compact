@@ -49,7 +49,7 @@ Migration must account for the existing per-page Yjs generations: copying render
 
 Before adopting the schema, specify block and edge lifecycle, reference deletion behavior, revision and generation rules, authorization, export/deletion, bounded querying and ordering, and a phased migration. Prototype results alone do not validate resource usage or network and two-user behavior.
 
-`src/lib/block-collaboration.ts` is an initial standalone merge primitive for a single plain-text Yjs block. It rejects incomplete updates, extra roots, hidden map entries, embeds, formatting, invalid text and oversized payloads. It does not authenticate, store state, issue receipts, define generations or connect to the editor; a trusted integration must supply those protections and test them end to end.
+`src/lib/block-collaboration.ts` creates and merges checkpoints for a single plain-text Yjs block. It rejects incomplete updates, extra roots, hidden map entries, embeds, formatting, invalid text and oversized payloads. The initial checkpoint must be persisted and reused: independently creating a second checkpoint from the same visible text does not reproduce its Yjs causal identity. It does not authenticate, store state, issue receipts, define generations or connect to the editor; a trusted integration must supply those protections and test them end to end.
 
 ## PostgreSQL containment experiment
 

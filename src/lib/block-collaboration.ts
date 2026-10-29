@@ -32,6 +32,19 @@ function content(doc: Y.Doc, errorCode: "invalid_state" | "invalid_update"): str
   return value;
 }
 
+/** Create one new checkpoint; persist it before sending updates based on it. */
+export function createBlockState(value: string): Uint8Array {
+  if (typeof value !== "string" || value.length > MAX_BLOCK_TEXT_LENGTH || value.includes("\0"))
+    throw new BlockCollaborationError("invalid_state");
+  const doc = new Y.Doc();
+  try {
+    if (value) doc.getText("text").insert(0, value);
+    const state = Y.encodeStateAsUpdate(doc);
+    if (state.byteLength > MAX_BLOCK_STATE_BYTES) throw new BlockCollaborationError("capacity");
+    return state;
+  } finally { doc.destroy(); }
+}
+
 /** Validates and merges a complete update; callers must authorize and persist atomically. */
 export function mergeBlockUpdate(state: Uint8Array, update: Uint8Array): { state: Uint8Array; text: string } {
   if (!(state instanceof Uint8Array) || state.byteLength > MAX_BLOCK_STATE_BYTES)

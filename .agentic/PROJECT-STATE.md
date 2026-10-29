@@ -831,3 +831,10 @@
 ### FAILED - 2026-10-29: strict build typing corrected
 
 - Initial optimized build rejected an implicitly typed Yjs delta callback under the application strict TypeScript settings, although the test compiler passed. Added the explicit callback type; reran the full suite, lint, build and typecheck successfully. No broken source remains.
+
+
+### 2026-10-29 - New collaborative block checkpoints
+
+- Added a standalone checkpoint creation primitive for empty and Unicode plain-text blocks, with the same text and checkpoint limits as the merge helper. Initial Yjs checkpoints must be persisted and reused; independently recreating the same visible text does not preserve causal identity for existing updates. Tests verify the resulting missing-dependency rejection.
+- PASSED all 240 existing and new suite cases before the additional migration identity test, then all five targeted block collaboration cases including that test; lint, optimized production build, standalone typecheck and diff check passed. Production editor/API/storage are not connected to the helper. No schema, live data, dependency or deployment change, and no exotic technology deviation.
+- Block graph root shape and old-client offline recovery remain user decisions; migration, permissions, receipts and integration remain open.

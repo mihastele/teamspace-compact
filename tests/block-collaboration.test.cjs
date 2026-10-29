@@ -1,7 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const Y = require("yjs");
-const { mergeBlockUpdate, MAX_BLOCK_UPDATE_BYTES } = require("../.test-build/block-collaboration.js");
+const { createBlockState, mergeBlockUpdate, MAX_BLOCK_TEXT_LENGTH, MAX_BLOCK_UPDATE_BYTES } = require("../.test-build/block-collaboration.js");
 
 function copy(state) {
   const doc = new Y.Doc();
@@ -14,6 +14,25 @@ function edit(doc, text) {
   return Y.encodeStateAsUpdate(doc, vector);
 }
 function fails(code) { return error => error.code === code; }
+
+test("new checkpoints preserve empty and Unicode text and accept subsequent updates", () => {
+  for (const text of ["", "Živjo 👋\n世界"]) {
+    const state = createBlockState(text);
+    const client = copy(state);
+    assert.equal(client.getText("text").toString(), text);
+    const update = edit(client, " added");
+    assert.equal(mergeBlockUpdate(state, update).text, `${text} added`);
+  }
+  assert.throws(() => createBlockState("bad\0text"), fails("invalid_state"));
+  assert.throws(() => createBlockState("a".repeat(MAX_BLOCK_TEXT_LENGTH + 1)), fails("invalid_state"));
+});
+
+test("recreating visible text does not recreate the checkpoint needed by existing updates", () => {
+  const first = createBlockState("Existing"), recreated = createBlockState("Existing");
+  const update = edit(copy(first), " offline");
+  assert.throws(() => mergeBlockUpdate(recreated, update), fails("missing_dependencies"));
+  assert.equal(mergeBlockUpdate(first, update).text, "Existing offline");
+});
 
 test("concurrent edits merge in either order and duplicate updates do not duplicate text", () => {
   const doc = new Y.Doc();
