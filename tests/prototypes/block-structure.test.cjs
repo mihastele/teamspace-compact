@@ -2,8 +2,9 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
-const { randomBytes } = require("node:crypto");
+const { randomBytes, createHash } = require("node:crypto");
 const { readFileSync } = require("node:fs");
+const Y = require("yjs");
 
 const container = `teamspace-block-experiment-${randomBytes(6).toString("hex")}`;
 let started = false;
@@ -52,4 +53,50 @@ test("concurrent reciprocal moves cannot form a cycle", async () => {
   const rejected = results.find(result => result.status === "rejected");
   assert.match(rejected.reason.message, /cycle/);
   assert.equal(await sql("select count(*) from experiment_blocks a join experiment_blocks b on a.workspace_id=b.workspace_id and a.parent_id=b.id and b.parent_id=a.id where a.workspace_id='one';"), "0");
+});
+
+test("a move, competing edits and an identical retry preserve both updates", async () => {
+  const initial = new Y.Doc();
+  initial.getText("text").insert(0, "Start");
+  const initialState = Y.encodeStateAsUpdate(initial);
+  await sql(`insert into experiment_blocks values ('one','editable',null); insert into experiment_checkpoints values ('one','editable',decode('${Buffer.from(initialState).toString("hex")}','hex'),0);`);
+  function edit(text) {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, initialState);
+    const vector = Y.encodeStateVector(doc);
+    doc.getText("text").insert(5, text);
+    return Y.encodeStateAsUpdate(doc, vector);
+  }
+  const updates = [edit(" A"), edit(" B")];
+  const checkpoint = update => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, initialState);
+    Y.applyUpdate(doc, update);
+    return Buffer.from(Y.encodeStateAsUpdate(doc)).toString("hex");
+  };
+  const digest = update => createHash("sha256").update(update).digest("hex");
+  const save = (index, revision, state, hash = digest(updates[index])) => sql(`select experiment_save('one','editable','op${index}','${hash}',${revision},decode('${state}','hex'));`);
+  const [first, second] = await Promise.all([
+    save(0, 0, checkpoint(updates[0])),
+    save(1, 0, checkpoint(updates[1])),
+    sql("select experiment_move('one','editable','leaf');"),
+  ]);
+  assert.deepEqual([first, second].sort(), ["applied", "conflict"]);
+  const pending = first === "conflict" ? 0 : 1;
+  const saved = first === "applied" ? 0 : 1;
+  const current = await sql("select encode(state,'hex') from experiment_checkpoints where workspace_id='one' and block_id='editable';");
+  const merged = new Y.Doc();
+  Y.applyUpdate(merged, Buffer.from(current, "hex"));
+  Y.applyUpdate(merged, updates[pending]);
+  const mergedState = Buffer.from(Y.encodeStateAsUpdate(merged)).toString("hex");
+  assert.equal(await save(pending, 1, mergedState), "applied");
+  assert.equal(await save(saved, 0, checkpoint(updates[saved])), "replayed");
+  await assert.rejects(save(saved, 0, checkpoint(updates[saved]), "different"), /operation mismatch/);
+  const stored = await sql("select encode(state,'hex') from experiment_checkpoints where workspace_id='one' and block_id='editable';");
+  const restored = new Y.Doc();
+  Y.applyUpdate(restored, Buffer.from(stored, "hex"));
+  assert.match(restored.getText("text").toString(), /^Start(?: A B| B A)$/);
+  assert.equal(await sql("select parent_id from experiment_blocks where workspace_id='one' and id='editable';"), "leaf");
+  assert.equal(await sql("select revision from experiment_checkpoints where workspace_id='one' and block_id='editable';"), "2");
+  assert.equal(await sql("select count(*) from experiment_receipts where workspace_id='one' and block_id='editable';"), "2");
 });
