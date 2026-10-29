@@ -16,7 +16,7 @@ The current model stores a flat array of content blocks inside each note, task o
 
 ## Decisions before implementation
 
-1. **Collaboration boundary:** compare per-page Yjs documents, independent block documents, and another bounded partition. Specify cross-boundary moves, concurrent edits, offline recovery, identity, retries, tombstones and authorization; demonstrate how no accepted edit is lost.
+1. **Collaboration boundary:** user selected a per-text-block Yjs prototype on 2026-10-29, with PostgreSQL owning containment/order. This is approval to prototype, not a final production protocol. Specify cross-boundary moves, concurrent edits, offline recovery, identity, retries, tombstones and authorization; establish how no accepted edit is lost.
 2. **Existing data:** decide whether to migrate existing staging workspaces or reset a specifically identified environment after backup. Not being in production does not establish that its data is disposable. Preserve or explicitly replace history, attachments, links and local drafts according to the decision.
 3. **Tasks and projects:** define how existing lifecycle, board properties, saved views, permissions and agent audit references map to block identities. Avoid assuming every domain record must itself be a content block.
 4. **Reference and deletion semantics:** define linked versus synced behavior, dangling references, archive, subtree deletion and recovery; reconcile existing page history and restore policy.
@@ -30,3 +30,11 @@ The current model stores a flat array of content blocks inside each note, task o
 4. Connect databases, typed relations and views; then migrate task/project workflows and remaining references in separately testable increments.
 
 Each slice must leave a usable build and preserve the existing security and recovery guarantees. Full authenticated two-user, mobile, export/deletion and migration acceptance are required before claiming the redesigned product ready. Existing release gates remain open.
+
+## Collaboration experiment
+
+Run `npm run test:prototype:blocks`. This isolated Yjs experiment models location as a separate in-memory mapping keyed by block identity. It checks concurrent text updates with a cross-page move in both delivery orders, delayed dependent updates and duplicate delivery, and separate block contents. It does not implement PostgreSQL, authorization, durable receipts, routing, deletion, editor integration or an offline journal. Its results establish only the demonstrated Yjs behavior; production acceptance requires real transactions and end-to-end tests.
+
+Compared with the current per-page Yjs document, a per-block document can stay stable across moves and isolates editing histories. The cost is more document state, subscriptions, receipts, requests and client lifecycle management; batching and realistic load measurements are needed. A whole-workspace document would simplify identity across moves but increase contention, state size and authorization/recovery blast radius. Per-page documents limit subscriptions but need a carefully fenced cross-document transfer to avoid stranding offline edits. The experiment does not settle these operational tradeoffs.
+
+The production design must explicitly cover atomic structural changes and cycle checks; concurrent moves and sibling ordering; authorization and membership revocation; update dependency validation and durable idempotency; deletion and late edits; offline journals and recovery; history/restore across moved blocks; batching, limits, and resource cleanup. The existing page restore and linked-source guarantees remain in force until a deliberate replacement is agreed.

@@ -30,7 +30,7 @@
 ## Open decisions and release gates
 
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
-- NEEDS DECISION: unified block architecture collaboration boundaries, treatment of existing staging data and detailed task/project mapping before implementation. See `.agentic/BLOCK-ARCHITECTURE.md` for the proposal and acceptance criteria.
+- NEEDS DECISION: unified block architecture production collaboration protocol, treatment of existing staging data and detailed task/project mapping before implementation. User selected per-text-block Yjs for an isolated prototype; see `.agentic/BLOCK-ARCHITECTURE.md` for proposal and acceptance criteria.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
 
@@ -798,3 +798,10 @@
 - User identified the current model as insufficiently block and relation oriented and chose PostgreSQL for active development; Firebase remains in the codebase but is not currently in development. Existing staged data was not changed or declared disposable.
 - Added BLOCK-ARCHITECTURE.md as a proposal, covering block identity, containment, references, database entries and views, security, collaboration and delivery slices. Collaboration boundaries, existing data handling and task/project mapping need decisions before implementation. README and SPEC clarify backend status.
 - Documentation-only change: no runtime, schema, dependency or deployment change. Automated tests do not validate architectural proposals; implementation and meaningful model, access, migration and collaboration tests remain open. Reviewed the documentation diff and checked whitespace.
+
+
+### 2026-10-29 - Per-block collaboration experiment
+
+- User selected per-text-block Yjs collaboration for an isolated prototype, with containment and ordering intended to be owned by PostgreSQL. This is not approval of a complete production protocol.
+- Added a runnable Yjs experiment and documented tradeoffs and outstanding protocol decisions. Three cases pass: concurrent same-block edits around a simulated cross-page move, delayed dependent updates and duplicate delivery, and separate block contents. The structural mapping is in-memory; the experiment does not verify database transactions, access control, durable receipts, offline recovery, deletion, history, UI or scale. These remain open.
+- PASSED all 236 existing unit/model/controller/provider/setup tests, all three prototype cases and lint. No runtime, schema, dependency, staging data or deployment change, no exotic technology deviation. Existing release gates remain open.
