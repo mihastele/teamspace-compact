@@ -30,7 +30,8 @@
 ## Open decisions and release gates
 
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
-- NEEDS DECISION: unified block architecture production collaboration protocol, treatment of existing staging data and detailed task/project mapping before implementation. User selected per-text-block Yjs for an isolated prototype; see `.agentic/BLOCK-ARCHITECTURE.md` for proposal and acceptance criteria.
+- RESOLVED (unified block model, 2026-10-29): preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields. Per-text-block Yjs is selected for an isolated prototype.
+- NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
 
@@ -805,3 +806,11 @@
 - User selected per-text-block Yjs collaboration for an isolated prototype, with containment and ordering intended to be owned by PostgreSQL. This is not approval of a complete production protocol.
 - Added a runnable Yjs experiment and documented tradeoffs and outstanding protocol decisions. Three cases pass: concurrent same-block edits around a simulated cross-page move, delayed dependent updates and duplicate delivery, and separate block contents. The structural mapping is in-memory; the experiment does not verify database transactions, access control, durable receipts, offline recovery, deletion, history, UI or scale. These remain open.
 - PASSED all 236 existing unit/model/controller/provider/setup tests, all three prototype cases and lint. No runtime, schema, dependency, staging data or deployment change, no exotic technology deviation. Existing release gates remain open.
+
+
+### 2026-10-29 - Block containment experiment and pre-restructure tag
+
+- User requested continued work, commit/push and a tag before restructuring. Annotated tag pre-block-restructure-2026-10-29 points to b563357, the last commit before the proposal, and was pushed and verified against origin.
+- User chose to preserve and migrate existing staging data and to make tasks and projects page-like block entities with typed fields attached. Updated the proposal; production collaboration, migration details, ordering and deletion semantics remain open.
+- Added an isolated PostgreSQL containment research fixture and runnable tests using a disposable, unexposed PostgreSQL container. A workspace serialization lock rejects cycles, cross-workspace parent changes and concurrent reciprocal moves while preserving separate block content and identity. All three PostgreSQL cases, all three Yjs prototype cases, lint and diff check pass. The owned container was stopped and removed.
+- This experiment is not a migration or application implementation: RLS/access, complete race coverage, ordering, create/delete, collaboration integration, historical data migration and performance remain untested. The workspace lock serializes writers only when every structural writer follows the protocol. No production code, schema, dependency, staging data or deployment changed. No exotic technology deviation.
