@@ -30,7 +30,7 @@
 ## Open decisions and release gates
 
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
-- RESOLVED (unified block model, 2026-10-29): preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields. Per-text-block Yjs is selected for an isolated prototype.
+- RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
 - NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
@@ -821,3 +821,13 @@
 - Extended the disposable PostgreSQL fixture with illustrative independently keyed Yjs checkpoints, optimistic revisions and retry receipts. Two competing edits around a block move are merged after a conflict; replay of the same operation leaves the revision unchanged, and reuse with a different supplied digest fails. The experiment uses test-provided checkpoints/digests and is not an authenticated or validated server protocol.
 - PASSED all four disposable PostgreSQL prototype cases and lint. No application schema, data, API, dependency or deployment changed; the test container was stopped. Missing production access control, update/dependency validation, offline journals, migration, deletion, ordering, scalability and network-failure tests remain open.
 - Documented a candidate production foundation and the migration challenge posed by old per-page Yjs histories and offline journals. A decision on adopting the foundation and the detailed lifecycle/restore/migration protocol remain open. No exotic technology deviation.
+
+
+### 2026-10-29 - Per-block collaborative text merge foundation
+
+- User approved PostgreSQL as the source of truth for block identity, containment, ordering and references, with per-text-block Yjs. Added a standalone merge primitive that checks plain-text roots and hidden map entries, update and state bounds, missing dependencies, embeds, formatting and invalid text. It is not connected to the editor, server, persistence or authorization; generations, server validation, receipts, database schema and migration remain open.
+- PASSED 239 unit/model/controller/provider/setup cases including three new merge cases, lint, optimized build and subsequent standalone typecheck. No database schema, live data, dependency or deployment changed; no exotic technology deviation. Offline old-client edit recovery policy is pending user decision.
+
+### FAILED - 2026-10-29: strict build typing corrected
+
+- Initial optimized build rejected an implicitly typed Yjs delta callback under the application strict TypeScript settings, although the test compiler passed. Added the explicit callback type; reran the full suite, lint, build and typecheck successfully. No broken source remains.

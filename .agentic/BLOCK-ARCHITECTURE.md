@@ -16,7 +16,7 @@ The current model stores a flat array of content blocks inside each note, task o
 
 ## Decisions before implementation
 
-1. **Collaboration boundary:** user selected a per-text-block Yjs prototype on 2026-10-29, with PostgreSQL owning containment/order. This is approval to prototype, not a final production protocol. Specify cross-boundary moves, concurrent edits, offline recovery, identity, retries, tombstones and authorization; establish how no accepted edit is lost.
+1. **Collaboration boundary:** user approved PostgreSQL as the source of truth for block identities, containment, ordering and references, and per-text-block Yjs state, on 2026-10-29. The detailed production protocol remains to be specified: cross-boundary moves, concurrent edits, offline recovery, identity, retries, tombstones and authorization must protect accepted edits.
 2. **Existing data:** user chose to preserve and migrate existing staging workspaces on 2026-10-29. Design and test the transition, including history, attachments, links and local drafts, before any staging changes; back up and verify recovery.
 3. **Tasks and projects:** user chose both as page-like block entities with attached typed fields on 2026-10-29. Define how existing lifecycle, board properties, saved views, permissions and agent audit references map to block identities.
 4. **Reference and deletion semantics:** define linked versus synced behavior, dangling references, archive, subtree deletion and recovery; reconcile existing page history and restore policy.
@@ -41,13 +41,15 @@ The production design must explicitly cover atomic structural changes and cycle 
 
 ## Candidate production foundation
 
-This is a proposal, not a finalized schema. PostgreSQL would be authoritative for workspace-scoped block identities, typed content metadata, parent/position and typed reference edges; Yjs checkpoint state would be keyed by the identity of each collaborative text block, independent of its parent. Tasks and projects would have page-like block identities and typed domain records, while database membership and typed properties remain explicit. A move would change containment without rewriting the text checkpoint. Views would refer to query definitions and targets, rather than own copies of records.
+The user approved the foundation; the detailed schema is not finalized. PostgreSQL will be authoritative for workspace-scoped block identities, typed content metadata, parent/position and typed reference edges; Yjs checkpoint state will be keyed by the identity of each collaborative text block, independent of its parent. Tasks and projects will have page-like block identities and typed domain records, while database membership and typed properties remain explicit. A move changes containment without rewriting the text checkpoint. Views refer to query definitions and targets, rather than own copies of records.
 
 Every write must pass through trusted membership-checked services; browser access must be constrained by RLS. Structural mutations need atomic cycle prevention, stable ordering, an explicit concurrency contract and a deletion fence. Text updates need a server-computed payload digest, identity and generation checks, schema and dependency validation, bounded checkpoint size, atomic merge and receipt, and reauthorization even for retries. A conflict must never turn an unvalidated or incomplete Yjs update into an acknowledgement. Receipts must be scoped to the authenticated actor and operation and preserved according to an explicit replay policy. The experiment below deliberately does not implement these protections.
 
 Migration must account for the existing per-page Yjs generations: copying rendered text into fresh per-block documents does not automatically preserve the causal history of pending offline updates. A transition therefore needs a tested fence and recovery path for old clients and journals, plus a verified mapping for notes, tasks, projects, database entries, relationships, attachments, conversations and history. Snapshot semantics for restoring content after blocks have moved need a separate decision; the current policy preserves location, children, attachments and board tasks. Existing staging data is to be preserved, and no migration should run there until backup and restore have been verified.
 
 Before adopting the schema, specify block and edge lifecycle, reference deletion behavior, revision and generation rules, authorization, export/deletion, bounded querying and ordering, and a phased migration. Prototype results alone do not validate resource usage or network and two-user behavior.
+
+`src/lib/block-collaboration.ts` is an initial standalone merge primitive for a single plain-text Yjs block. It rejects incomplete updates, extra roots, hidden map entries, embeds, formatting, invalid text and oversized payloads. It does not authenticate, store state, issue receipts, define generations or connect to the editor; a trusted integration must supply those protections and test them end to end.
 
 ## PostgreSQL containment experiment
 
