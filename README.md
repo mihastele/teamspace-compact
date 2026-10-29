@@ -2,6 +2,8 @@
 
 A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel or self-hosted Docker hosting.
 
+**Development direction (October 2026):** Supabase/PostgreSQL is the active backend for new development and the planned unified block architecture. Firebase remains in the existing codebase but is not currently in development; future changes may not support it. See [the block architecture proposal](.agentic/BLOCK-ARCHITECTURE.md).
+
 ## Set up staging or production
 
 The deployment generator creates a standard Docker Compose file, isolated data

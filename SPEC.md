@@ -1,5 +1,7 @@
 # Teamspace — hackathon build spec
 
+> Development direction, October 2026: Supabase/PostgreSQL is the active target. Firebase is retained in the current implementation but is not currently in development. The existing model described below remains implemented; the proposed unified block model in `.agentic/BLOCK-ARCHITECTURE.md` has not yet been implemented.
+
 ## Purpose
 
 A small shared workspace for a college team: track work on a Kanban board and keep project notes beside it. Prioritize reliable saving, clear permissions, and quick navigation.

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Project | Teamspace | 2026-10-03 |
 | Frontend | Next.js 16 / React 19 / TypeScript / plain CSS | 2026-10-03 |
-| Backend | Shared trusted route handlers; deployment selects Firebase Admin or Supabase | 2026-10-04 |
+| Backend | Supabase/PostgreSQL is the active development target; Firebase implementation retained but not currently in development | 2026-10-29 |
 | Database | Firestore baseline or Supabase PostgreSQL canonical Projects/Tasks/custom fields plus independent database documents with FK-backed relation index; migrations through 016 prepared, live upgrades pending | 2026-10-18 |
 | Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
 | Hosting target | Vercel or production Docker web/Supabase; deploy:setup and deploy commands create isolated staging/production profiles, build, back up/migrate/publish policy and schedule existing hourly cleanup | 2026-10-18 |
@@ -25,9 +25,12 @@
 | Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Access administration | Owner/admin/member workspace roles; root IDs configured server-side; direct addition of existing registered accounts; once-only development auto-join | 2026-10-04 |
 | Secrets location | Server env only: .env.local / .env.supabase and deployments/{staging,production}/.env gitignored and Docker-excluded; planned database backups at ~/.teamspace/backups outside repo | 2026-10-18 |
-| Current milestone | Staging up and local Mailpit confirmation verified; backup and migrations through 016 applied to new staging only. Production/legacy rollout, HTTPS, restore and two-user acceptance pending. DB1, typed table sorting and searchable relation pickers implemented/tested; relation component browser checks pass. Agent M4c/M5 remain deferred | 2026-10-21 |
+| Current milestone | Unified block architecture proposed for PostgreSQL; design decisions and implementation pending. Existing staging through 016 and DB1 remain as previously recorded; rollout and acceptance remain open. Agent M4c/M5 deferred | 2026-10-29 |
 
 ## Open decisions and release gates
+
+- RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
+- NEEDS DECISION: unified block architecture collaboration boundaries, treatment of existing staging data and detailed task/project mapping before implementation. See `.agentic/BLOCK-ARCHITECTURE.md` for the proposal and acceptance criteria.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
 
@@ -788,3 +791,10 @@
 
 - Initial unit suite passed 235/236; a new fixture assertion assumed an English collation position for Č on this Slovenian host. Kept locale-sensitive application ordering and corrected the test to assert Unicode preservation/search plus numeric Client 2/Client 10 order without assuming one language's alphabet. Final full 236/236 passes; no behavior workaround or reduced suite.
 - First browser tab creation timed out before fixture inspection and left no tab. Recovered inventory, opened the ready loopback fixture normally and completed checks. A setChecked request removed the unavailable selected row successfully but its post-action locator check timed out because that row disappeared under the search; current DOM confirmed the intended ID removal/count. Used single-click controls for subsequent disappearance cases. No security bypass, duplicate selection change, live mutation or unresolved product failure.
+
+
+### 2026-10-29 - PostgreSQL development direction and block architecture proposal
+
+- User identified the current model as insufficiently block and relation oriented and chose PostgreSQL for active development; Firebase remains in the codebase but is not currently in development. Existing staged data was not changed or declared disposable.
+- Added BLOCK-ARCHITECTURE.md as a proposal, covering block identity, containment, references, database entries and views, security, collaboration and delivery slices. Collaboration boundaries, existing data handling and task/project mapping need decisions before implementation. README and SPEC clarify backend status.
+- Documentation-only change: no runtime, schema, dependency or deployment change. Automated tests do not validate architectural proposals; implementation and meaningful model, access, migration and collaboration tests remain open. Reviewed the documentation diff and checked whitespace.
