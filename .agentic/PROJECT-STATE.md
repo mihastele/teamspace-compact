@@ -25,12 +25,13 @@
 | Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Access administration | Owner/admin/member workspace roles; root IDs configured server-side; direct addition of existing registered accounts; once-only development auto-join | 2026-10-04 |
 | Secrets location | Server env only: .env.local / .env.supabase and deployments/{staging,production}/.env gitignored and Docker-excluded; planned database backups at ~/.teamspace/backups outside repo | 2026-10-18 |
-| Current milestone | Unified block architecture: per-block Yjs and move helpers plus empty PostgreSQL containment migration prepared; legacy migration, authenticated writes, references and editor integration remain pending. Staging remains through 016; agent M4c/M5 deferred | 2026-10-29 |
+| Current milestone | Unified block architecture: per-block Yjs and move helpers plus empty PostgreSQL containment migration prepared; automatic conversion of legacy offline edits selected and experimentally investigated. Legacy migration, authenticated writes, references and editor integration remain pending. Staging remains through 016; agent M4c/M5 deferred | 2026-10-30 |
 
 ## Open decisions and release gates
 
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
 - RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Top-level blocks have no parent; other blocks have one same-workspace parent. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
+- RESOLVED (legacy offline edits, 2026-10-30): user selected automatic conversion into the new model. The protocol, conflicting edits, failure handling, security and retention still need design and testing before migration.
 - NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
@@ -855,3 +856,10 @@
 ### FAILED - 2026-10-29: type generator targeted stopped fixture
 
 - A generator run targeted a disposable test container that had already stopped and correctly failed to inspect it. Re-ran the generator against the owned running PostgreSQL fixture and verified the result against a fresh clean fixture. No application data was accessed or changed.
+
+
+### 2026-10-30 - Legacy offline conversion experiment
+
+- User selected automatic conversion of offline edits from the old per-page collaboration model. Recorded the choice and a candidate causal-state bridge in BLOCK-ARCHITECTURE.md; detailed conflict handling, authorization, durable receipts and lifecycle remain open.
+- Added an isolated experiment using the existing legacy model and block checkpoint helper. It tests merging concurrent old updates before splitting, duplicate delivery, rejection of missing dependencies without changing the baseline, and rejection of directly applying old page updates to independent block checkpoints. This does not implement post-cutover conversion, new-model conflict merging, structural conversion, persistence, journal handling, access control or migration; production and end-to-end tests remain open.
+- PASSED the three prototype cases, full lint and diff check. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation. Existing release gates remain open.
