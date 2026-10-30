@@ -68,3 +68,53 @@ test("a new checkpoint cannot directly receive an old page update", () => {
   assert.equal(mergeLegacy(base, [update]).blocks[0].text, "Start offline");
   base.destroy(); offline.destroy();
 });
+
+// A research-only text bridge. The shadow retains the checkpoint's causal
+// identity and advances only with legacy effects; the live block may also
+// receive new-editor updates. This intentionally handles append-only text.
+function translateAppend(shadow, before, after) {
+  assert.equal(shadow.getText("text").toString(), before);
+  assert.ok(after.startsWith(before));
+  const vector = Y.encodeStateVector(shadow);
+  shadow.getText("text").insert(before.length, after.slice(before.length));
+  return Y.encodeStateAsUpdate(shadow, vector);
+}
+
+test("a causally shared shadow carries sequential offline appends alongside new-editor edits", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "Start" }] });
+  const offline = clone(base);
+  const first = edit(offline, values => { values[0].text += " old1"; });
+  const second = edit(offline, values => { values[0].text += " old2"; });
+  const cutover = blocks.createBlockState("Start");
+  const shadow = new Y.Doc();
+  Y.applyUpdate(shadow, cutover);
+  const live = new Y.Doc();
+  Y.applyUpdate(live, cutover);
+  live.getText("text").insert(0, "new ");
+
+  const afterFirst = mergeLegacy(base, [first]).blocks[0].text;
+  const afterSecond = mergeLegacy(base, [first, second]).blocks[0].text;
+  const convertedFirst = translateAppend(shadow, "Start", afterFirst);
+  const convertedSecond = translateAppend(shadow, afterFirst, afterSecond);
+  // Delayed dependent conversion waits until its predecessor arrives.
+  Y.applyUpdate(live, convertedSecond);
+  assert.ok(live.store.pendingStructs);
+  Y.applyUpdate(live, convertedFirst);
+  Y.applyUpdate(live, convertedFirst);
+  assert.equal(live.store.pendingStructs, null);
+  assert.equal(live.getText("text").toString(), "new Start old1 old2");
+  base.destroy(); offline.destroy(); shadow.destroy(); live.destroy();
+});
+
+test("recreating a shadow with the same text does not preserve its causal identity", () => {
+  const checkpoint = blocks.createBlockState("Start");
+  const live = new Y.Doc();
+  Y.applyUpdate(live, checkpoint);
+  const unrelated = new Y.Doc();
+  Y.applyUpdate(unrelated, blocks.createBlockState("Start"));
+  const converted = translateAppend(unrelated, "Start", "Start old");
+  Y.applyUpdate(live, converted);
+  assert.ok(live.store.pendingStructs);
+  assert.equal(live.getText("text").toString(), "Start");
+  live.destroy(); unrelated.destroy();
+});

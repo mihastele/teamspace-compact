@@ -863,3 +863,9 @@
 - User selected automatic conversion of offline edits from the old per-page collaboration model. Recorded the choice and a candidate causal-state bridge in BLOCK-ARCHITECTURE.md; detailed conflict handling, authorization, durable receipts and lifecycle remain open.
 - Added an isolated experiment using the existing legacy model and block checkpoint helper. It tests merging concurrent old updates before splitting, duplicate delivery, rejection of missing dependencies without changing the baseline, and rejection of directly applying old page updates to independent block checkpoints. This does not implement post-cutover conversion, new-model conflict merging, structural conversion, persistence, journal handling, access control or migration; production and end-to-end tests remain open.
 - PASSED the three prototype cases, full lint and diff check. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation. Existing release gates remain open.
+
+
+### 2026-10-30 - Legacy conversion shadow experiment
+
+- Extended the isolated legacy conversion experiment with a per-block shadow that shares the exact initial Yjs checkpoint with the new editor. Sequential old-client appends coexist with a new-editor insertion; dependent updates delivered out of order converge after their predecessor, and duplicate delivery is harmless. A separately recreated shadow with identical visible text lacks causal identity and leaves the translated update incomplete.
+- PASSED all five legacy conversion prototype cases, full lint and diff check. This append-only research fixture does not implement automatic conversion, arbitrary or overlapping text edits, multiple old clients, structural changes, authorization, persistence, atomic receipts or migration. Production conflict semantics and end-to-end tests remain open. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation.
