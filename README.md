@@ -268,13 +268,16 @@ later milestones.
 On PostgreSQL deployments, open **Databases → New database**. Name the collection
 and add properties; **Properties** edits names/options or archives/restores it.
 Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
-relations use the existing property controls. A relation chooses one target
-database and can select multiple entries, including entries in the same database.
+relations use the existing property controls. A relation targets one database,
+tasks, or projects and can select multiple records of that kind. Database-entry
+relations can target entries in the same database.
 Property types, relation targets and saved option IDs stay stable. Relation
 pickers search target titles while keeping selected links visible. Uncheck a
 selected link or use **Clear links** to remove it, including unavailable entries.
-Archived entries/databases cannot be newly linked; selected archived links can
-be removed. Each relation accepts up to 50 entries. Failed target reads preserve
+Archived entries/databases/projects cannot be newly linked; selected archived
+links can be removed. Each relation accepts up to 50 records. Permanently deleting
+a linked task removes its links from entry values and advances the affected entry
+revisions; a stale open draft will need review. Failed target reads preserve
 selections and offer **Retry loading entries**; search never saves or changes
 the selection. Existing explicit Save and draft recovery still apply.
 
@@ -295,8 +298,8 @@ local to the current database and reset when switching databases; loading more r
 refreshing keeps the active sort. Sorting/search never changes which server page
 is fetched or the saved/exported record order.
 **Load more entries** continues a live keyset page. The first page refreshes every
-30 seconds; after loading more, **Refresh** restarts the loaded pages. Existing
-Tasks/Projects remain separate.
+30 seconds; after loading more, **Refresh** restarts the loaded pages. Tasks and
+projects retain their existing workflows and can be opened from relation values.
 
 Drafts and exact save retries are stored on this device, scoped by account and
 workspace, with one editor per draft across tabs. Reopen **New database** or
@@ -309,8 +312,9 @@ and outgoing relation IDs. Its `truncated` flag reports more available entries;
 load the remaining pages before exporting the full collection. Export target
 databases separately for their content. Pages are live, not a frozen backup.
 
-Apply [migration 016](migrations/016-independent-databases.md) and earlier unapplied
-migrations, then deploy the paired API/client. Foreign keys enforce entry links;
+Apply [migration 018](migrations/018-database-entity-relations.md) and earlier
+unapplied migrations, then deploy the paired API/client. Migration 017 prepares
+empty block containment and does not yet expose nested-block editing. Foreign keys enforce entry links;
 member/confirmation RLS covers definitions, entries and the derived relation
 index. Workspace deletion removes content/links/receipts. Limits are 64 databases
 per workspace, 32 properties per database and 1,000 entries per database, including
@@ -418,6 +422,10 @@ For relation search/selection, run `npm run test:ui:database-relations` and open
 http://127.0.0.1:3120. Follow [the relation picker checklist](tests/fixtures/database-relations/README.md).
 Targets/read states are synthetic; this does not connect to a backend or save
 entries. Stop with Ctrl+C. Full-editor/authenticated acceptance remains separate.
+
+For task/project relation controls and database layouts, run
+`npm run test:ui:database-entity-relations` and follow [the fixture checklist](tests/fixtures/database-entity-relations/README.md).
+It uses synthetic in-memory records and does not connect to a backend.
 
 Task/field operations and conversations share server-only services in
 `src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated

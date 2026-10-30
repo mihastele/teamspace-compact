@@ -73,6 +73,7 @@ before(async () => {
   await sql(readFileSync('migrations/015-task-pages-templates.sql', 'utf8'));
   await sql(readFileSync('migrations/016-independent-databases.sql', 'utf8'));
   await sql(readFileSync('migrations/017-block-containment.sql', 'utf8'));
+  await sql(readFileSync('migrations/018-database-entity-relations.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -109,6 +110,54 @@ require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, pr
 require('./task-page-api-cases.cjs')(test, { api, member: member, outsider: outsider, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
+test('typed relation projection enforces access and task deletion clears authoritative values',async()=>{
+  const database=randomUUID(), entry=randomUUID(), taskField=randomUUID(), projectField=randomUUID();
+  const definition={fields:[{id:taskField,type:'relation',targetKind:'task'},{id:projectField,type:'relation',targetKind:'project'}]};
+  const content={databaseId:database,revision:1,propertyValues:{[taskField]:['task'],[projectField]:['project']}};
+  await sql(`insert into public.teamspace_projects(workspace_id,id,data,version) values('alpha','project','{"name":"Project"}',1);
+    insert into public.teamspace_documents(path,data,version) values('${prefix}/databases/${database}',${json(definition)},1);
+    insert into public.teamspace_documents(path,data,version) values('${prefix}/databaseEntries/${entry}',${json(content)},1);`);
+  const count=(table,uid)=>sql(`set role authenticated; select set_config('request.jwt.claim.sub','${uid}',false); select count(*) from public.${table};`).then(result=>result.split('\n').at(-1));
+  for(const table of ['teamspace_database_task_links','teamspace_database_project_links']) {
+    assert.equal(await sql(`select relrowsecurity from pg_class where oid='public.${table}'::regclass`),'t');
+    assert.equal(await count(table,member),'1'); assert.equal(await count(table,outsider),'0');
+    await assert.rejects(sql(`set role authenticated; delete from public.${table};`),/permission denied/);
+    await assert.rejects(sql(`set role service_role; delete from public.${table};`),/permission denied/);
+  }
+  await sql(`update auth.users set email_confirmed_at=now() where id='${outsider}'; update auth.users set email_confirmed_at=null where id='${member}';`);
+  for(const table of ['teamspace_database_task_links','teamspace_database_project_links']) {
+    assert.equal(await count(table,outsider),'0'); assert.equal(await count(table,member),'0');
+    await assert.rejects(sql(`set role anon; select * from public.${table};`),/permission denied/);
+  }
+  await sql(`update auth.users set email_confirmed_at=now() where id='${member}';`);
+  await assert.rejects(sql(`insert into public.teamspace_database_task_links values('alpha','${prefix}/databaseEntries/${entry}','${taskField}','missing');`),/foreign key/);
+  await sql("insert into public.teamspace_documents(path,data,version) values('workspaces/beta','{}',1); insert into public.teamspace_tasks(workspace_id,id,data,version) values('beta','foreign','{}',1);");
+  await assert.rejects(sql(`insert into public.teamspace_database_task_links values('alpha','${prefix}/databaseEntries/${entry}','${taskField}','foreign');`),/foreign key/);
+  await sql("delete from public.teamspace_tasks where workspace_id='alpha' and id='task';");
+  const result=JSON.parse(await sql(`select data from public.teamspace_documents where path='${prefix}/databaseEntries/${entry}';`));
+  assert.deepEqual(result.propertyValues[taskField],[]);
+  assert.deepEqual(result.propertyValues[projectField],['project']);
+  assert.equal(result.revision,2);
+  assert.equal(await sql('select count(*) from public.teamspace_database_task_links;'),'0');
+  assert.equal(await sql('select count(*) from public.teamspace_database_project_links;'),'1');
+  await sql("delete from public.teamspace_documents where path='workspaces/alpha';");
+  assert.equal(await sql('select count(*) from public.teamspace_database_project_links;'),'0');
+});
+test('serialized task deletion and new link cannot leave a dangling value',async()=>{
+  const database=randomUUID(), entry=randomUUID(), field=randomUUID();
+  const definition={fields:[{id:field,type:'relation',targetKind:'task'}]};
+  const content={databaseId:database,revision:1,propertyValues:{[field]:['task']}};
+  await sql(`insert into public.teamspace_documents(path,data,version) values('${prefix}/databases/${database}',${json(definition)},1);`);
+  const [link,deletion]=await Promise.allSettled([
+    sql(`begin; select epoch from public.teamspace_store_state where singleton for update; insert into public.teamspace_documents(path,data,version) values('${prefix}/databaseEntries/${entry}',${json(content)},1); select pg_sleep(0.2); commit;`),
+    sql("begin; select epoch from public.teamspace_store_state where singleton for update; delete from public.teamspace_tasks where workspace_id='alpha' and id='task'; commit;"),
+  ]);
+  assert.equal(deletion.status,'fulfilled');
+  if(link.status==='rejected') assert.match(link.reason.message,/foreign key/);
+  const saved=await sql(`select data->'propertyValues'->'${field}' from public.teamspace_documents where path='${prefix}/databaseEntries/${entry}';`);
+  assert.ok(saved===''||saved==='[]');
+  assert.equal(await sql('select count(*) from public.teamspace_database_task_links;'),'0');
+});
 test('block containment has member-only reads, denied direct writes and workspace-scoped parents',async()=>{
   const first=randomUUID(), child=randomUUID(), foreign=randomUUID();
   await sql(`insert into public.teamspace_documents(path,data,version) values('workspaces/beta','{}',1);
@@ -137,6 +186,11 @@ test('block containment has member-only reads, denied direct writes and workspac
 test('generated block types match the clean PostgreSQL schema', async()=>{
   const { spawnSync } = require('node:child_process');
   const generated=spawnSync(process.execPath,['scripts/generate-block-types.mjs','--container',container,'--check'],{encoding:'utf8'});
+  assert.equal(generated.status,0,generated.stderr);
+});
+test('generated database entity link types match the clean PostgreSQL schema', async()=>{
+  const { spawnSync } = require('node:child_process');
+  const generated=spawnSync(process.execPath,['scripts/generate-database-entity-link-types.mjs','--container',container,'--check'],{encoding:'utf8'});
   assert.equal(generated.status,0,generated.stderr);
 });
 test('concurrent block moves cannot form a containment cycle',async()=>{
@@ -181,7 +235,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'9');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'10');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -237,6 +291,7 @@ test('canonical migration upgrades populated legacy records atomically without c
     await query(readFileSync('migrations/015-task-pages-templates.sql','utf8'));
     await query(readFileSync('migrations/016-independent-databases.sql','utf8'));
     await query(readFileSync('migrations/017-block-containment.sql','utf8'));
+    await query(readFileSync('migrations/018-database-entity-relations.sql','utf8'));
     assert.equal(await query('select count(*) from public.teamspace_blocks;'),'0');
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_database_links';"),'t');
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);

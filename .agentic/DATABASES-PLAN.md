@@ -50,40 +50,24 @@ controls use the existing loaded-row sort and share search, archive and paging
 state with the table. This is not a saved or workspace-shared view. Browser,
 mobile and authenticated interaction acceptance remain open.
 
-## Proposed task and project relation increment
+## Task and project relation increment
 
-On 2026-10-30 the user requested task and project relation targets and chose
-one target kind per relation property. Keep the existing database-entry relation
-format and its immutable target database compatible; new relation properties
-would instead name either tasks or projects as their immutable target kind.
-Each property can hold multiple distinct same-workspace IDs, within the existing
-50-link bound. Existing task/project IDs must remain valid; do not assume their
-IDs are UUIDs merely because database entry IDs are. Existing relation data and
-drafts need an upgrade-compatible interpretation.
+On 2026-10-30 the user chose one target kind per database relation property:
+entries in one database, tasks, or projects. Existing entry relation definitions
+remain compatible. Each property holds at most 50 distinct same-workspace IDs;
+task/project IDs need not be UUIDs. Migration 018 adds typed task/project
+projections with same-workspace foreign keys, member-read RLS and denied direct
+writes. Trusted writes authorize and validate targets; archived projects cannot
+be newly linked, while retained links can be kept or removed.
 
-Tasks and projects are stored in their own canonical PostgreSQL tables, so the
-existing entry-only projection and foreign key cannot simply be reused for
-their targets. A new numbered migration and trusted writer need typed,
-same-workspace referential checks, indexed backlinks, appropriate RLS and
-direct-write denial. A target lookup must distinguish task titles and project
-names and respect membership. Existing archived-project rules should prevent
-new links while retaining or removing existing links. On 2026-10-30 the user
-chose to remove incoming database links automatically when a task is permanently
-deleted. Remove the IDs from the authoritative entry values and update entry
-revisions in the same transaction as deletion; removing only the index would
-leave stale saved values. Confirm transaction ordering,
-concurrent link/deletion behavior, export and workspace deletion, pagination,
-type regeneration and rollback before implementation. Scope this increment to
-database-entry properties; reciprocal editable task/project properties, rollups
-and block migration remain separate work.
+The user chose automatic removal of incoming database links on permanent task
+deletion. The deletion trigger removes IDs from authoritative entry values and
+advances revisions in the same transaction, preserving stale-draft detection.
+Exports include outgoing IDs; export tasks/projects separately for their data.
+Existing entry backlinks are unchanged. Reciprocal editable task/project
+properties, a task/project backlink UI, rollups, shared database views and block
+migration remain future work. Authenticated browser/mobile/two-user and live
+migration/restore acceptance remain open.
 
-Verification must include clean and populated upgrades, old-format relations and
-drafts, all three target kinds, cross-workspace and outsider denial, archived
-projects, link/delete races, exact retries, backlinks, export and workspace
-deletion, plus authenticated UI and mobile acceptance. No migration or app
-writer for these targets is present yet.
-
-`src/lib/database-relation-target.ts` is an isolated candidate validator for
-legacy entry targets and new task/project target kinds. It preserves non-UUID
-task/project identifiers and the 50-link limit; it is not connected to API
-validation, persistence or UI and does not check authorization or existence.
+`src/lib/database-relation-target.ts` validates target kind and IDs; trusted
+services separately check authorization, existence and archive state.

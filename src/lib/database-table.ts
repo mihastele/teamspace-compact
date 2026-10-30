@@ -1,5 +1,5 @@
 import type { DatabaseEntry, DatabaseField } from "./databases";
-import type { Member } from "./model";
+import type { Member, Project, Task } from "./model";
 import type { TableSort } from "./task-table";
 import { propertyDisplay } from "./board-properties";
 
@@ -10,13 +10,15 @@ export function databaseColumns(fields: readonly DatabaseField[]) {
 }
 
 /** Sort only the supplied loaded rows; never change records or the server paging cursor. */
-export function sortDatabaseEntries(entries: readonly DatabaseEntry[], sort: TableSort | null, fields: readonly DatabaseField[], members: readonly Member[], targets: Readonly<Record<string, DatabaseEntry>>): DatabaseEntry[] {
+export function sortDatabaseEntries(entries: readonly DatabaseEntry[], sort: TableSort | null, fields: readonly DatabaseField[], members: readonly Member[], targets: Readonly<Record<string, DatabaseEntry>>, entities?: { tasks: readonly Task[]; projects: readonly Project[] }): DatabaseEntry[] {
   const field = fields.find(field => `property:${field.id}` === sort?.column);
   const active = sort && (sort.column === "title" || field) ? sort : null;
+  const tasks = new Map(entities?.tasks.map(task=>[task.id,task.title]));
+  const projects = new Map(entities?.projects.map(project=>[project.id,project.name]));
   const cells = new Map(entries.map(entry => {
     const value = field ? entry.propertyValues[field.id] : undefined;
     const text = !active || active.column === "title" ? entry.title : field!.type === "relation"
-      ? (Array.isArray(value) ? value : []).map(id => targets[id]?.title ?? "Unavailable entry").sort(compareText).join(", ")
+      ? (Array.isArray(value) ? value : []).map(id => field!.targetKind === "task" ? tasks.get(id) ?? "Unavailable task" : field!.targetKind === "project" ? projects.get(id) ?? "Unavailable project" : targets[id]?.title ?? "Unavailable entry").sort(compareText).join(", ")
       : propertyDisplay(field!, value, members);
     return [entry.id, text] as const;
   }));

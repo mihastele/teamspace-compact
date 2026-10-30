@@ -14,7 +14,7 @@ export default function DatabaseRelationPicker({ name, targetName, entries, sele
   const loading = !entries && !error;
   const choices = databaseRelationChoices(entries ?? [], selected, search, targetArchived);
   return <span className={s.relationPicker}>
-    <input type="search" aria-label={`Search ${name} entries`} aria-describedby={statusId} placeholder={`Search ${targetName}`} value={search} onChange={event => setSearch(event.target.value)} />
+    <input type="search" aria-label={`Search ${name} records`} aria-describedby={statusId} placeholder={`Search ${targetName}`} value={search} onChange={event => setSearch(event.target.value)} />
     <span id={statusId} className={s.muted} role="status">{selected.length} of 50 linked{loading ? " · Loading entries…" : ""}{targetArchived ? " · Target database archived" : ""}</span>
     {error && <span role="alert">{error} <button type="button" onClick={retry}>Retry loading entries</button></span>}
     <span className={s.choices}>
@@ -23,6 +23,6 @@ export default function DatabaseRelationPicker({ name, targetName, entries, sele
       </label>)}
       {!loading && !error && !choices.length && <span className={s.muted}>{search.trim() ? "No matching entries." : "No entries available."}</span>}
     </span>
-    <span><button type="button" disabled={disabled || !selected.length} onClick={() => { if (!disabled) onChange([]); }}>Clear links</button> <small>Link entries from {targetName}. Selected links stay visible while searching.</small></span>
+    <span><button type="button" disabled={disabled || !selected.length} onClick={() => { if (!disabled) onChange([]); }}>Clear links</button> <small>Link records from {targetName}. Selected links stay visible while searching.</small></span>
   </span>;
 }

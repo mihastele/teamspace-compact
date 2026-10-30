@@ -4,6 +4,31 @@ module.exports=function(test,{api,member,outsider,prefix,read,sql,db}){
   const definition=(id,name,fields=[],extra={})=>({name,description:'Collection',fields,archived:false,expectedRevision:0,operationId:randomUUID(),...extra});
   const entry=(databaseId,title,propertyValues={},extra={})=>({databaseId,title,content:{blocks:[{type:'heading',text:'Rich body',level:2}]},propertyValues,archived:false,expectedRevision:0,operationId:randomUUID(),...extra});
   const save=(kind,id,body,uid=member)=>api(uid,'PUT',`${prefix}/${kind}/${id}`,body);
+  test('database task and project links validate targets and task deletion preserves entry revisions',async()=>{
+    const database=randomUUID(),taskField=randomUUID(),projectField=randomUUID(),source=randomUUID();
+    await db.runTransaction(async tx=>tx.create(db.doc(`${prefix}/projects/project`),{name:'Project',description:'',archived:false,revision:1}));
+    const fields=[{id:taskField,name:'Tasks',type:'relation',options:[],targetKind:'task'}, {id:projectField,name:'Projects',type:'relation',options:[],targetKind:'project'}];
+    assert.equal((await save('databases',database,definition(database,'Linked',fields))).status,200);
+    const body=entry(database,'Source',{[taskField]:['task'],[projectField]:['project']});
+    assert.equal((await save('databaseEntries',source,body)).status,200);
+    assert.equal((await save('databaseEntries',randomUUID(),entry(database,'Missing',{[taskField]:['not_found']}))).status,400);
+    await db.runTransaction(async tx=>{tx.create(db.doc('workspaces/foreign'),{name:'Foreign'});tx.create(db.doc('workspaces/foreign/tasks/foreign_task'),{title:'Foreign'});});
+    assert.equal((await save('databaseEntries',randomUUID(),entry(database,'Foreign',{[taskField]:['foreign_task']}))).status,400);
+    assert.equal((await save('databaseEntries',randomUUID(),entry(database,'Forbidden',{[taskField]:['task']}),outsider)).status,403);
+    assert.equal(await sql('select count(*) from public.teamspace_database_task_links;'),'1');
+    assert.equal(await sql('select count(*) from public.teamspace_database_project_links;'),'1');
+    await db.runTransaction(async tx=>tx.update(db.doc(`${prefix}/projects/project`),{archived:true}));
+    assert.equal((await save('databaseEntries',randomUUID(),entry(database,'Archived',{[projectField]:['project']}))).status,400);
+    assert.equal((await save('databaseEntries',source,entry(database,'Retained',{[taskField]:['task'],[projectField]:['project']},{expectedRevision:1}))).status,200);
+    assert.equal((await api(outsider,'DELETE',`${prefix}/tasks/task`)).status,403);
+    assert.equal((await api(member,'DELETE',`${prefix}/tasks/task`)).status,200);
+    const saved=await read(`${prefix}/databaseEntries/${source}`);
+    assert.deepEqual(saved.propertyValues,{[taskField]:[],[projectField]:['project']});
+    assert.equal(saved.revision,3);
+    assert.equal((await save('databaseEntries',source,entry(database,'Stale',{}, {expectedRevision:2}))).status,409);
+    assert.equal((await save('databaseEntries',source,body)).status,200);
+    assert.deepEqual((await read(`${prefix}/databaseEntries/${source}`)).propertyValues[taskField],[]);
+  });
   test('independent databases persist rich entries and multi-entry relations with indexed incoming links',async()=>{
     const clients=randomUUID(),documents=randomUUID(),field=randomUUID(),a=randomUUID(),b=randomUUID(),doc=randomUUID();
     assert.equal((await save('databases',clients,definition(clients,'Clients'))).status,200);

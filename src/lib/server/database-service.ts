@@ -1,6 +1,7 @@
 import "server-only";
 import type { DatabaseDefinition, DatabaseEntry } from "../databases";
 import { databaseFields, databaseValues, MAX_DATABASES, MAX_DATABASE_ENTRIES } from "../databases";
+import { relationTarget } from "../database-relation-target";
 import { taskBlockTypes } from "../task-pages";
 import type { DocumentStore, DocumentReference, StoreData } from "./document-store";
 import { member, rateLimit, now, hash, type ServiceActor } from "./service-context";
@@ -112,11 +113,13 @@ export async function saveDatabaseRecord(db: DocumentStore, workspace: DocumentR
           if (!(await tx.get(workspace.collection("members").doc(String(value)))).exists) throw new ApiError(400, "invalid_person", "Choose a current workspace member.");
         }
         if (field.type !== "relation" || !Array.isArray(value)) continue;
-        const targetDatabase = await tx.get(workspace.collection("databases").doc(field.targetDatabaseId!));
+        const targetKind = relationTarget(field);
+        const targetDatabase = targetKind.kind === "database" ? await tx.get(workspace.collection("databases").doc(targetKind.databaseId)) : null;
         for (const targetId of value) {
-          const target = await tx.get(workspace.collection("databaseEntries").doc(targetId));
+          const collection = targetKind.kind === "database" ? "databaseEntries" : targetKind.kind === "task" ? "tasks" : "projects";
+          const target = await tx.get(workspace.collection(collection).doc(targetId));
           const retained = previous.data()?.propertyValues?.[field.id]?.includes(targetId);
-          if (!target.exists || target.data()?.databaseId !== field.targetDatabaseId || (!retained && (target.data()?.archived || targetDatabase.data()?.archived))) throw new ApiError(400, "invalid_relation", "Choose active entries in the relation's target database. Existing archived links may be retained or cleared.");
+          if (!target.exists || target.data()?.deleting || (targetKind.kind === "database" && target.data()?.databaseId !== targetKind.databaseId) || (!retained && (target.data()?.archived || targetDatabase?.data()?.archived))) throw new ApiError(400, "invalid_relation", "Choose active targets in this workspace. Existing archived links may be retained or cleared.");
         }
       }
       if (!previous.exists) {

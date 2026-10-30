@@ -15,6 +15,7 @@
     "test:http": "node --test tests/route-http.test.mjs",
     "test:ui:named-boards": "node tests/fixtures/named-boards/serve.cjs",
     "test:ui:database-relations": "node tests/fixtures/database-relations/serve.cjs",
+    "test:ui:database-entity-relations": "node tests/fixtures/database-entity-relations/serve.cjs",
     "test:ui:recovery-archives": "node tests/fixtures/recovery-archives/serve.cjs",
     "test:prototype:blocks": "node --test tests/prototypes/block-collaboration.test.cjs",
     "test:prototype:legacy-conversion": "tsc src/lib/block-collaboration.ts src/lib/collaboration-model.ts --outDir .test-build --module commonjs --target es2022 --skipLibCheck && node --test tests/prototypes/legacy-block-conversion.test.cjs",

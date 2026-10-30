@@ -1,4 +1,4 @@
-/** A candidate contract for future database relation targets. Not wired to writes. */
+/** Relation targets use one kind per property. */
 export type DatabaseRelationTarget =
   | { kind: "database"; databaseId: string }
   | { kind: "task" }

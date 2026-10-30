@@ -2683,7 +2683,7 @@ export default function Home() {
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
           {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
-          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} />}
+          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} onTask={setTask} onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} />}
           {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>

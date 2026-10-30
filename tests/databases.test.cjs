@@ -15,6 +15,21 @@ test('database relations use distinct bounded entry identities and immutable tar
   const renamed=databaseFields([{...databaseFieldInput(fields[0]),name:'Clients'}],fields);
   assert.equal(renamed[0].id,id);assert.equal(renamed[0].targetDatabaseId,target);
 });
+test('task and project relations keep immutable typed targets and accept existing non-UUID IDs',()=>{
+  const task=randomUUID(),project=randomUUID();
+  const fields=databaseFields([{id:task,name:'Tasks',type:'relation',options:[],targetKind:'task'},{id:project,name:'Projects',type:'relation',options:[],targetKind:'project'}]);
+  assert.deepEqual(databaseValues({[task]:['t_existing'],[project]:['project-1']},fields),{[task]:['t_existing'],[project]:['project-1']});
+  assert.throws(()=>databaseValues({[task]:['bad/path']},fields));
+  assert.throws(()=>databaseFields([{...databaseFieldInput(fields[0]),targetKind:'project'},databaseFieldInput(fields[1])],fields));
+  assert.equal(databaseFieldInput(fields[0]).targetKind,'task');
+});
+test('task and project relation sorting uses the label for the selected target kind',()=>{
+  const fields=[{id:'task',name:'Task',type:'relation',targetKind:'task',options:[],revision:1},{id:'project',name:'Project',type:'relation',targetKind:'project',options:[],revision:1}];
+  const entries=[{id:'a',title:'A',propertyValues:{task:['same'],project:['same']}},{id:'b',title:'B',propertyValues:{task:['other'],project:['other']}}];
+  const entities={tasks:[{id:'same',title:'Zulu'},{id:'other',title:'Alpha'}],projects:[{id:'same',name:'Alpha'},{id:'other',name:'Zulu'}]};
+  assert.deepEqual(sortDatabaseEntries(entries,{column:'property:task',direction:'ascending'},fields,[],{},entities).map(item=>item.id),['b','a']);
+  assert.deepEqual(sortDatabaseEntries(entries,{column:'property:project',direction:'ascending'},fields,[],{},entities).map(item=>item.id),['a','b']);
+});
 
 const row=(id,propertyValues={},title=id)=>({id,databaseId:'collection',title,content:{blocks:[]},propertyValues,archived:false,revision:1});
 const field=(id,type,options=[])=>({id,name:id,type,options,revision:1});
