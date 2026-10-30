@@ -139,6 +139,12 @@ test('task and project data-source relation properties save with reviewed page r
   const backlinks=await api(member,'GET',`${prefix}/databaseEntries/${target}`);
   assert.equal(backlinks.status,200);
   assert.deepEqual(backlinks.data.entityIncoming.map(link=>[link.kind,link.entityId,link.fieldName]),[['project','project','Project links'],['task','task','Task links']]);
+  const rename={...taskDefinition,name:'Renamed task links',expectedRevision:1,operationId:randomUUID()};
+  assert.equal((await save('entityRelationFields',taskField,rename)).status,200);
+  assert.equal((await save('entityRelationFields',taskField,rename)).status,200);
+  assert.equal((await save('entityRelationFields',taskField,{...rename,name:'Stale name',operationId:randomUUID()})).status,409);
+  assert.equal((await save('entityRelationFields',projectField,{...projectDefinition,name:'Renamed project links',expectedRevision:1,operationId:randomUUID()})).status,200);
+  assert.deepEqual((await api(member,'GET',`${prefix}/databaseEntries/${target}`)).data.entityIncoming.map(link=>link.fieldName),['Renamed project links','Renamed task links']);
   assert.equal(backlinks.data.entityTruncated,false);assert.deepEqual(backlinks.data.incoming,[]);
   assert.equal((await api(outsider,'GET',`${prefix}/databaseEntries/${target}`)).status,403);
   assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[target]},expectedRevision:1})).status,409);

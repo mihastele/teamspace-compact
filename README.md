@@ -307,8 +307,9 @@ projects retain their existing workflows and can be opened from relation values.
 Task and project pages can also link to entries in a selected data source. In a
 task or project editor, choose **Add data-source relation**, name the shared
 property and select a database. Task and project properties are separate. The
-property definition is created immediately; selected entry links save with the
-page. Existing task draft recovery includes those selections. Project edits keep
+property definition is created immediately; use **Rename** to change its shared
+name immediately. A conflicting rename must be reopened against the latest name.
+Selected entry links save with the page. Existing task draft recovery includes those selections. Project edits keep
 their current reviewed-revision conflict behavior. Archived entries and databases
 can be retained or cleared, but cannot be newly linked. Open a selected entry
 from the task or project once its page changes are saved. The entry's **Linked

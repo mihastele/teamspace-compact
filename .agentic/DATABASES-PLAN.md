@@ -84,7 +84,7 @@ immutable target database and explicit task or project scope. Each page value
 holds up to 50 distinct entry IDs. Existing task properties retain their format.
 The selector searches entries, retains or removes archived selections, and
 blocks new archived selections. Property definitions are shared and created
-immediately; selections save with the task or project. Task draft recovery and
+immediately and can be renamed with revision-checked saves; selections save with the task or project. Task draft recovery and
 reviewed revisions include selections; project saves keep their existing reviewed
 revision/conflict behavior. Project pages display their relations in read-only
 mode outside the editor. Values and definitions are included in board export;

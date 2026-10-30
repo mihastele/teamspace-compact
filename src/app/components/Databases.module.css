@@ -23,6 +23,8 @@
 .body { padding:32px; }
 .body > label { display:grid; grid-template-columns:150px minmax(0,1fr); align-items:start; gap:12px; margin:14px 0; }
 .property { display:grid; grid-template-columns:150px minmax(0,1fr); align-items:start; gap:12px; margin:14px 0; }
+.propertyLabel { display:flex; align-items:center; flex-wrap:wrap; gap:6px; overflow-wrap:anywhere; min-width:0; }
+.propertyLabel button { color:inherit; background:transparent; border:1px solid #d9dfe6; border-radius:7px; padding:4px 7px; cursor:pointer; }
 .body > label:first-child input { font-size:26px; border:0; padding-left:0; }
 .body textarea { min-height:80px; resize:vertical; }
 .footer { position:sticky; bottom:0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-end; padding:16px 24px; border-top:1px solid #e4e8ed; background:var(--surface,#fff); }

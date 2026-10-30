@@ -977,3 +977,13 @@
 ### FAILED - 2026-10-30: synthetic backlink fixture locator corrected
 
 - A browser fixture initially selected an ambiguous Task One button appearing in both the table and entry dialog. Scoping the locator to the entry dialog resolved the fixture check; both backlink navigation checks subsequently passed. No product failure or live data change occurred.
+
+
+### 2026-10-30 - Rename task and project data-source relation properties
+
+- Added Rename in editable task and project relation sections. The shared property name saves immediately using the existing server-authorized revision and idempotent operation receipt; target database and property scope remain unchanged. A local recovery packet retains an uncertain rename for retry, and a conflicting revision requires reopening the latest property. Page entry selections retain their existing separate save behavior. README, database plan and work queue updated.
+- PASSED all 252 unit/model/controller/provider/setup tests, lint and optimized production build with TypeScript. Focused real PostgreSQL/API coverage passed for both scope renames, exact retry, stale revision rejection, and updated backlink names. Synthetic in-memory fixture verified task and project renames. OPEN TEST GAP: no automated DOM test or authenticated browser/two-user test for the rename, including uncertain network recovery and conflict interaction. Full PostgreSQL regression suite was not rerun. Existing staging/deployment and acceptance gates remain open. No schema, live data, new dependency or exotic technology deviation.
+
+### FAILED - 2026-10-30: fixture locator and documentation path corrected
+
+- The first project fixture selection used an exact label locator that did not resolve the select; locating its combobox by accessible name succeeded and the project rename passed. An initial Next documentation lookup used the wrong local guide directory; the installed client-component guide was then read successfully. Neither caused a product or data failure.

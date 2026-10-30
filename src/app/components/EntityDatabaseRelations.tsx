@@ -19,15 +19,16 @@ export default function EntityDatabaseRelations({api,scope,values,disabled,onCha
   const request=api.databaseRequest;
   const [fields,setFields]=useState<EntityRelationField[]>([]),[databases,setDatabases]=useState<DatabaseDefinition[]>([]),[targets,setTargets]=useState<Record<string,DatabaseEntry[]>>({});
   const [error,setError]=useState(""),[loadError,setLoadError]=useState(""),[refresh,setRefresh]=useState(0),[creating,setCreating]=useState(false),[name,setName]=useState(""),[target,setTarget]=useState(""),[sourceSearch,setSourceSearch]=useState("");
-  const [packet,setPacket]=useState<{id:string;name:string;targetDatabaseId:string;operationId:string}|null>(null),[busy,setBusy]=useState(false);
+  const [packet,setPacket]=useState<{id:string;name:string;targetDatabaseId:string;operationId:string;expectedRevision?:number}|null>(null),[busy,setBusy]=useState(false);
+  const [editing,setEditing]=useState<{id:string;revision:number}|null>(null);
   const [storageError,setStorageError]=useState(false);
   const key=`teamspace:entity-relation-field:v1:${api.user?.uid}:${api.workspace?.id}:${scope}${readOnly?":view":""}`;
   const acquire=useCallback(()=>{
     try {
       const raw=localStorage.getItem(key); if(!raw)return;
       const value=JSON.parse(raw), id=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-      if(!value||!id.test(value.id)||!id.test(value.targetDatabaseId)||!id.test(value.operationId)||typeof value.name!=="string"||!value.name.trim()||value.name.length>80)throw new Error("Invalid property recovery.");
-      setPacket(value);setName(value.name);setTarget(value.targetDatabaseId);setCreating(true);
+      if(!value||!id.test(value.id)||!id.test(value.targetDatabaseId)||!id.test(value.operationId)||typeof value.name!=="string"||!value.name.trim()||value.name.length>80||(value.expectedRevision!==undefined&&(!Number.isInteger(value.expectedRevision)||value.expectedRevision<0||value.expectedRevision>1000000000)))throw new Error("Invalid property recovery.");
+      setPacket(value);setName(value.name);setTarget(value.targetDatabaseId);setEditing(value.expectedRevision?{id:value.id,revision:value.expectedRevision}:null);setCreating(true);
     } catch {setStorageError(true);setError("Property recovery could not be read. The stored record is unchanged.");}
   },[key]);
   const owned=useTaskDraftLock(key,acquire);
@@ -43,26 +44,26 @@ export default function EntityDatabaseRelations({api,scope,values,disabled,onCha
   },[request,scope,refresh]);
   async function add(){
     if(disabled||busy||!owned||storageError)return;
-    const next=packet??{id:crypto.randomUUID(),name:name.trim(),targetDatabaseId:target,operationId:crypto.randomUUID()};
+    const next=packet??{id:editing?.id??crypto.randomUUID(),name:name.trim(),targetDatabaseId:target,operationId:crypto.randomUUID(),expectedRevision:editing?.revision??0};
     if(!next.name||!next.targetDatabaseId){setError("Enter a name and choose a data source.");return;}
     try { localStorage.setItem(key,JSON.stringify(next)); } catch {setStorageError(true);setError("Property recovery could not be stored. No request was sent.");return;}
     setPacket(next);setBusy(true);setError("");
-    try {await request(`entityRelationFields/${next.id}`,"PUT",{name:next.name,targetDatabaseId:next.targetDatabaseId,operationId:next.operationId,scope,expectedRevision:0});try{localStorage.removeItem(key);}catch{/* An accepted retry remains safe. */}setPacket(null);setName("");setTarget("");setSourceSearch("");setCreating(false);setRefresh(value=>value+1);}
+    try {await request(`entityRelationFields/${next.id}`,"PUT",{name:next.name,targetDatabaseId:next.targetDatabaseId,operationId:next.operationId,scope,expectedRevision:next.expectedRevision??0});try{localStorage.removeItem(key);}catch{/* An accepted retry remains safe. */}setPacket(null);setName("");setTarget("");setSourceSearch("");setEditing(null);setCreating(false);setRefresh(value=>value+1);}
     catch(error){const status=typeof error==="object"&&error!==null&&"status" in error?error.status:undefined;if(typeof status==="number"&&status>=400&&status<500){try{localStorage.removeItem(key);setPacket(null);}catch{setStorageError(true);}}setError(error instanceof Error?error.message:"Could not save the property. Retry the same request.");}
     finally{setBusy(false);}
   }
   return <section aria-label={`${scope === "task" ? "Task" : "Project"} data-source relations`}>
-    {fields.map(field=><div className={s.property} key={field.id}><span>{field.name}</span><div><DatabaseRelationPicker name={field.name} targetName={databases.find(item=>item.id===field.targetDatabaseId)?.name??"data source"} entries={targets[field.targetDatabaseId]} selected={values[field.id]??[]} disabled={disabled} targetArchived={databases.find(item=>item.id===field.targetDatabaseId)?.archived===true} error={loadError} retry={()=>setRefresh(value=>value+1)} onChange={ids=>onChange({...values,[field.id]:ids})}/>{onOpenEntry&&<div className={s.relationLinks}>{(values[field.id]??[]).map(id=>{const entry=targets[field.targetDatabaseId]?.find(item=>item.id===id);return entry?<button type="button" key={id} disabled={navigationDisabled} title={navigationDisabled?"Save or resolve this page draft before opening a related entry.":undefined} onClick={()=>onOpenEntry(id)} aria-label={`Open ${entry.title}`}>{entry.title} ↗</button>:null;})}</div>}</div></div>)}
+    {fields.map(field=><div className={s.property} key={field.id}><span className={s.propertyLabel}>{field.name}{!readOnly&&<button type="button" aria-label={`Rename ${field.name}`} disabled={disabled||!owned||storageError||creating||busy} onClick={()=>{setEditing({id:field.id,revision:field.revision});setName(field.name);setTarget(field.targetDatabaseId);setError("");setCreating(true);}}>Rename</button>}</span><div><DatabaseRelationPicker name={field.name} targetName={databases.find(item=>item.id===field.targetDatabaseId)?.name??"data source"} entries={targets[field.targetDatabaseId]} selected={values[field.id]??[]} disabled={disabled} targetArchived={databases.find(item=>item.id===field.targetDatabaseId)?.archived===true} error={loadError} retry={()=>setRefresh(value=>value+1)} onChange={ids=>onChange({...values,[field.id]:ids})}/>{onOpenEntry&&<div className={s.relationLinks}>{(values[field.id]??[]).map(id=>{const entry=targets[field.targetDatabaseId]?.find(item=>item.id===id);return entry?<button type="button" key={id} disabled={navigationDisabled} title={navigationDisabled?"Save or resolve this page draft before opening a related entry.":undefined} onClick={()=>onOpenEntry(id)} aria-label={`Open ${entry.title}`}>{entry.title} ↗</button>:null;})}</div>}</div></div>)}
     {loadError&&fields.length===0&&<p role="alert">{loadError} <button type="button" onClick={()=>setRefresh(value=>value+1)}>Retry</button></p>}
     {error&&<p role="alert">{error}</p>}
     {storageError&&<div className={s.field}><button type="button" onClick={()=>{try{const raw=localStorage.getItem(key)??"No stored property recovery record";const url=URL.createObjectURL(new Blob([raw],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download="relation-property-recovery.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setError("Property recovery could not be downloaded.");}}}>Download property recovery</button><button type="button" disabled={!owned} onClick={()=>{if(!confirm("Discard the stored property recovery record? Download it first if needed. A previous request may have succeeded; refresh before creating it again."))return;try{localStorage.removeItem(key);setStorageError(false);setPacket(null);setError("");}catch{setError("Property recovery could not be cleared.");}}}>Discard property recovery</button></div>}
     {!readOnly&&!owned&&<p className={s.muted}>Property creation is unavailable while another tab owns its recovery lock.</p>}
     {!readOnly&&(!creating?<button type="button" disabled={disabled||!owned||storageError} onClick={()=>setCreating(true)}>+ Add data-source relation</button>:<div className={s.field}>
       <label>Property name<input value={name} maxLength={80} disabled={busy||Boolean(packet)} onChange={event=>setName(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")event.preventDefault();}}/></label>
-      <label>Search data sources<input type="search" value={sourceSearch} disabled={busy||Boolean(packet)} onChange={event=>setSourceSearch(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")event.preventDefault();}}/></label>
-      <label>Data source<select value={target} disabled={busy||Boolean(packet)} onChange={event=>setTarget(event.target.value)}><option value="">Choose a database</option>{databases.filter(item=>!item.archived&&(item.id===target||item.name.toLocaleLowerCase().includes(sourceSearch.trim().toLocaleLowerCase()))).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <button type="button" disabled={disabled||busy||!owned||storageError} onClick={()=>void add()}>{packet?"Retry property":"Create property"}</button>
-      <button type="button" disabled={busy||Boolean(packet)} onClick={()=>{setCreating(false);setName("");setTarget("");setSourceSearch("");}}>Cancel</button>
+      {!editing&&<><label>Search data sources<input type="search" value={sourceSearch} disabled={busy||Boolean(packet)} onChange={event=>setSourceSearch(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")event.preventDefault();}}/></label>
+      <label>Data source<select value={target} disabled={busy||Boolean(packet)} onChange={event=>setTarget(event.target.value)}><option value="">Choose a database</option>{databases.filter(item=>!item.archived&&(item.id===target||item.name.toLocaleLowerCase().includes(sourceSearch.trim().toLocaleLowerCase()))).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></>}
+      <button type="button" disabled={disabled||busy||!owned||storageError} onClick={()=>void add()}>{packet?"Retry property":editing?"Save property name":"Create property"}</button>
+      <button type="button" disabled={busy||Boolean(packet)} onClick={()=>{setCreating(false);setEditing(null);setName("");setTarget("");setSourceSearch("");setError("");setRefresh(value=>value+1);}}>Cancel</button>
       <small>Property definitions are shared; selected links save with this page.</small>
     </div>)}
   </section>;

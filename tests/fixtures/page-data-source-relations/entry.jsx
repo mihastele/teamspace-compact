@@ -8,7 +8,7 @@ async function request(path,method,body){
   if(path==="entityRelationFields")return {fields};
   if(path==="databases")return {databases};
   if(path===`databases/${database}?summary=1`)return {entries,nextCursor:null};
-  if(path.startsWith('entityRelationFields/')&&method==='PUT'){const id=path.split('/')[1];fields=[...fields,{id,name:body.name,scope:body.scope,targetDatabaseId:body.targetDatabaseId,revision:1}];return {field:fields.at(-1)};}
+  if(path.startsWith('entityRelationFields/')&&method==='PUT'){const id=path.split('/')[1],old=fields.find(item=>item.id===id);if((old?.revision??0)!==body.expectedRevision)throw Object.assign(new Error('This property changed. Reopen it before saving.'),{status:409});const field={id,name:body.name,scope:body.scope,targetDatabaseId:body.targetDatabaseId,revision:body.expectedRevision+1};fields=[...fields.filter(item=>item.id!==id),field];return {field};}
   throw new Error(`Unexpected ${method} ${path}`);
 }
 const api={user:{uid:'fixture'},workspace:{id:'fixture'},databaseRequest:request};
