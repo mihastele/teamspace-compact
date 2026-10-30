@@ -141,3 +141,23 @@ test('email and phone database fields retain bounded text values and display and
   const {propertyDefinition}=require('../.test-build/board-properties.js');
   assert.throws(()=>propertyDefinition({name:'Email',type:'email',options:[]}));
 });
+
+
+test('database statuses preserve workflow groups, identities, archived values and group order',()=>{
+  const id=randomUUID(),todo=randomUUID(),doing=randomUUID(),done=randomUUID();
+  const input={id,name:'Progress',type:'status',options:[{id:done,name:'Shipped',group:'done'},{id:todo,name:'Planned',group:'todo'},{id:doing,name:'Building',group:'doing'}]};
+  const fields=databaseFields([input]);
+  assert.deepEqual(databaseValues({[id]:doing},fields),{[id]:doing});
+  assert.deepEqual(databaseFieldInput(fields[0]).options,input.options);
+  assert.throws(()=>databaseFields([{...input,options:[{id:todo,name:'Bad'}]}]));
+  assert.throws(()=>databaseFields([{...input,options:[{id:todo,name:'Bad',group:'other'}]}]));
+  assert.throws(()=>databaseFields([{...input,type:'select'}]));
+  assert.throws(()=>databaseValues({[id]:randomUUID()},fields));
+  const updated=databaseFields([{...input,options:input.options.map(option=>option.id===doing?{...option,archived:true,group:'done'}:option)}],fields);
+  assert.deepEqual(databaseValues({[id]:doing},updated,{[id]:doing}),{[id]:doing});
+  assert.throws(()=>databaseValues({[id]:doing},updated));
+  assert.throws(()=>databaseFields([{...input,options:input.options.slice(1)}],fields));
+  assert.deepEqual(sorted([row('done',{[id]:done}),row('todo',{[id]:todo}),row('doing',{[id]:doing}),row('empty')],`property:${id}`,'ascending',fields),['todo','doing','done','empty']);
+  assert.deepEqual(sorted([row('done',{[id]:done}),row('todo',{[id]:todo}),row('doing',{[id]:doing}),row('empty')],`property:${id}`,'descending',fields),['done','doing','todo','empty']);
+  assert.throws(()=>require('../.test-build/board-properties.js').propertyDefinition({name:'Status',type:'status',options:[]}));
+});

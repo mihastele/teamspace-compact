@@ -102,3 +102,5 @@ authenticated two-user flows before release. Neither this schema nor its editor
 is implemented yet.
 
 2026-10-30: independent databases additionally support Email and Phone as bounded text values. Their editors use email and telephone input modes; values are stored as entered, without claiming address or phone-number verification. They use the existing database record storage and access controls.
+
+2026-10-30: user selected customizable Status options grouped into To do, In progress and Complete. New fields start with one option per group; options can be renamed, archived and moved between groups while preserving identity. Entry values select one option or remain empty; loaded-row sorting follows group then option order.
