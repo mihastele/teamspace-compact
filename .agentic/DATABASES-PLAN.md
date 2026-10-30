@@ -103,3 +103,5 @@ recovery and authenticated two-user/mobile acceptance remain open.
 2026-10-30: independent databases additionally support Email and Phone as bounded text values. Their editors use email and telephone input modes; values are stored as entered, without claiming address or phone-number verification. They use the existing database record storage and access controls.
 
 2026-10-30: user selected customizable Status options grouped into To do, In progress and Complete. New fields start with one option per group; options can be renamed, archived and moved between groups while preserving identity. Entry values select one option or remain empty; loaded-row sorting follows group then option order.
+
+2026-10-30: user chose blank creation time for existing entries whose creation time was not recorded. New entries store an immutable server-generated creation timestamp; a read-only Created time property displays UTC and sorts loaded rows chronologically with unknown values last.

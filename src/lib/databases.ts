@@ -4,9 +4,9 @@ import { relationTarget, relationTargetIds } from "./database-relation-target";
 
 export type DatabaseField = BoardProperty & { targetDatabaseId?: string; targetKind?: "database" | "task" | "project" };
 export type DatabaseDefinition = { id: string; name: string; description: string; fields: DatabaseField[]; archived: boolean; revision: number };
-export type DatabaseEntry = { id: string; databaseId: string; title: string; content: NoteContent; propertyValues: Record<string, PropertyValue>; archived: boolean; revision: number };
+export type DatabaseEntry = { id: string; databaseId: string; title: string; content: NoteContent; propertyValues: Record<string, PropertyValue>; archived: boolean; revision: number; createdAt?: number | null };
 export type IncomingRelation = { entryId: string; databaseId: string; title: string; fieldId: string; fieldName: string; archived: boolean };
-export const databasePropertyTypes = [...propertyTypes, "email", "phone", "status"] as const;
+export const databasePropertyTypes = [...propertyTypes, "email", "phone", "status", "createdTime"] as const;
 export const statusGroups = [{id:"todo",name:"To do"},{id:"doing",name:"In progress"},{id:"done",name:"Complete"}] as const;
 export const MAX_DATABASES = 64;
 export const MAX_DATABASE_ENTRIES = 1000;
@@ -41,6 +41,7 @@ export function databaseValues(input: unknown, fields: DatabaseField[], before: 
   for (const [id, value] of Object.entries(input)) {
     const field = fields.find(field => field.id === id);
     if (!field) throw new Error("This property no longer exists. Reopen the entry.");
+    if (field.type === "createdTime") throw new Error("Created time is read-only.");
     if (field.type === "relation") {
       result[id] = relationTargetIds(value, relationTarget(field));
     } else Object.assign(result, validatePropertyValues({ [id]: value }, fields, before));
@@ -50,4 +51,9 @@ export function databaseValues(input: unknown, fields: DatabaseField[], before: 
 
 export function databaseFieldInput(field: DatabaseField) {
   return { id: field.id, name: field.name, type: field.type, options: field.options, ...(field.targetDatabaseId ? { targetDatabaseId: field.targetDatabaseId } : {}), ...(field.targetKind ? { targetKind: field.targetKind } : {}) };
+}
+
+/** Format the immutable server creation time consistently in table, list and editor. */
+export function createdTimeDisplay(entry: Pick<DatabaseEntry, "createdAt">): string {
+  return typeof entry.createdAt === "number" && Number.isFinite(entry.createdAt) && Math.abs(entry.createdAt) <= 8640000000000000 ? new Date(entry.createdAt).toISOString().replace("T", " ").replace(".000Z", " UTC").replace("Z", " UTC") : "";
 }

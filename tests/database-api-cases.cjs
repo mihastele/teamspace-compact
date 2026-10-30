@@ -4,6 +4,24 @@ module.exports=function(test,{api,member,outsider,prefix,read,sql,db}){
   const definition=(id,name,fields=[],extra={})=>({name,description:'Collection',fields,archived:false,expectedRevision:0,operationId:randomUUID(),...extra});
   const entry=(databaseId,title,propertyValues={},extra={})=>({databaseId,title,content:{blocks:[{type:'heading',text:'Rich body',level:2}]},propertyValues,archived:false,expectedRevision:0,operationId:randomUUID(),...extra});
   const save=(kind,id,body,uid=member)=>api(uid,'PUT',`${prefix}/${kind}/${id}`,body);
+  test('database created time is server-owned, immutable, retry-safe and unknown for legacy entries',async()=>{
+    const database=randomUUID(), field=randomUUID(), fresh=randomUUID(), legacy=randomUUID();
+    assert.equal((await save('databases',database,definition(database,'Dates',[{id:field,name:'Created',type:'createdTime',options:[]}]))).status,200);
+    const packet=entry(database,'New');
+    const first=await save('databaseEntries',fresh,packet);
+    assert.equal(first.status,200); assert.equal(typeof first.data.record.createdAt,'number');
+    const timestamp=first.data.record.createdAt;
+    assert.equal((await save('databaseEntries',fresh,packet)).data.record.createdAt,timestamp);
+    assert.equal((await api(member,'GET',`${prefix}/databaseEntries/${fresh}`)).data.entry.createdAt,timestamp);
+    assert.equal((await api(member,'GET',`${prefix}/databases/${database}`)).data.entries.find(row=>row.id===fresh).createdAt,timestamp);
+    assert.equal((await save('databaseEntries',fresh,entry(database,'Edited',{}, {expectedRevision:1}))).data.record.createdAt,timestamp);
+    assert.equal((await save('databaseEntries',fresh,entry(database,'Forged',{[field]:'2020-01-01'},{expectedRevision:2}))).status,400);
+    assert.equal((await save('databaseEntries',randomUUID(),{...entry(database,'Forged'),createdAt:0})).status,400);
+    await db.runTransaction(async tx=>tx.create(db.doc(`${prefix}/databaseEntries/${legacy}`),{databaseId:database,entryKey:legacy,title:'Old',content:{blocks:[]},propertyValues:{},archived:false,revision:1}));
+    assert.equal((await api(member,'GET',`${prefix}/databaseEntries/${legacy}`)).data.entry.createdAt,null);
+    assert.equal((await save('databaseEntries',legacy,entry(database,'Edited old',{}, {expectedRevision:1}))).data.record.createdAt,null);
+    assert.equal((await api(outsider,'GET',`${prefix}/databaseEntries/${fresh}`)).status,403);
+  });
   test('database task and project links validate targets and task deletion preserves entry revisions',async()=>{
     const database=randomUUID(),taskField=randomUUID(),projectField=randomUUID(),source=randomUUID();
     await db.runTransaction(async tx=>tx.create(db.doc(`${prefix}/projects/project`),{name:'Project',description:'',archived:false,revision:1}));

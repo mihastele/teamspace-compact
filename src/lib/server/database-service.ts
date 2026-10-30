@@ -3,13 +3,13 @@ import type { DatabaseDefinition, DatabaseEntry } from "../databases";
 import { databaseFields, databaseValues, MAX_DATABASES, MAX_DATABASE_ENTRIES } from "../databases";
 import { relationTarget } from "../database-relation-target";
 import { taskBlockTypes } from "../task-pages";
-import type { DocumentStore, DocumentReference, StoreData } from "./document-store";
+import { Timestamp, decodeStoreValue, type DocumentStore, type DocumentReference, type StoreData } from "./document-store";
 import { member, rateLimit, now, hash, type ServiceActor } from "./service-context";
 import { ApiError, object, text, integer, uuid, noteContent } from "./validation";
 import { requireProjects } from "./project-service";
 
 const definitionView = (id: string, row: StoreData): DatabaseDefinition => ({ id, name: row.name, description: row.description, fields: row.fields, archived: row.archived, revision: row.revision });
-const entryView = (id: string, row: StoreData): DatabaseEntry => ({ id, databaseId: row.databaseId, title: row.title, content: row.content, propertyValues: row.propertyValues, archived: row.archived, revision: row.revision });
+const entryView = (id: string, row: StoreData): DatabaseEntry => ({ id, databaseId: row.databaseId, title: row.title, content: row.content, propertyValues: row.propertyValues, archived: row.archived, revision: row.revision, createdAt: row.createdAt instanceof Timestamp ? row.createdAt.toMillis() : null });
 function canonical(input: unknown): string {
   if (Array.isArray(input)) return `[${input.map(canonical).join(",")}]`;
   if (input && typeof input === "object") return "{" + Object.entries(input).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${JSON.stringify(key)}:${canonical(value)}`).join(",") + "}";
@@ -59,7 +59,7 @@ export async function readDatabaseEntry(db: DocumentStore, workspace: DocumentRe
     const status=code==="not_found"?404:code==="policy_mismatch"?503:403;
     throw new ApiError(status,code,code==="not_found"?"Entry not found.":"Database access is unavailable. Refresh your session or ask the administrator to check access.");
   }
-  return {entry:entryView(id,result.entry),incoming:result.incoming,truncated:result.truncated};
+  return {entry:entryView(id,decodeStoreValue(result.entry) as StoreData),incoming:result.incoming,truncated:result.truncated};
 }
 
 export async function saveDatabaseRecord(db: DocumentStore, workspace: DocumentReference, actor: ServiceActor, kind: "databases" | "databaseEntries", id: string, input: unknown) {
@@ -128,7 +128,7 @@ export async function saveDatabaseRecord(db: DocumentStore, workspace: DocumentR
       }
       next = { databaseId, entryKey:id, title, content, propertyValues: propertyValues!, archived: data.archived };
     }
-    next = { ...previous.data(), ...next, revision: expected + 1, updatedAt: now(), updatedBy: actor.uid };
+    next = { ...previous.data(), ...next, ...(!previous.exists && kind === "databaseEntries" ? {createdAt: Timestamp.now()} : {}), revision: expected + 1, updatedAt: now(), updatedBy: actor.uid };
     if (previous.exists) tx.set(ref, next); else tx.create(ref, next);
     tx.create(receipt, { digest, kind, recordId: id, uid: actor.uid, revision: expected + 1, createdAt: now() });
     tx.update(workspace, { databasesRevision: (space.data()?.databasesRevision ?? 0) + 1 });

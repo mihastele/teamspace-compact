@@ -1,4 +1,4 @@
-import type { DatabaseEntry, DatabaseField } from "./databases";
+import { createdTimeDisplay, type DatabaseEntry, type DatabaseField } from "./databases";
 import type { Member, Project, Task } from "./model";
 import type { TableSort } from "./task-table";
 import { propertyDisplay } from "./board-properties";
@@ -19,14 +19,16 @@ export function sortDatabaseEntries(entries: readonly DatabaseEntry[], sort: Tab
     const value = field ? entry.propertyValues[field.id] : undefined;
     const text = !active || active.column === "title" ? entry.title : field!.type === "relation"
       ? (Array.isArray(value) ? value : []).map(id => field!.targetKind === "task" ? tasks.get(id) ?? "Unavailable task" : field!.targetKind === "project" ? projects.get(id) ?? "Unavailable project" : targets[id]?.title ?? "Unavailable entry").sort(compareText).join(", ")
-      : propertyDisplay(field!, value, members);
+      : field!.type === "createdTime" ? createdTimeDisplay(entry) : propertyDisplay(field!, value, members);
     return [entry.id, text] as const;
   }));
   const statusOrder = field?.type === "status" ? [...field.options].sort((a,b) => (["todo","doing","done"].indexOf(a.group ?? "") - ["todo","doing","done"].indexOf(b.group ?? ""))) : [];
   return [...entries].sort((first, second) => {
     const a = cells.get(first.id)!, b = cells.get(second.id)!;
     if (Boolean(a) !== Boolean(b)) return a ? -1 : 1;
-    let compared = active && field?.type === "status" && a && b
+    let compared = active && field?.type === "createdTime" && a && b
+      ? (first.createdAt ?? 0) - (second.createdAt ?? 0)
+      : active && field?.type === "status" && a && b
       ? statusOrder.findIndex(option=>option.id===first.propertyValues[field.id]) - statusOrder.findIndex(option=>option.id===second.propertyValues[field.id])
       : active && field?.type === "number" && a && b
       ? Number(first.propertyValues[field.id]) - Number(second.propertyValues[field.id])

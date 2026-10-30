@@ -17,7 +17,7 @@
 | Task pages and templates | Explicit Save/reviewed revisions, rich task blocks, task-local properties, shared copy-based templates with edit/archive/restore, local draft/retry recovery. Tested locally; migration 015/rules and matching deployment/live acceptance pending | 2026-10-18 |
 | Task attribute UX | Inline task field editing; one Table Properties menu for visibility/definitions; saved-view cards honor selected fields. Locally verified; live acceptance pending | 2026-10-18 |
 | Note boards | Named shared boards/filters in notes; safe in-dialog cancellation, repeated Escape/focus/mobile checks and maintained manual component fixture verified; authenticated/deployed acceptance and automated DOM suite pending | 2026-10-19 |
-| Independent databases | PostgreSQL named collections, typed fields including email, phone and grouped status, entry/task/project relations in both directions, entry backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 019 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
+| Independent databases | PostgreSQL named collections, typed fields including email, phone, grouped status and created time, entry/task/project relations in both directions, entry backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 019 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
 | Development preview | npm run dev:preview; http://127.0.0.1:3107; child-only provider overrides; npm run dev:connected for configured backend | 2026-10-18 |
 | Deployment setup | npm run deploy:setup -- staging/production; npm run deploy -- <env> doctor/build/up/status/stop/backup/migrate/prune. Generated isolated profiles; staging full stack running, migrations through 016 applied, local captured email confirmation verified; production launch pending | 2026-10-18 |
 | License | Not yet selected | 2026-10-03 |
@@ -966,3 +966,13 @@
 
 - Integrated the grouped database status increment with the task/project data-source relation changes on the current branch, retaining both sets of documentation and current facts. PASSED all 252 unit/model/controller/provider/setup cases, lint and optimized Turbopack production build including TypeScript in the shared checkout; concurrent uncommitted changes from another chat were present, so this is not isolated verification of the committed tree. Browser/automated DOM and authenticated status acceptance remain open, as do the existing live migration and two-user gates. No schema, dependency, staging data or deployment changes.
 - NEEDS DECISION: a future Created time property cannot recover original creation timestamps for existing database entries, because they were not recorded. User was asked whether older entries should remain blank or show an approximate last-update timestamp.
+
+
+### 2026-10-30 - Independent database created time
+
+- User chose to leave creation time blank for older database entries lacking a recorded timestamp. New entries receive an immutable server-generated timestamp; Created time is read-only, displayed in UTC, exported with loaded entries and sorted chronologically with unknown values last. Existing entries remain unknown after editing. Trusted saves reject attempted client values; existing record access controls apply. No migration, dependency, staging data or deployment change. README, SPEC and database plan updated.
+- PASSED 253 unit/model/controller/provider/setup cases, lint, TypeScript and optimized webpack production build. Focused disposable PostgreSQL/API case passed for creation, exact retries, read/export, update preservation, forged values, legacy blank records and outsider denial. OPEN TEST GAP: no automated DOM, browser or authenticated/two-user acceptance for this property; full PostgreSQL regression suite was not rerun. No exotic technology deviation. Work isolated because another chat is modifying overlapping files.
+
+### FAILED - 2026-10-30: created time test response corrected
+
+- The first PostgreSQL/API test asserted a timestamp at the top level of a PUT response, but that endpoint wraps its record in a record field. Corrected the assertion and reran the focused test successfully; no product behavior was changed.
