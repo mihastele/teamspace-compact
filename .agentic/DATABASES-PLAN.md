@@ -67,9 +67,11 @@ their targets. A new numbered migration and trusted writer need typed,
 same-workspace referential checks, indexed backlinks, appropriate RLS and
 direct-write denial. A target lookup must distinguish task titles and project
 names and respect membership. Existing archived-project rules should prevent
-new links while retaining or removing existing links. Task deletion and
-references require an explicit policy before implementing the migration; do not
-silently cascade links or block existing deletes. Confirm transaction ordering,
+new links while retaining or removing existing links. On 2026-10-30 the user
+chose to remove incoming database links automatically when a task is permanently
+deleted. Remove the IDs from the authoritative entry values and update entry
+revisions in the same transaction as deletion; removing only the index would
+leave stale saved values. Confirm transaction ordering,
 concurrent link/deletion behavior, export and workspace deletion, pagination,
 type regeneration and rollback before implementation. Scope this increment to
 database-entry properties; reciprocal editable task/project properties, rollups
@@ -80,3 +82,8 @@ drafts, all three target kinds, cross-workspace and outsider denial, archived
 projects, link/delete races, exact retries, backlinks, export and workspace
 deletion, plus authenticated UI and mobile acceptance. No migration or app
 writer for these targets is present yet.
+
+`src/lib/database-relation-target.ts` is an isolated candidate validator for
+legacy entry targets and new task/project target kinds. It preserves non-UUID
+task/project identifiers and the 50-link limit; it is not connected to API
+validation, persistence or UI and does not check authorization or existence.

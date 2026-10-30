@@ -32,7 +32,7 @@
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
 - RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Top-level blocks have no parent; other blocks have one same-workspace parent. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
 - RESOLVED (legacy offline edits, 2026-10-30): user selected automatic conversion into the new model. The protocol, conflicting edits, failure handling, security and retention still need design and testing before migration.
-- RESOLVED (database relation target kind, 2026-10-30): user chose one target kind per property for task/project relations. Existing entry relations remain in scope. Task deletion with incoming links remains a pending decision.
+- RESOLVED (database relation targets, 2026-10-30): user chose one target kind per property and automatic removal of incoming database links on permanent task deletion. Existing entry relations remain in scope; implementation is pending.
 - NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
@@ -894,3 +894,9 @@
 
 - User selected one target kind per database relation property. Documented a compatible candidate design and verification scope in DATABASES-PLAN.md. Canonical tasks/projects live outside the existing entry-only relation projection; their IDs cannot safely be assumed UUIDs. Task deletion behavior with incoming links remains a pending user decision before a writer or schema is implemented.
 - Documentation-only: tests do not validate the proposed schema, authorization, deletion or UI; those tests remain open. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation.
+
+
+### 2026-10-30 - Relation target validation foundation
+
+- User chose automatic removal of incoming database links when a linked task is permanently deleted. Recorded that entry values and revisions must change atomically with deletion. Added an isolated candidate relation-target validator preserving old database relation definitions, existing non-UUID task/project identifiers and the 50-link bound; rejects mixed targets, duplicate, unsafe and excessive IDs. It is not wired to production writes, authorization, existence checks, UI or deletion.
+- PASSED all 246 unit/model/controller/provider/setup cases, full lint and standalone typecheck. OPEN TEST GAP: real PostgreSQL link persistence, authorized reads/writes, atomic cleanup and deletion races, migration/upgrade and authenticated UI remain unimplemented and untested. No schema, staging data, dependency or deployment change; no exotic technology deviation. Task/project relations, nested blocks, rollups and shared views remain outstanding.
