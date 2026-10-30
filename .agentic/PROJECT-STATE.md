@@ -32,6 +32,7 @@
 - RESOLVED (backend direction, 2026-10-29): user chose PostgreSQL as the active target; Firebase is retained but not currently in development. This supersedes Firebase baseline requirements for new development, without removing code or modifying data.
 - RESOLVED (unified block model, 2026-10-29): PostgreSQL is authoritative for block identity, containment, ordering and references; collaborative text uses per-block Yjs. Top-level blocks have no parent; other blocks have one same-workspace parent. Preserve and migrate existing staging data; tasks and projects will be page-like block entities with attached typed fields.
 - RESOLVED (legacy offline edits, 2026-10-30): user selected automatic conversion into the new model. The protocol, conflicting edits, failure handling, security and retention still need design and testing before migration.
+- RESOLVED (database relation target kind, 2026-10-30): user chose one target kind per property for task/project relations. Existing entry relations remain in scope. Task deletion with incoming links remains a pending decision.
 - NEEDS DECISION: production collaboration protocol and detailed task/project, migration, ordering and deletion semantics before implementation. See `.agentic/BLOCK-ARCHITECTURE.md`.
 
 - RESOLVED (independent databases, 2026-10-18): user prioritized database/relations over agent M4c and chose adding independent collections alongside existing Tasks/Projects. DB1 is implemented/tested for PostgreSQL; live migration 016 and authenticated browser/two-user acceptance remain open. Formulas/rollups and Task/Project relation targets are later increments.
@@ -887,3 +888,9 @@
 
 - User requested all three areas: task/project relations, nested blocks and database views/rollups. Added a local List layout alongside the existing database table as a first increment. It displays loaded entry properties and navigable relation values, reuses search/archive/loaded-row sorting and paging, and exposes sort property and direction controls. Layout is local, not saved or workspace-shared. Existing server queries, records and export order are unchanged.
 - PASSED all 244 existing unit/model/controller/provider/setup tests, full lint, standalone typecheck and optimized build. OPEN TEST GAP: no browser/automated DOM, mobile or authenticated acceptance for layout switching, list navigation and sorting; existing tests do not exercise the new UI. README, SPEC and database plan updated. No schema, dependency, live data or deployment change; no exotic technology deviation. Task/project relations, nested blocks, rollups and shared database views remain outstanding; relation target shape and legacy conversion conflict policy require decisions.
+
+
+### 2026-10-30 - Task/project relation design
+
+- User selected one target kind per database relation property. Documented a compatible candidate design and verification scope in DATABASES-PLAN.md. Canonical tasks/projects live outside the existing entry-only relation projection; their IDs cannot safely be assumed UUIDs. Task deletion behavior with incoming links remains a pending user decision before a writer or schema is implemented.
+- Documentation-only: tests do not validate the proposed schema, authorization, deletion or UI; those tests remain open. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation.

@@ -49,3 +49,34 @@ List entries show typed properties and navigable relation values; list sort
 controls use the existing loaded-row sort and share search, archive and paging
 state with the table. This is not a saved or workspace-shared view. Browser,
 mobile and authenticated interaction acceptance remain open.
+
+## Proposed task and project relation increment
+
+On 2026-10-30 the user requested task and project relation targets and chose
+one target kind per relation property. Keep the existing database-entry relation
+format and its immutable target database compatible; new relation properties
+would instead name either tasks or projects as their immutable target kind.
+Each property can hold multiple distinct same-workspace IDs, within the existing
+50-link bound. Existing task/project IDs must remain valid; do not assume their
+IDs are UUIDs merely because database entry IDs are. Existing relation data and
+drafts need an upgrade-compatible interpretation.
+
+Tasks and projects are stored in their own canonical PostgreSQL tables, so the
+existing entry-only projection and foreign key cannot simply be reused for
+their targets. A new numbered migration and trusted writer need typed,
+same-workspace referential checks, indexed backlinks, appropriate RLS and
+direct-write denial. A target lookup must distinguish task titles and project
+names and respect membership. Existing archived-project rules should prevent
+new links while retaining or removing existing links. Task deletion and
+references require an explicit policy before implementing the migration; do not
+silently cascade links or block existing deletes. Confirm transaction ordering,
+concurrent link/deletion behavior, export and workspace deletion, pagination,
+type regeneration and rollback before implementation. Scope this increment to
+database-entry properties; reciprocal editable task/project properties, rollups
+and block migration remain separate work.
+
+Verification must include clean and populated upgrades, old-format relations and
+drafts, all three target kinds, cross-workspace and outsider denial, archived
+projects, link/delete races, exact retries, backlinks, export and workspace
+deletion, plus authenticated UI and mobile acceptance. No migration or app
+writer for these targets is present yet.
