@@ -118,3 +118,55 @@ test("recreating a shadow with the same text does not preserve its causal identi
   assert.equal(live.getText("text").toString(), "Start");
   live.destroy(); unrelated.destroy();
 });
+
+// A deliberately simple contiguous replacement to expose its limitations.
+// Test inputs below are ASCII; this is not suitable for production text.
+function translateSingleSpan(shadow, before, after) {
+  const text = shadow.getText("text");
+  assert.equal(text.toString(), before);
+  let start = 0, suffix = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  while (suffix < before.length - start && suffix < after.length - start &&
+         before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix++;
+  const vector = Y.encodeStateVector(shadow);
+  shadow.transact(() => {
+    if (before.length - start - suffix) text.delete(start, before.length - start - suffix);
+    if (after.length - start - suffix) text.insert(start, after.slice(start, after.length - suffix));
+  });
+  return Y.encodeStateAsUpdate(shadow, vector);
+}
+
+test("two old clients can be projected sequentially when no new block edit intervenes", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "abcde" }] });
+  const a = clone(base), b = clone(base);
+  const updates = [edit(a, values => { values[0].text = "aBcde"; }),
+    edit(b, values => { values[0].text = "abcdE"; })];
+  for (const ordered of [updates, [...updates].reverse()]) {
+    const shadow = new Y.Doc(), live = new Y.Doc();
+    const checkpoint = blocks.createBlockState("abcde");
+    Y.applyUpdate(shadow, checkpoint); Y.applyUpdate(live, checkpoint);
+    let before = "abcde";
+    for (let i = 0; i < ordered.length; i++) {
+      const after = mergeLegacy(base, ordered.slice(0, i + 1)).blocks[0].text;
+      Y.applyUpdate(live, translateSingleSpan(shadow, before, after));
+      before = after;
+    }
+    assert.equal(live.getText("text").toString(), "aBcdE");
+    shadow.destroy(); live.destroy();
+  }
+  base.destroy(); a.destroy(); b.destroy();
+});
+
+test("one coarse replacement can displace a concurrent insertion inside its span", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "abcde" }] });
+  const offline = clone(base);
+  const update = edit(offline, values => { values[0].text = "aBcdE"; });
+  const after = mergeLegacy(base, [update]).blocks[0].text;
+  const checkpoint = blocks.createBlockState("abcde"), shadow = new Y.Doc(), live = new Y.Doc();
+  Y.applyUpdate(shadow, checkpoint); Y.applyUpdate(live, checkpoint);
+  live.getText("text").insert(3, "X"); // The new editor intended ab cX d e.
+  Y.applyUpdate(live, translateSingleSpan(shadow, "abcde", after));
+  assert.equal(live.getText("text").toString(), "aXBcdE");
+  assert.notEqual(live.getText("text").toString(), "aBcXdE");
+  base.destroy(); offline.destroy(); shadow.destroy(); live.destroy();
+});
