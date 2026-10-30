@@ -1,11 +1,12 @@
 import type { BoardProperty, NoteContent, PropertyValue } from "./model";
-import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "./board-properties";
+import { propertyTypes, propertyDefinition, validatePropertyChange, validatePropertyValues } from "./board-properties";
 import { relationTarget, relationTargetIds } from "./database-relation-target";
 
 export type DatabaseField = BoardProperty & { targetDatabaseId?: string; targetKind?: "database" | "task" | "project" };
 export type DatabaseDefinition = { id: string; name: string; description: string; fields: DatabaseField[]; archived: boolean; revision: number };
 export type DatabaseEntry = { id: string; databaseId: string; title: string; content: NoteContent; propertyValues: Record<string, PropertyValue>; archived: boolean; revision: number };
 export type IncomingRelation = { entryId: string; databaseId: string; title: string; fieldId: string; fieldName: string; archived: boolean };
+export const databasePropertyTypes = [...propertyTypes, "email", "phone"] as const;
 export const MAX_DATABASES = 64;
 export const MAX_DATABASE_ENTRIES = 1000;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -19,7 +20,7 @@ export function databaseFields(input: unknown, before: DatabaseField[] = []): Da
     const { id, targetDatabaseId, targetKind, ...definition } = item;
     if (typeof id !== "string" || !uuid.test(id) || result.some(field => field.id === id)) throw new Error("Invalid or duplicate property identity.");
     const previous = before.find(field => field.id === id);
-    const parsed = propertyDefinition(definition);
+    const parsed = propertyDefinition(definition, true);
     if ("projectId" in parsed) throw new Error("Database properties belong to their database.");
     if (parsed.type === "relation") {
       const target = relationTarget({ targetDatabaseId, targetKind });

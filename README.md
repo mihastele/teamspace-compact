@@ -267,8 +267,9 @@ later milestones.
 
 On PostgreSQL deployments, open **Databases → New database**. Name the collection
 and add properties; **Properties** edits names/options or archives/restores it.
-Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
-relations use the existing property controls. A relation targets one database,
+Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs,
+email addresses, phone numbers and relations use the existing property controls.
+Email and phone values are stored as entered and are not verified. A relation targets one database,
 tasks, or projects and can select multiple records of that kind. Database-entry
 relations can target entries in the same database.
 Property types, relation targets and saved option IDs stay stable. Relation

@@ -8,7 +8,7 @@ import s from "./BoardProperties.module.css";
 
 type Api = ReturnType<typeof useTeamspace>;
 const colors:Record<string,string> = {gray:"#687587",red:"#ba3447",orange:"#ac5a19",yellow:"#87700a",green:"#24734e",blue:"#2d63b6",purple:"#7c49ac",pink:"#ad4081"};
-const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Project relation", url:"URL" };
+const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Project relation", url:"URL", email:"Email", phone:"Phone" };
 
 function PropertyEditor({ api, initial, close }: { api: Api; initial?: BoardProperty; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -67,10 +67,10 @@ function PropertyEditor({ api, initial, close }: { api: Api; initial?: BoardProp
   </dialog>;
 }
 
-export function BoardProperties({ api, columns, hidden = [], onVisibilityChange }: { api: Api; columns?: { id: string; label: string }[]; hidden?: string[]; onVisibilityChange?: (id: string, visible: boolean) => void }) {
+export function BoardProperties({ api, columns, hidden = [], onVisibilityChange, align = "start" }: { api: Api; columns?: { id: string; label: string }[]; hidden?: string[]; onVisibilityChange?: (id: string, visible: boolean) => void; align?: "start" | "end" }) {
   const [editing, setEditing] = useState<BoardProperty | "new" | null>(null);
   const [exportError, setExportError] = useState("");
-  return <div className={s.manager}>
+  return <div className={`${s.manager} ${align === "end" ? s.alignEnd : ""}`}>
     <details onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const details = event.currentTarget; details.open = false; details.querySelector("summary")?.focus(); } }}><summary>Properties</summary>
       <div className={s.list}>
         {columns ? columns.map(column => {

@@ -34,8 +34,10 @@ function ProjectEditor({ api, project, close }: { api: Api; project?: Project; c
       <label className={s.field}>Project name<input autoFocus required maxLength={200} value={name} onChange={event=>setName(event.target.value)}/></label>
       <label className={s.field}>Description<textarea maxLength={10000} value={description} onChange={event=>setDescription(event.target.value)}/></label>
     </fieldset>
-    <button disabled={busy}>{busy ? "Saving…" : "Save project"}</button>{" "}
-    <button type="button" disabled={busy} onClick={attemptClose}>Cancel</button>
+    <div className={s.projectDialogActions}>
+      <button className={s.secondary} type="button" disabled={busy} onClick={attemptClose}>Cancel</button>
+      <button className={s.primary} disabled={busy}>{busy ? "Saving…" : "Save project"}</button>
+    </div>
   </form></dialog>;
 }
 

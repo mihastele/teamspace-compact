@@ -15,11 +15,11 @@ function name(value: unknown): string {
     throw new Error("Property and option names must contain 1–80 characters.");
   return value.trim();
 }
-export function propertyDefinition(value: unknown): Omit<BoardProperty, "id" | "revision"> {
+export function propertyDefinition(value: unknown, database = false): Omit<BoardProperty, "id" | "revision"> {
   const data = record(value);
   if (Object.keys(data).some(key => !["name", "type", "options", "projectId"].includes(key)))
     throw new Error("Unexpected property field.");
-  if (!propertyTypes.includes(data.type as BoardProperty["type"]))
+  if (!(propertyTypes as readonly string[]).includes(data.type as string) && !(database && ["email", "phone"].includes(data.type as string)))
     throw new Error("Invalid property type.");
   if (!Array.isArray(data.options) || data.options.length > 50)
     throw new Error("A property supports up to 50 options.");
@@ -94,7 +94,7 @@ export function validatePropertyValues(value: unknown, properties: readonly Boar
       if (typeof item !== "string") throw new Error(`Invalid value for ${property.name}.`);
       if (property.type === "select" && !allowed(item))
         throw new Error(`Choose a valid option for ${property.name}.`);
-      if (["text","url"].includes(property.type) && item.length>2000) throw new Error(`Value too long for ${property.name}.`);
+      if (["text","url","email","phone"].includes(property.type) && item.length>2000) throw new Error(`Value too long for ${property.name}.`);
       if (["person","relation"].includes(property.type) && !entityId(item)) throw new Error(`Choose a valid record for ${property.name}.`);
       if (property.type === "url") {
         let url:URL; try {url=new URL(item);} catch {throw new Error(`Enter a valid URL for ${property.name}.`);}
@@ -115,7 +115,7 @@ export function propertyDisplay(property: BoardProperty, value: PropertyValue | 
   if (property.type === "checkbox") return typeof value === "boolean" ? value ? "Yes" : "No" : "";
   if (property.type === "person") return members.find(member=>member.id===value)?.displayName ?? "Unavailable member";
   if (property.type === "relation") return projects.find(project=>project.id===value)?.name ?? "Unavailable project";
-  if (["text","longText","url","date"].includes(property.type)) return typeof value === "string" ? value : "";
+  if (["text","longText","url","date","email","phone"].includes(property.type)) return typeof value === "string" ? value : "";
   const ids = Array.isArray(value) ? value : [value];
   return property.options.filter(option => ids.includes(option.id)).map(option => option.name).join(", ");
 }

@@ -126,3 +126,18 @@ test('database scalar properties reuse typed validation and option identity pres
   assert.throws(()=>databaseFields([{id:randomUUID(),name:'Invalid',type:'relation',options:[]} ]));
   assert.throws(()=>databaseFields([{id:text,name:'A',type:'text',options:[],projectId:'project'}]));
 });
+
+
+test('email and phone database fields retain bounded text values and display and sort them',()=>{
+  const email=randomUUID(),phone=randomUUID();
+  const fields=databaseFields([{id:email,name:'Email',type:'email',options:[]},{id:phone,name:'Phone',type:'phone',options:[]}]);
+  const values={[email]:'person@example.com',[phone]:'+386 1 234 567'};
+  assert.deepEqual(databaseValues(values,fields),values);
+  assert.deepEqual(databaseFields(fields.map(databaseFieldInput),fields).map(f=>f.type),['email','phone']);
+  assert.throws(()=>databaseValues({[phone]:'x'.repeat(2001)},fields));
+  assert.throws(()=>databaseValues({[email]:false},fields));
+  assert.throws(()=>databaseValues({[email]:'bad\0value'},fields));
+  assert.deepEqual(sorted([row('b',{[email]:'z@example.com'}),row('a',{[email]:'a@example.com'}),row('empty')],`property:${email}`,'ascending',fields),['a','b','empty']);
+  const {propertyDefinition}=require('../.test-build/board-properties.js');
+  assert.throws(()=>propertyDefinition({name:'Email',type:'email',options:[]}));
+});

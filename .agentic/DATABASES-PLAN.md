@@ -71,3 +71,34 @@ migration/restore acceptance remain open.
 
 `src/lib/database-relation-target.ts` validates target kind and IDs; trusted
 services separately check authorization, existence and archive state.
+
+## Relations from task and project pages to database entries
+
+On 2026-10-30 the user requested the direction shown in their reference: task
+and project pages can define relation properties that choose a database as the
+data source and select its entries. They chose separate task and project
+property sets. This is distinct from entry properties that point to tasks or
+projects; an incoming link alone does not provide this editing flow.
+
+Proposed implementation: each relation definition has a stable identity, name,
+one immutable target database and an explicit task or project scope. Each value
+holds up to 50 distinct entry IDs. Keep existing single-project task relations
+and their stored values compatible. Provide a database selector when adding a
+property and a searchable entry picker on each relevant page. Project property
+definitions and values are independent of task properties. Preserve selected
+archived entries, allow their removal, and prohibit adding archived entries or
+entries from archived databases. A source's archive must retain its relations;
+task deletion removes its own relation values. There is no hard-delete API for
+database entries today, so do not invent a hard-delete policy in this increment.
+
+Use a numbered PostgreSQL migration, same-workspace foreign keys and indexed
+incoming relations, workspace-member RLS, direct-write denial and trusted
+membership-checked services. Define reviewed revisions and exact-retry behavior
+for property/value saves, integrate task draft recovery and project conflict
+handling, and include definitions and values in exports and workspace deletion.
+Test clean/populated upgrades, legacy task fields, cross-workspace and revoked
+access, archive behavior, concurrent saves and deletion, retry, export, UI and
+authenticated two-user flows before release. Neither this schema nor its editor
+is implemented yet.
+
+2026-10-30: independent databases additionally support Email and Phone as bounded text values. Their editors use email and telephone input modes; values are stored as entered, without claiming address or phone-number verification. They use the existing database record storage and access controls.

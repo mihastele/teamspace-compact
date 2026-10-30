@@ -698,8 +698,8 @@ function WorkspaceBoard({
             Clear due-date filter
           </button>
         )}
+        <div className={s.boardProperties}><BoardProperties api={api} align="end" /></div>
       </div>
-      <BoardProperties api={api} />
       <p className={s.moveAnnouncement} role="status">
         {announcement}
       </p>
