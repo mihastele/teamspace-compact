@@ -17,7 +17,11 @@
 | Task pages and templates | Explicit Save/reviewed revisions, rich task blocks, task-local properties, shared copy-based templates with edit/archive/restore, local draft/retry recovery. Tested locally; migration 015/rules and matching deployment/live acceptance pending | 2026-10-18 |
 | Task attribute UX | Inline task field editing; one Table Properties menu for visibility/definitions; saved-view cards honor selected fields. Locally verified; live acceptance pending | 2026-10-18 |
 | Note boards | Named shared boards/filters in notes; safe in-dialog cancellation, repeated Escape/focus/mobile checks and maintained manual component fixture verified; authenticated/deployed acceptance and automated DOM suite pending | 2026-10-19 |
+<<<<<<< HEAD
 | Independent databases | PostgreSQL named collections, typed fields including email and phone, entry/task/project relations in both directions, entry backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 019 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
+=======
+| Independent databases | PostgreSQL named collections, typed fields including email, phone and grouped status, entry/task/project relations, entry backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 018 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
+>>>>>>> 497a17f (Add grouped database status properties)
 | Development preview | npm run dev:preview; http://127.0.0.1:3107; child-only provider overrides; npm run dev:connected for configured backend | 2026-10-18 |
 | Deployment setup | npm run deploy:setup -- staging/production; npm run deploy -- <env> doctor/build/up/status/stop/backup/migrate/prune. Generated isolated profiles; staging full stack running, migrations through 016 applied, local captured email confirmation verified; production launch pending | 2026-10-18 |
 | License | Not yet selected | 2026-10-03 |
@@ -933,6 +937,7 @@
 - Final combined-checkout lint and optimized build passed after the project action CSS adjustment. The other chat's Email/Phone changes were present in that checkout; this is not isolated verification of either change.
 
 
+<<<<<<< HEAD
 ### 2026-10-30 - Task and project data-source relations
 
 - User chose separate task/project property sets and saving relation selections with each page. Added searchable data-source selection, shared per-scope relation definitions and entry pickers. Definitions are created separately and immediately; selected IDs save with reviewed task/project revisions. Task drafts, retry packets, conflict review and duplication preserve relations; project saves retain their existing conflict behavior. Legacy task properties and existing entry relation formats remain compatible. Board JSON export includes definitions and page values; target database content is exported separately.
@@ -948,3 +953,13 @@
 ### 2026-10-30 - Existing task/project regression verification
 
 - PASSED five additional real PostgreSQL/API regressions against the updated services: existing project access/archive/retry, task detail access, create retry, reviewed concurrent updates and task body/retry behavior. The broader PostgreSQL suite was not rerun in full for this increment.
+=======
+### 2026-10-30 - Independent database status properties
+
+- User chose customizable status options in To do, In progress and Complete groups. Added grouped status definitions and single-choice entry editing, starter options, rename/archive/group changes, preserved option identities, and loaded-row workflow-order sorting. Server validation enforces group and option identities, including retained archived selections. Existing database JSON storage and access controls are reused; task custom-property choices are unchanged. README, SPEC and database plan updated.
+- PASSED 250 unit/model/controller/provider/setup cases, lint, TypeScript and optimized webpack production build. OPEN TEST GAP: no automated DOM, browser, authenticated PostgreSQL or two-user acceptance specifically for status; existing release gates remain. No schema migration, new dependency, staging data or deployment change; no exotic technology deviation. Work isolated in a separate branch because another chat is actively editing overlapping files.
+
+### FAILED - 2026-10-30: isolated build environment retries resolved
+
+- Turbopack rejected the worktree node_modules junction because its target was outside the worktree root. An independent npm ci was stopped after prolonged installation; its incomplete directory was moved to D:/development/opensource/openNotion-status-deps-partial. The first webpack build and lint overlapped that move and failed on disappearing files. Repeated both after the move: lint and optimized webpack build passed. No tracked dependency files changed.
+>>>>>>> 497a17f (Add grouped database status properties)

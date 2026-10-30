@@ -19,22 +19,23 @@ export function propertyDefinition(value: unknown, database = false): Omit<Board
   const data = record(value);
   if (Object.keys(data).some(key => !["name", "type", "options", "projectId"].includes(key)))
     throw new Error("Unexpected property field.");
-  if (!(propertyTypes as readonly string[]).includes(data.type as string) && !(database && ["email", "phone"].includes(data.type as string)))
+  if (!(propertyTypes as readonly string[]).includes(data.type as string) && !(database && ["email", "phone", "status"].includes(data.type as string)))
     throw new Error("Invalid property type.");
   if (!Array.isArray(data.options) || data.options.length > 50)
     throw new Error("A property supports up to 50 options.");
   const options = data.options.map(value => {
     const option = record(value);
-    if (Object.keys(option).some(key => !["id", "name", "color", "archived"].includes(key)) || !ID.test(String(option.id)))
+    if (Object.keys(option).some(key => !["id", "name", "color", "archived", ...(data.type === "status" && database ? ["group"] : [])].includes(key)) || !ID.test(String(option.id)))
       throw new Error("Invalid option identity.");
     if (option.color !== undefined && !optionColors.includes(option.color as typeof optionColors[number])) throw new Error("Invalid option color.");
     if (option.archived !== undefined && typeof option.archived !== "boolean") throw new Error("Invalid option archive state.");
-    return { id: option.id as string, name: name(option.name), ...(option.color !== undefined ? {color:option.color as string} : {}), ...(option.archived !== undefined ? {archived:option.archived as boolean} : {}) };
+    if (data.type === "status" && !["todo", "doing", "done"].includes(option.group as string)) throw new Error("Choose a workflow group for each status.");
+    return { ...(data.type === "status" ? {group:option.group as "todo" | "doing" | "done"} : {}), id: option.id as string, name: name(option.name), ...(option.color !== undefined ? {color:option.color as string} : {}), ...(option.archived !== undefined ? {archived:option.archived as boolean} : {}) };
   });
   if (new Set(options.map(option => option.id)).size !== options.length ||
       new Set(options.map(option => option.name.toLowerCase())).size !== options.length)
     throw new Error("Option names and identities must be unique.");
-  if (!["select", "multiSelect"].includes(data.type as string) && options.length)
+  if (!["select", "multiSelect", "status"].includes(data.type as string) && options.length)
     throw new Error("Only select properties can contain options.");
   if (data.projectId !== undefined && data.projectId !== null && !entityId(data.projectId)) throw new Error("Invalid project scope.");
   return { name: name(data.name), type: data.type as BoardProperty["type"], options, ...(data.projectId !== undefined ? {projectId:data.projectId as string|null} : {}) };
@@ -92,7 +93,7 @@ export function validatePropertyValues(value: unknown, properties: readonly Boar
         throw new Error(`Choose valid options for ${property.name}.`);
     } else {
       if (typeof item !== "string") throw new Error(`Invalid value for ${property.name}.`);
-      if (property.type === "select" && !allowed(item))
+      if ((property.type === "select" || property.type === "status") && !allowed(item))
         throw new Error(`Choose a valid option for ${property.name}.`);
       if (["text","url","email","phone"].includes(property.type) && item.length>2000) throw new Error(`Value too long for ${property.name}.`);
       if (["person","relation"].includes(property.type) && !entityId(item)) throw new Error(`Choose a valid record for ${property.name}.`);

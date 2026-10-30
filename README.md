@@ -268,7 +268,9 @@ later milestones.
 On PostgreSQL deployments, open **Databases → New database**. Name the collection
 and add properties; **Properties** edits names/options or archives/restores it.
 Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs,
-email addresses, phone numbers and relations use the existing property controls.
+email addresses, phone numbers, status and relations use the existing property controls.
+Status options can be renamed, archived and assigned to To do, In progress or
+Complete groups. New status properties start with one option per group.
 Email and phone values are stored as entered and are not verified. A relation targets one database,
 tasks, or projects and can select multiple records of that kind. Database-entry
 relations can target entries in the same database.

@@ -22,10 +22,13 @@ export function sortDatabaseEntries(entries: readonly DatabaseEntry[], sort: Tab
       : propertyDisplay(field!, value, members);
     return [entry.id, text] as const;
   }));
+  const statusOrder = field?.type === "status" ? [...field.options].sort((a,b) => (["todo","doing","done"].indexOf(a.group ?? "") - ["todo","doing","done"].indexOf(b.group ?? ""))) : [];
   return [...entries].sort((first, second) => {
     const a = cells.get(first.id)!, b = cells.get(second.id)!;
     if (Boolean(a) !== Boolean(b)) return a ? -1 : 1;
-    let compared = active && field?.type === "number" && a && b
+    let compared = active && field?.type === "status" && a && b
+      ? statusOrder.findIndex(option=>option.id===first.propertyValues[field.id]) - statusOrder.findIndex(option=>option.id===second.propertyValues[field.id])
+      : active && field?.type === "number" && a && b
       ? Number(first.propertyValues[field.id]) - Number(second.propertyValues[field.id])
       : compareText(a, b);
     if (active?.direction === "descending") compared *= -1;

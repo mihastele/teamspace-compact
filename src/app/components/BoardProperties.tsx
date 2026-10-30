@@ -8,7 +8,7 @@ import s from "./BoardProperties.module.css";
 
 type Api = ReturnType<typeof useTeamspace>;
 const colors:Record<string,string> = {gray:"#687587",red:"#ba3447",orange:"#ac5a19",yellow:"#87700a",green:"#24734e",blue:"#2d63b6",purple:"#7c49ac",pink:"#ad4081"};
-const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Project relation", url:"URL", email:"Email", phone:"Phone" };
+const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Project relation", url:"URL", email:"Email", phone:"Phone", status:"Status" };
 
 function PropertyEditor({ api, initial, close }: { api: Api; initial?: BoardProperty; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
