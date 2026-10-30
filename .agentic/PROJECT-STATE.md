@@ -875,3 +875,9 @@
 
 - Tested sequential projection of edits from two legacy clients in both arrival orders without a concurrent new-model edit. Added a regression demonstrating that a coarse contiguous replacement can displace a concurrent insertion relative to unchanged text even when both edits survive. The old editor already uses contiguous replacement for an individual action; this is evidence of a conversion hazard, not proof of a new production regression.
 - PASSED all seven legacy conversion prototype cases, full lint and diff check. The ASCII-only fixture is research, not a conversion implementation. Conflict policy, precise translation, arbitrary Unicode, structural edits, durable transactions and end-to-end acceptance remain open. No runtime, schema, dependency, staging data or deployment change; no exotic technology deviation.
+
+
+### 2026-10-30 - Keyboard block movement
+
+- User requested more Notion-like relation and block features. Existing independent databases already support entry relations and backlinks; a priority question for task/project relations, nested blocks or database views remains pending. Added Alt+Shift+Up/Down to move the focused text block, using the existing move/commit behavior and retaining the caret offset. The shortcut does not run during composition, an open command menu or an active selection.
+- PASSED all 244 existing unit/model/controller/provider/setup tests, full lint and optimized production build including TypeScript. OPEN TEST GAP: no browser or automated DOM test for the new shortcut, focus retention, operating-system key interactions or collaborative editing. No schema, dependency, live data or deployment change; no exotic technology deviation. The legacy conversion conflict decision and existing release gates remain open.

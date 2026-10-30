@@ -417,6 +417,16 @@ export default function BlockEditor({
   }
   function keyDown(event: KeyboardEvent<HTMLElement>, index: number) {
     if (disabled || event.nativeEvent.isComposing) return;
+    if (
+      !menu && !composing.current && event.currentTarget instanceof HTMLTextAreaElement &&
+      event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+      event.currentTarget.selectionStart === event.currentTarget.selectionEnd
+    ) {
+      event.preventDefault();
+      move(index, event.key === "ArrowUp" ? -1 : 1, event.currentTarget.selectionStart);
+      return;
+    }
     if (menu && menu.index === index) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -553,12 +563,12 @@ export default function BlockEditor({
       setMenu(null);
   }
 
-  function move(index: number, direction: -1 | 1) {
+  function move(index: number, direction: -1 | 1, offset = blocks[index]?.text.length || 0) {
     const target = index + direction;
     if (target < 0 || target >= blocks.length) return;
     const next = blocks.map((block) => ({ ...block }));
     [next[index], next[target]] = [next[target], next[index]];
-    if (commit(next, { index: target, offset: next[target].text.length }))
+    if (commit(next, { index: target, offset }))
       setMenu(null);
   }
   function remove(index: number) {
@@ -652,7 +662,7 @@ export default function BlockEditor({
         </span>
       </div>
       <p className={styles.hint}>
-        Type / for blocks, or # + space for a heading. Enter adds a block; Shift
+        Type / for blocks, or # + space for a heading. Alt+Shift+Up/Down moves a block. Enter adds a block; Shift
         + Enter adds a line.
       </p>
       {feedback && (
