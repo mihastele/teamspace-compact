@@ -7,7 +7,7 @@
 | Project | Teamspace | 2026-10-03 |
 | Frontend | Next.js 16 / React 19 / TypeScript / plain CSS | 2026-10-03 |
 | Backend | Supabase/PostgreSQL is the active development target; Firebase implementation retained but not currently in development | 2026-10-29 |
-| Database | Supabase PostgreSQL canonical Projects/Tasks/custom fields and independent databases; block containment 017 and bidirectional task/project relation migrations 018-019 prepared, staging remains at 016 | 2026-10-30 |
+| Database | Supabase PostgreSQL canonical Projects/Tasks/custom fields and independent databases; block containment 017 and bidirectional task/project relation migrations 018-020 prepared, staging remains at 016 | 2026-10-30 |
 | Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
 | Hosting target | Vercel or production Docker web/Supabase; deploy:setup and deploy commands create isolated staging/production profiles, build, back up/migrate/publish policy and schedule existing hourly cleanup | 2026-10-18 |
 | Agentic ticket expansion | PostgreSQL-focused features; Firebase baseline retained. M1a/M1b/M2/M3 implemented; M4a provider/read tools and M4b private durable queue/audit lifecycle implemented/tested internally. Next M4c checkpoint engine/provenance resume, worker/process/Compose wiring and run API/UI; M5 confirmed writes remain ahead | 2026-10-17 |
@@ -17,7 +17,7 @@
 | Task pages and templates | Explicit Save/reviewed revisions, rich task blocks, task-local properties, shared copy-based templates with edit/archive/restore, local draft/retry recovery. Tested locally; migration 015/rules and matching deployment/live acceptance pending | 2026-10-18 |
 | Task attribute UX | Inline task field editing; one Table Properties menu for visibility/definitions; saved-view cards honor selected fields. Locally verified; live acceptance pending | 2026-10-18 |
 | Note boards | Named shared boards/filters in notes; safe in-dialog cancellation, repeated Escape/focus/mobile checks and maintained manual component fixture verified; authenticated/deployed acceptance and automated DOM suite pending | 2026-10-19 |
-| Independent databases | PostgreSQL named collections, typed fields including email, phone and grouped status, entry/task/project relations in both directions, entry backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 019 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
+| Independent databases | PostgreSQL named collections, typed fields including email, phone and grouped status, entry/task/project relations in both directions, entry and task/project backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 020 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
 | Development preview | npm run dev:preview; http://127.0.0.1:3107; child-only provider overrides; npm run dev:connected for configured backend | 2026-10-18 |
 | Deployment setup | npm run deploy:setup -- staging/production; npm run deploy -- <env> doctor/build/up/status/stop/backup/migrate/prune. Generated isolated profiles; staging full stack running, migrations through 016 applied, local captured email confirmation verified; production launch pending | 2026-10-18 |
 | License | Not yet selected | 2026-10-03 |
@@ -966,3 +966,14 @@
 
 - Integrated the grouped database status increment with the task/project data-source relation changes on the current branch, retaining both sets of documentation and current facts. PASSED all 252 unit/model/controller/provider/setup cases, lint and optimized Turbopack production build including TypeScript in the shared checkout; concurrent uncommitted changes from another chat were present, so this is not isolated verification of the committed tree. Browser/automated DOM and authenticated status acceptance remain open, as do the existing live migration and two-user gates. No schema, dependency, staging data or deployment changes.
 - NEEDS DECISION: a future Created time property cannot recover original creation timestamps for existing database entries, because they were not recorded. User was asked whether older entries should remain blank or show an approximate last-update timestamp.
+
+
+### 2026-10-30 - Data-source relation navigation and backlinks
+
+- Added opening saved linked database entries from task and project pages, and incoming task/project links on database entries. Task and project page navigation is disabled while their edits or other pending recovery-sensitive operations are unresolved. Entry navigation protects changed entry drafts using the existing recovery path. Backlinks are separately bounded and ordered; unavailable source pages are disabled in the current client snapshot.
+- Migration 020 extends the existing authorized entry read function without changing tables or generated row types. Confirmed workspace membership remains required; existing RLS and denied direct writes on the affected link tables are unchanged. PASSED clean PostgreSQL catalog type comparison, clean tracked migration/checksum, populated upgrade, and focused PostgreSQL/API tests for backlinks, limits and authorization. Staging remains at 016; no live migration or deployment performed.
+- PASSED 252 unit/model/controller/provider/setup cases, lint, typecheck and optimized production build. Synthetic in-memory browser fixtures verified opening a saved relation, preventing navigation with an unsaved page draft, opening both backlink kinds, and preserving an edited entry draft after navigation. Full authenticated task/project and database browser acceptance, two-user behavior, production CSS and deployed migration/restore acceptance remain OPEN. The full PostgreSQL regression suite was not rerun for this increment. No new dependency or exotic technology deviation.
+
+### FAILED - 2026-10-30: synthetic backlink fixture locator corrected
+
+- A browser fixture initially selected an ambiguous Task One button appearing in both the table and entry dialog. Scoping the locator to the entry dialog resolved the fixture check; both backlink navigation checks subsequently passed. No product failure or live data change occurred.

@@ -59,7 +59,7 @@ export async function readDatabaseEntry(db: DocumentStore, workspace: DocumentRe
     const status=code==="not_found"?404:code==="policy_mismatch"?503:403;
     throw new ApiError(status,code,code==="not_found"?"Entry not found.":"Database access is unavailable. Refresh your session or ask the administrator to check access.");
   }
-  return {entry:entryView(id,result.entry),incoming:result.incoming,truncated:result.truncated};
+  return {entry:entryView(id,result.entry),incoming:result.incoming,truncated:result.truncated,entityIncoming:result.entityIncoming??[],entityTruncated:result.entityTruncated??false};
 }
 
 export async function saveDatabaseRecord(db: DocumentStore, workspace: DocumentReference, actor: ServiceActor, kind: "databases" | "databaseEntries", id: string, input: unknown) {

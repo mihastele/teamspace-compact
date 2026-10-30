@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { useTeamspace } from "@/lib/client";
-import type { DatabaseDefinition, DatabaseEntry, DatabaseField, IncomingRelation } from "@/lib/databases";
+import type { DatabaseDefinition, DatabaseEntry, DatabaseField, IncomingRelation, IncomingEntityRelation } from "@/lib/databases";
 import { databasePropertyTypes, statusGroups } from "@/lib/databases";
 import { databaseFieldInput, databaseFields, databaseValues } from "@/lib/databases";
 import { databaseColumns, sortDatabaseEntries } from "@/lib/database-table";
@@ -34,7 +34,7 @@ async function relationChoices(request:Api["databaseRequest"],id:string) {
   return entries;
 }
 
-function Editor({ api, database, entry, definitions, close, saved, openEntry }: { api:Api; database:DatabaseDefinition; entry?:DatabaseEntry; definitions:DatabaseDefinition[]; close:()=>void; saved:(databaseId:string)=>void; openEntry:(id:string)=>void }) {
+function Editor({ api, database, entry, definitions, close, saved, openEntry, openEntity }: { api:Api; database:DatabaseDefinition; entry?:DatabaseEntry; definitions:DatabaseDefinition[]; close:()=>void; saved:(databaseId:string)=>void; openEntry:(id:string)=>void; openEntity:(link:IncomingEntityRelation)=>void }) {
   const request=api.databaseRequest;
   const dialog=useRef<HTMLDialogElement>(null);
   const kind=entry?"databaseEntries":"databases";
@@ -53,6 +53,8 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
   const [relationRefresh,setRelationRefresh]=useState(0);
   const [incoming,setIncoming]=useState<IncomingRelation[]>([]);
   const [incomingTruncated,setIncomingTruncated]=useState(false);
+  const [entityIncoming,setEntityIncoming]=useState<IncomingEntityRelation[]>([]);
+  const [entityTruncated,setEntityTruncated]=useState(false);
   const [newType,setNewType]=useState<DatabaseField["type"]>("text");
   const active=useRef(true);
   const initialRef=useRef(initial);
@@ -82,7 +84,7 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
     if(entry){
       const ids=[...new Set(database.fields.flatMap(field=>field.targetDatabaseId?[field.targetDatabaseId]:[]))];
       void Promise.all(ids.map(async id=>[id,await relationChoices(request,id)] as const)).then(rows=>{if(live){setTargets(Object.fromEntries(rows));setRelationError("");}}).catch(()=>{if(live)setRelationError("Could not load relation entries. Existing links are preserved.");});
-      if(entry.revision)void request(`databaseEntries/${entry.id}`,"GET").then(result=>{if(live){setIncoming(result.incoming);setIncomingTruncated(result.truncated);}}).catch(error=>{if(live)setError(error.message);});
+      if(entry.revision)void request(`databaseEntries/${entry.id}`,"GET").then(result=>{if(live){setIncoming(result.incoming);setIncomingTruncated(result.truncated);setEntityIncoming(result.entityIncoming??[]);setEntityTruncated(result.entityTruncated??false);}}).catch(error=>{if(live)setError(error.message);});
     }
     return ()=>{live=false;};
   },[request,database.fields,entry,relationRefresh]);
@@ -131,7 +133,7 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
       :field.type==="longText"?<textarea aria-label={field.name} disabled={disabled} maxLength={10000} value={String(form.propertyValues[field.id]??"")} onChange={event=>value(field,event.target.value||null)}/>
       :<input aria-label={field.name} disabled={disabled} type={field.type==="number"?"number":field.type==="date"?"date":field.type==="url"?"url":field.type==="email"?"email":field.type==="phone"?"tel":"text"} step="any" maxLength={2000} value={String(form.propertyValues[field.id]??"")} onChange={event=>value(field,event.target.value===""?null:field.type==="number"?Number(event.target.value):event.target.value)}/>}
     </span></div>)}<BlockEditor value={form.content} disabled={disabled} allowedBlockTypes={taskBlockTypes} onChange={content=>change({content})} onCompositionPendingChange={setComposition}/>
-    <div className={s.incoming}><p>Linked from</p>{incoming.length?incoming.map(link=><p key={`${link.entryId}:${link.fieldId}`}><button disabled={busy||composition} onClick={()=>{if(!dirty||confirm("Open the linked entry? Your draft stays on this device."))openEntry(link.entryId);}}>{link.title}</button> · {link.fieldName}{link.archived?" (archived)":""}</p>):<p className={s.muted}>No incoming links.</p>}{incomingTruncated&&<p>Showing the first 200 incoming links.</p>}</div></>}
+    <div className={s.incoming}><p>Linked from</p>{!incoming.length&&!entityIncoming.length&&<p className={s.muted}>No incoming links.</p>}{incoming.map(link=><p key={`${link.entryId}:${link.fieldId}`}><button disabled={busy||composition||storageError} onClick={()=>{if(!dirty||confirm("Open the linked entry? Your draft stays on this device."))openEntry(link.entryId);}}>{link.title}</button> · {link.fieldName}{link.archived?" (archived)":""}</p>)}{entityIncoming.map(link=>{const available=link.kind==="task"?api.tasks.some(item=>item.id===link.entityId):api.projects.some(item=>item.id===link.entityId);return <p key={`${link.kind}:${link.entityId}:${link.fieldId}`}><button disabled={busy||composition||storageError||!available} title={!available?"This item is not currently available.":undefined} onClick={()=>{if(!dirty||confirm("Open the linked item? Your draft stays on this device."))openEntity(link);}}>{link.title}</button> · {link.fieldName} · {link.kind}{link.archived?" (archived)":""}</p>;})}{incomingTruncated&&<p>Showing the first 200 entry links.</p>}{entityTruncated&&<p>Showing the first 200 task and project links.</p>}</div></>}
     <label>Archived<input type="checkbox" disabled={disabled} checked={form.archived} onChange={event=>change({archived:event.target.checked})}/></label>
     {!owned&&<p className={s.muted}>Waiting for this draft’s editor lock. Close the other editor to continue. Browser Web Locks are required.</p>}
     {error&&<p role="alert" className={s.error}>{error}</p>}
@@ -139,7 +141,7 @@ function Editor({ api, database, entry, definitions, close, saved, openEntry }: 
   </div><div className={s.footer}><button disabled={composition} onClick={()=>download("database-draft.json",unreadable?localStorage.getItem(key):draft)}>Download draft</button>{storageError&&!unreadable&&<button disabled={!owned} onClick={()=>{if(persist(draft))setError("");}}>Retry local storage</button>}{owned&&dirty&&!busy&&<button disabled={composition} onClick={()=>{download("database-draft.json",unreadable?localStorage.getItem(key):draft);localStorage.removeItem(key);close();}}>Download and discard draft</button>}<button disabled={busy||composition} onClick={dismiss}>Close</button><button disabled={!owned||busy||storageError||composition||Boolean(entry&&database.archived)} onClick={()=>void save()}>{busy?"Saving…":draft.operationId?"Retry same save":"Save"}</button></div></dialog>;
 }
 
-export default function Databases({ api, onTask, onProject }: { api:Api; onTask:(task:Task)=>void; onProject:(id:string)=>void }) {
+export default function Databases({ api, onTask, onProject, requestedEntry, onEntryRequestHandled }: { api:Api; onTask:(task:Task)=>void; onProject:(id:string)=>void; requestedEntry?:string|null; onEntryRequestHandled?:()=>void }) {
   const request=api.databaseRequest;
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
@@ -152,6 +154,18 @@ export default function Databases({ api, onTask, onProject }: { api:Api; onTask:
   const [loading,setLoading]=useState(true);
   const [refresh,setRefresh]=useState(0);
   const [editor,setEditor]=useState<{database:DatabaseDefinition;entry?:DatabaseEntry}|null>(null);
+  useEffect(()=>{
+    if(!requestedEntry)return;
+    let live=true;
+    void (async()=>{
+      try {
+        const result=await request(`databaseEntries/${requestedEntry}`,"GET");
+        const source=await request(`databases/${result.entry.databaseId}`,"GET");
+        if(live){setSelection(result.entry.databaseId);setEditor(current=>current??{database:source.database,entry:result.entry});onEntryRequestHandled?.();}
+      } catch(error) { if(live){setError(error instanceof Error?error.message:"Could not open the linked entry.");onEntryRequestHandled?.();} }
+    })();
+    return ()=>{live=false;};
+  },[requestedEntry,request,onEntryRequestHandled]);
   const [archives,setArchives]=useState(false);
   const [search,setSearch]=useState("");
   const [layout,setLayout]=useState<"table"|"list">("table");
@@ -221,6 +235,6 @@ export default function Databases({ api, onTask, onProject }: { api:Api; onTask:
     {database&&<><p>{database.description}</p><div className={s.toolbar}><input aria-label="Search entries" placeholder="Search entries" value={search} onChange={event=>setSearch(event.target.value)}/><label><input type="checkbox" checked={archives} onChange={event=>setArchives(event.target.checked)}/> Show archived entries</label><div role="group" aria-label="Database layout"><button type="button" aria-pressed={layout==="table"} onClick={()=>setLayout("table")}>Table</button><button type="button" aria-pressed={layout==="list"} onClick={()=>setLayout("list")}>List</button></div>{layout==="list"&&<><label>Sort by <select value={sort?.column??"title"} onChange={event=>setTableSort({databaseId:database.id,sort:{column:event.target.value,direction:sort?.direction??"ascending"}})}>{columns.map(column=><option key={column.id} value={column.id}>{column.label}</option>)}</select></label><button type="button" onClick={()=>setTableSort({databaseId:database.id,sort:{column:sort?.column??"title",direction:sort?.direction==="descending"?"ascending":"descending"}})} aria-label={`Sort direction: ${sort?.direction??"ascending"}`}>{sort?.direction==="descending"?"Descending ↓":"Ascending ↑"}</button></>}<span className={s.muted} role="status">{visible.length} of {entries.length} loaded entries · {sort?`${columns.find(column=>column.id===sort.column)?.label}, ${sort.direction}`:"Title, ascending"}{truncated?" · More entries available":""}</span>{sort&&<button onClick={()=>setTableSort(null)}>Reset sort</button>}</div>{layout==="table"?<div className={s.scroll} tabIndex={0} role="region" aria-label="Database table"><table className={s.table}><thead><tr>{columns.map(column=><th scope="col" key={column.id} aria-sort={sort?.column===column.id?sort.direction:!sort&&column.id==="title"?"ascending":"none"}><button onClick={()=>toggleSort(column.id)} aria-label={`Sort by ${column.label}`}>{column.label}{sort?.column===column.id?(sort.direction==="ascending"?" ↑":" ↓"):!sort&&column.id==="title"?" ↑":""}</button></th>)}</tr></thead><tbody>{visible.map(entry=><tr key={entry.id}><td><button onClick={()=>setEditor({database,entry})}>{entry.title}{entry.archived?" (archived)":""}</button></td>{database.fields.map(field=><td key={field.id}>{field.type==="relation"?(Array.isArray(entry.propertyValues[field.id])?(entry.propertyValues[field.id] as string[]):[]).map(id=>relationLink(field,id)):propertyDisplay(field,entry.propertyValues[field.id],api.members)}</td>)}</tr>)}</tbody></table></div>:<ul className={s.entryList} aria-label="Database entries">{!visible.length&&<li className={s.muted}>No matching entries in the loaded results.</li>}{visible.map(entry=><li key={entry.id}><button className={s.entryTitle} onClick={()=>setEditor({database,entry})}>{entry.title}{entry.archived?" (archived)":""}</button>{database.fields.length>0&&<dl>{database.fields.map(field=><div key={field.id}><dt>{field.name}</dt><dd>{field.type==="relation"?(Array.isArray(entry.propertyValues[field.id])?(entry.propertyValues[field.id] as string[]):[]).map(id=>relationLink(field,id)):propertyDisplay(field,entry.propertyValues[field.id],api.members)}</dd></div>)}</dl>}</li>)}</ul>}</>}
     {cursor&&<button disabled={paging} onClick={()=>void loadMore()}>{paging?"Loading…":"Load more entries"}</button>}
     {!loading&&!database&&<p>Create a database for clients, documents, inventory or any other collection.</p>}
-    {editor&&<Editor key={`${editor.entry?.id??editor.database.id}`} api={api} database={editor.database} entry={editor.entry} definitions={definitions} close={()=>setEditor(null)} openEntry={openEntry} saved={id=>{setSelection(id);setEditor(null);setRefresh(value=>value+1);}}/>}
+    {editor&&<Editor key={`${editor.entry?.id??editor.database.id}`} api={api} database={editor.database} entry={editor.entry} definitions={definitions} close={()=>setEditor(null)} openEntry={openEntry} openEntity={link=>{const task=link.kind==="task"?api.tasks.find(item=>item.id===link.entityId):undefined;const project=link.kind==="project"?api.projects.find(item=>item.id===link.entityId):undefined;if(task){setEditor(null);onTask(task);}else if(project){setEditor(null);onProject(project.id);}else setError("This linked item is no longer available. Refresh and try again.");}} saved={id=>{setSelection(id);setEditor(null);setRefresh(value=>value+1);}}/>}
   </section>;
 }

@@ -64,8 +64,7 @@ The user chose automatic removal of incoming database links on permanent task
 deletion. The deletion trigger removes IDs from authoritative entry values and
 advances revisions in the same transaction, preserving stale-draft detection.
 Exports include outgoing IDs; export tasks/projects separately for their data.
-Existing entry backlinks are unchanged. A task/project backlink UI for entries,
-rollups, shared database views and block
+Existing entry backlinks are unchanged. Rollups, shared database views and block
 migration remain future work. Authenticated browser/mobile/two-user and live
 migration/restore acceptance remain open.
 
@@ -96,9 +95,10 @@ and denied direct writes. Trusted services authorize writes and validate target
 and archive state; task deletion removes its links and project archive retains
 them. Workspace deletion cascades projections and removes definitions/receipts.
 There is no hard-delete API for database entries; its future behavior must be
-designed before it is added. Task/project incoming-link display on database
-entries, opening linked entries directly from these pickers, project local draft
-recovery and authenticated two-user/mobile acceptance remain open.
+designed before it is added. Migration 020 adds a separately bounded incoming
+task/project backlink list on entries, and task/project pages can open selected
+entries when their drafts are clean. Project local draft recovery and
+authenticated two-user/mobile acceptance remain open.
 
 2026-10-30: independent databases additionally support Email and Phone as bounded text values. Their editors use email and telephone input modes; values are stored as entered, without claiming address or phone-number verification. They use the existing database record storage and access controls.
 

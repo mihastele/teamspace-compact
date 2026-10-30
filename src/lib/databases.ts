@@ -6,6 +6,7 @@ export type DatabaseField = BoardProperty & { targetDatabaseId?: string; targetK
 export type DatabaseDefinition = { id: string; name: string; description: string; fields: DatabaseField[]; archived: boolean; revision: number };
 export type DatabaseEntry = { id: string; databaseId: string; title: string; content: NoteContent; propertyValues: Record<string, PropertyValue>; archived: boolean; revision: number };
 export type IncomingRelation = { entryId: string; databaseId: string; title: string; fieldId: string; fieldName: string; archived: boolean };
+export type IncomingEntityRelation = { kind: "task" | "project"; entityId: string; title: string; fieldId: string; fieldName: string; archived: boolean };
 export const databasePropertyTypes = [...propertyTypes, "email", "phone", "status"] as const;
 export const statusGroups = [{id:"todo",name:"To do"},{id:"doing",name:"In progress"},{id:"done",name:"Complete"}] as const;
 export const MAX_DATABASES = 64;

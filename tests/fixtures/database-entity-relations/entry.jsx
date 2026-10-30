@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useState} from "react";
 import { createRoot } from "react-dom/client";
 import Databases from "../../../src/app/components/Databases";
 
@@ -12,12 +12,12 @@ let rows=[{id:entry,databaseId:id,title:"Entry",content:{blocks:[]},propertyValu
 async function request(path,method,body){
   if(path==="databases")return {databases:[definition]};
   if(path===`databases/${id}`)return {database:definition,entries:rows,nextCursor:null,truncated:false};
-  if(path===`databaseEntries/${entry}`&&method==="GET")return {entry:rows[0],incoming:[],truncated:false};
+  if(path===`databaseEntries/${entry}`&&method==="GET")return {entry:rows[0],incoming:[],truncated:false,entityIncoming:[{kind:'task',entityId:'task-one',title:'Task One',fieldId:taskField,fieldName:'Meetings',archived:false},{kind:'project',entityId:'project-one',title:'Project One',fieldId:projectField,fieldName:'Notes',archived:false}],entityTruncated:false};
   if(path===`databaseEntries/${entry}`&&method==="PUT"){rows=[{...rows[0],...body,revision:rows[0].revision+1}];return {entry:rows[0]};}
   throw new Error(`Unexpected fixture request: ${method} ${path}`);
 }
 const api={user:{uid:"fixture"},workspace:{id:"fixture"},members:[],databaseRequest:request,
   tasks:[{id:"task-one",title:"Task One",revision:1},{id:"task-two",title:"Task Two",revision:1}],
   projects:[{id:"project-one",name:"Project One",archived:false,revision:1},{id:"project-old",name:"Old Project",archived:true,revision:1}]};
-function App(){return <main><h1>Task and project relation fixture</h1><p>Synthetic in-memory data only.</p><Databases api={api} onTask={task=>document.querySelector('output').textContent=`Task: ${task.title}`} onProject={id=>document.querySelector('output').textContent=`Project: ${id}`}/><output aria-label="Opened target"/></main>}
+function App(){const [requested,setRequested]=useState(null);return <main><h1>Task and project relation fixture</h1><p>Synthetic in-memory data only.</p><button onClick={()=>setRequested(entry)}>Open requested entry</button><Databases api={api} requestedEntry={requested} onEntryRequestHandled={()=>setRequested(null)} onTask={task=>document.querySelector('output').textContent=`Task: ${task.title}`} onProject={id=>document.querySelector('output').textContent=`Project: ${id}`}/><output aria-label="Opened target"/></main>}
 createRoot(document.getElementById("root")).render(<React.StrictMode><App/></React.StrictMode>);

@@ -310,8 +310,9 @@ property and select a database. Task and project properties are separate. The
 property definition is created immediately; selected entry links save with the
 page. Existing task draft recovery includes those selections. Project edits keep
 their current reviewed-revision conflict behavior. Archived entries and databases
-can be retained or cleared, but cannot be newly linked. Task/project links are
-not yet shown in the database entry's **Linked from** section.
+can be retained or cleared, but cannot be newly linked. Open a selected entry
+from the task or project once its page changes are saved. The entry's **Linked
+from** section shows task and project sources, with a separate 200-link limit.
 
 Drafts and exact save retries are stored on this device, scoped by account and
 workspace, with one editor per draft across tabs. Reopen **New database** or
@@ -324,7 +325,7 @@ and outgoing relation IDs. Its `truncated` flag reports more available entries;
 load the remaining pages before exporting the full collection. Export target
 databases separately for their content. Pages are live, not a frozen backup.
 
-Apply [migration 019](migrations/019-entity-database-relations.md) and earlier
+Apply [migration 020](migrations/020-entity-relation-backlinks.md) and earlier
 unapplied migrations, then deploy the paired API/client. Migration 017 prepares
 empty block containment and does not yet expose nested-block editing. Foreign keys enforce entry links;
 member/confirmation RLS covers definitions, entries and the derived relation

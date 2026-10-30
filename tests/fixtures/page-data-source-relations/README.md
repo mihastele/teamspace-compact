@@ -5,6 +5,8 @@ Run `npm run test:ui:page-data-source-relations` and open
 it does not call a backend. It exercises separate task/project property sets,
 shared property creation, selection, and page-draft versus saved state. The
 dedicated browser origin may retain local property-creation recovery records.
+After selecting an entry, its Open button is disabled until **Save page**;
+after saving, it reports the selected entry ID through the fixture callback.
 
 This is not authenticated or full-editor acceptance. Its unscoped CSS loader
 can collide across component styles and reuses Next's internal webpack; review it

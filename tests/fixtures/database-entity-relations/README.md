@@ -13,3 +13,7 @@ narrow viewport as appropriate. Do not treat this fixture as authenticated,
 two-user, migration or production-CSS acceptance. Its existing shared CSS loader
 injects unscoped module class names, which can collide across components; it
 reuses Next's internal webpack and needs review on Next upgrades.
+
+Use **Open requested entry** to exercise the entry-opening handoff. Its synthetic
+incoming task and project links invoke the fixture callbacks; a changed entry
+draft should survive navigation and reappear when the entry is reopened.

@@ -256,10 +256,12 @@ function TaskDialog({
   initial,
   close,
   onProject,
+  onOpenEntry,
   onDuplicate,
 }: {
   api: Api;
   onProject: (id: string) => void;
+  onOpenEntry: (id: string) => void;
   onDuplicate: (task: Partial<Task>) => void;
   initial: Partial<Task>;
   close: () => void;
@@ -549,7 +551,7 @@ function TaskDialog({
           </>}
           <TaskPropertyInputs api={api} properties={api.boardProperties} values={draft.propertyValues} disabled={locked} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
-          {api.projectsEnabled && <EntityDatabaseRelations api={api} scope="task" values={draft.databaseRelations} disabled={locked} onChange={databaseRelations=>setDraft(previous=>({...previous,databaseRelations}))} />}
+          {api.projectsEnabled && <EntityDatabaseRelations api={api} scope="task" values={draft.databaseRelations} disabled={locked} onChange={databaseRelations=>setDraft(previous=>({...previous,databaseRelations}))} navigationDisabled={locked||changed||composing||commentRecoveryRisk||Boolean(storageError||recovered.error)} onOpenEntry={id=>{close();onOpenEntry(id);}} />}
           </div>
           </fieldset>
           <section className={s.taskBody} aria-label="Task body">
@@ -2361,6 +2363,8 @@ export default function Home() {
     queueMicrotask(open);window.addEventListener("popstate",open);return()=>window.removeEventListener("popstate",open);
   },[]);
   const [projectSelection,setProjectSelection] = useState<{scope:string;id:string}|null>(null);
+  const [databaseEntrySelection,setDatabaseEntrySelection] = useState<{scope:string;id:string}|null>(null);
+  const clearDatabaseEntrySelection = useCallback(()=>setDatabaseEntrySelection(null),[]);
   const [search, setSearch] = useState("");
   const [taskSelection, setTaskSelection] = useState<{
     scope: string;
@@ -2368,9 +2372,19 @@ export default function Home() {
   } | null>(null);
   const taskScope = `${api.user?.uid || "preview"}:${api.workspace?.id || "none"}`;
   const task = taskSelection?.scope === taskScope ? taskSelection.value : null;
+  useEffect(()=>{
+    if(!databaseEntrySelection || (databaseEntrySelection.scope===taskScope && view==="databases"))return;
+    let live=true;
+    queueMicrotask(()=>{if(live)setDatabaseEntrySelection(current=>current===databaseEntrySelection?null:current);});
+    return ()=>{live=false;};
+  },[databaseEntrySelection,taskScope,view]);
   function setTask(value: Partial<Task> | null) {
     setTaskSelection(value ? { scope: taskScope, value } : null);
     const url=new URL(location.href);if(value?.id){url.searchParams.set("ticket",value.id);if(api.workspace)url.searchParams.set("workspace",api.workspace.id);}else url.searchParams.delete("ticket");history.replaceState(null,"",url);
+  }
+  function openDatabaseEntry(id:string) {
+    setDatabaseEntrySelection({scope:taskScope,id});setView("databases");
+    const url=new URL(location.href);url.searchParams.delete("ticket");url.searchParams.delete("project");url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);
   }
   const restoredWorkspace=useRef("");
   useEffect(()=>{
@@ -2687,8 +2701,8 @@ export default function Home() {
             <TaskTable key={taskScope} api={api} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
-          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
-          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} onTask={setTask} onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} />}
+          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} onOpenEntry={openDatabaseEntry} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} onTask={setTask} requestedEntry={databaseEntrySelection?.scope===taskScope?databaseEntrySelection.id:null} onEntryRequestHandled={clearDatabaseEntrySelection} onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} />}
           {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
@@ -2709,6 +2723,7 @@ export default function Home() {
           api={api}
           initial={task}
           onDuplicate={setTask}
+          onOpenEntry={openDatabaseEntry}
           onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);}}
           close={() => setTask(null)}
         />

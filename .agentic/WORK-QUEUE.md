@@ -36,7 +36,7 @@ acceptance for sorting remains open. Searchable relation pickers now retain
 selected/unavailable links, allow explicit clearing and target-read retry, and
 enforce the existing cap/archive controls in the UI. Manual component checks
 pass via `npm run test:ui:database-relations`; full authenticated editor/save
-acceptance remains open. Task/project relation targets and automatic removal of links on task deletion are implemented with migration 018. Migration 019 adds separate task/project properties that select entries in a chosen data source, saved with the page; direct entry navigation and task/project backlinks in entry pages remain open. Authenticated, two-user and deployed acceptance remain open. Formulas/rollups and database-specific saved layouts/templates/comments/attachments are future increments. M4c is deferred while
+acceptance remains open. Task/project relation targets and automatic removal of links on task deletion are implemented with migration 018. Migration 019 adds separate task/project properties that select entries in a chosen data source, saved with the page; migration 020 adds task/project backlinks and direct entry navigation. Authenticated, two-user and deployed acceptance remain open. Formulas/rollups and database-specific saved layouts/templates/comments/attachments are future increments. M4c is deferred while
 this database work is prioritized.
 
 
