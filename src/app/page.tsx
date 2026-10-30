@@ -37,6 +37,7 @@ import TicketViews, { SavedViewLink } from "./components/TicketViews";
 import TaskTable from "./components/TaskTable";
 import Projects from "./components/Projects";
 import Databases from "./components/Databases";
+import EntityDatabaseRelations from "./components/EntityDatabaseRelations";
 import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
@@ -246,7 +247,7 @@ function taskDraftFields(task: Partial<Task>) {
       title: task.title ?? "", description: task.description ?? "", content: taskContent({ description: task.description ?? "", content: task.content }),
       status: task.status ?? ("todo" as Status), assigneeId: task.assigneeId ?? "", dueDate: task.dueDate ?? "",
       projectId: task.projectId ?? "", priority: task.priority ?? ("none" as NonNullable<Task["priority"]>),
-      estimate: task.estimate ?? null, propertyValues: task.propertyValues ?? {},
+      estimate: task.estimate ?? null, propertyValues: task.propertyValues ?? {}, databaseRelations: task.databaseRelations ?? {},
     };
 }
 
@@ -287,7 +288,7 @@ function TaskDialog({
   const [copyError, setCopyError] = useState("");
   const [commentRecoveryRisk, setCommentRecoveryRisk] = useState(false);
   const changed = JSON.stringify(templateDefaults({ ...draft, projectId: draft.projectId || undefined })) !==
-    JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined }));
+    JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined })) || JSON.stringify(draft.databaseRelations) !== JSON.stringify(baseline.databaseRelations ?? {});
   const onDraftAcquired = useCallback(async () => {
     try {
       const raw = localStorage.getItem(recoveryKey);
@@ -368,12 +369,14 @@ function TaskDialog({
         ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}),
       };
       const propertyValues = changedPropertyValues(baseline.propertyValues, draft.propertyValues);
+      const relationChanged = JSON.stringify(baseline.databaseRelations ?? {}) !== JSON.stringify(draft.databaseRelations);
       const contentChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
       const changes = initial.id ? {
         ...taskEditPatch(baseline, edited),
         ...(contentChanged ? { content: draft.content } : {}),
         ...(Object.keys(propertyValues).length ? { propertyValues } : {}),
-      } : { ...edited, content: draft.content, propertyValues: draft.propertyValues };
+        ...(relationChanged ? { databaseRelations: draft.databaseRelations } : {}),
+      } : { ...edited, content: draft.content, propertyValues: draft.propertyValues, ...(Object.keys(draft.databaseRelations).length ? {databaseRelations:draft.databaseRelations} : {}) };
       if (!packet && initial.id && !Object.keys(changes).length) { saved.current = true; localStorage.removeItem(recoveryKey); close(); return; }
       const next: TaskSavePacket = packet ?? { ...changes, ...(initial.id ? { id: initial.id, expectedRevision: baseline.revision ?? 0 } : {}), operationId: crypto.randomUUID() };
       if (recovered.error) throw new Error("Stored recovery needs review. Download it and explicitly discard it before saving a new draft.");
@@ -473,7 +476,8 @@ function TaskDialog({
           {review && <section aria-label="Review latest task"><h3>Latest saved task</h3><div className={s.taskReview}><h4>{review.title}</h4><p>Status: {columns.find(column => column.id === review.status)?.label} · Assignee: {api.members.find(member => member.id === review.assigneeId)?.displayName ?? "Unassigned"} · Due: {review.dueDate ?? "No date"}</p>{api.projectsEnabled && <p>Project: {api.projects.find(project => project.id === review.projectId)?.name ?? "None"} · Priority: {review.priority ?? "none"} · Estimate: {review.estimate ?? "Unset"}</p>}<TaskPropertySummary task={review} properties={api.boardProperties} members={api.members} projects={api.projects} /><MarkdownText text={exportNoteMarkdown(review.title, taskContent(review)).markdown} /></div><button type="button" disabled={busy} onClick={() => {
             const intent = taskEditPatch(baseline, { title: draft.title, description: taskDescription(draft.content), status: draft.status, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}) });
             const bodyChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
-            setDraft(taskDraftFields({ ...review, ...intent, content: bodyChanged ? draft.content : taskContent(review), propertyValues: { ...review.propertyValues, ...changedPropertyValues(baseline.propertyValues, draft.propertyValues) } }));
+            const relationChanges = Object.fromEntries(Object.entries(draft.databaseRelations).filter(([id,value])=>JSON.stringify(value)!==JSON.stringify(baseline.databaseRelations?.[id]??[])));
+            setDraft(taskDraftFields({ ...review, ...intent, content: bodyChanged ? draft.content : taskContent(review), propertyValues: { ...review.propertyValues, ...changedPropertyValues(baseline.propertyValues, draft.propertyValues) }, databaseRelations: {...review.databaseRelations,...relationChanges} }));
             setBaseline(taskDraftBaseline(review)); setReview(null); setError("");
           }}>Keep my edits over this reviewed version</button></section>}
           <fieldset disabled={locked} className={s.taskFields}>
@@ -489,7 +493,7 @@ function TaskDialog({
             />
           </label>
           <div className={s.taskTools}>
-            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(taskDraftFields(defaults))} />
+            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(previous=>({...taskDraftFields(defaults),databaseRelations:previous.databaseRelations}))} />
           </div>
           <div className={s.taskAttributes}>
           <div className={s.fieldRow}>
@@ -545,6 +549,7 @@ function TaskDialog({
           </>}
           <TaskPropertyInputs api={api} properties={api.boardProperties} values={draft.propertyValues} disabled={locked} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
+          {api.projectsEnabled && <EntityDatabaseRelations api={api} scope="task" values={draft.databaseRelations} disabled={locked} onChange={databaseRelations=>setDraft(previous=>({...previous,databaseRelations}))} />}
           </div>
           </fieldset>
           <section className={s.taskBody} aria-label="Task body">

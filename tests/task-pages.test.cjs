@@ -65,3 +65,14 @@ test('task recovery binds baseline and exact retry to the task and rejects malfo
   assert.throws(() => decodeTaskDraft('{broken', 'task'));
   assert.deepEqual(taskDraftBaseline({ id: 'task', title: 'Before', createdBy: 'private' }), { id: 'task', title: 'Before' });
 });
+
+test('task relation edits survive draft recovery and duplication without sharing arrays', () => {
+  const field=randomUUID(),entry=randomUUID(),relations={[field]:[entry]};
+  const baseline=taskDraftBaseline({id:'task',title:'Before',revision:2,databaseRelations:relations});
+  const record={version:1,baseline,draft:{title:'After',description:'',content:{blocks:[]},databaseRelations:relations},packet:{id:'task',databaseRelations:relations,operationId:randomUUID(),expectedRevision:2}};
+  assert.deepEqual(decodeTaskDraft(JSON.stringify(record),'task'),record);
+  const duplicate=duplicateTask({title:'Before',databaseRelations:relations});
+  duplicate.databaseRelations[field].push(randomUUID());
+  assert.deepEqual(relations[field],[entry]);
+  assert.throws(()=>decodeTaskDraft(JSON.stringify({...record,draft:{...record.draft,databaseRelations:{[field]:['bad/path']}}}),'task'));
+});

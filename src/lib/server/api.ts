@@ -1,5 +1,6 @@
 import "server-only";
 import { readDatabases, readDatabase, readDatabaseEntry, saveDatabaseRecord } from "./database-service";
+import { readEntityRelationFields, saveEntityRelationField } from "./entity-database-service";
 import { saveTaskTemplate, templateView } from "./task-template-service";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as Y from "yjs";
@@ -1644,6 +1645,11 @@ export async function handleTrustedApi(
     const [, , resource, itemId, action, commentId] = path;
     if (path.length > 6 || (path.length === 6 && action !== "comments"))
       throw new ApiError(404, "not_found", "Endpoint not found.");
+    if(resource==="entityRelationFields"&&!action){
+      if(method==="GET"&&!itemId)return json(await readEntityRelationFields(db,workspace,user));
+      if(method==="PUT"&&itemId)return json({field:await saveEntityRelationField(db,workspace,user,itemId,await body(request))});
+      throw new ApiError(405,"method_not_allowed","Unsupported relation property operation.");
+    }
     if ((resource === "databases" || resource === "databaseEntries") && !action) {
       if (method === "GET") {
         if(resource==="databases"){

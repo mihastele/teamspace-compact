@@ -561,7 +561,7 @@ export function useTeamspace() {
     boardProperties: boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
     projectsEnabled: configured && browserProvider === "supabase",
     projects: projects.toSorted((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)),
-    saveProject: (value: { name: string; description: string; operationId: string } | { id: string; expectedRevision: number; name?: string; description?: string; archived?: boolean }) => action(async () => {
+    saveProject: (value: { name: string; description: string; operationId: string; databaseRelations?: Record<string,string[]> } | { id: string; expectedRevision: number; name?: string; description?: string; archived?: boolean; databaseRelations?: Record<string,string[]> }) => action(async () => {
       if (!configured || browserProvider !== "supabase" || !user) return unavailable();
       const { id, ...body } = "id" in value ? value : { ...value, id: undefined };
       return (await api(`${path()}/projects${id ? `/${id}` : ""}`, id ? "PATCH" : "POST", body, user.uid)).project as Project;

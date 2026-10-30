@@ -28,6 +28,9 @@
 .footer { position:sticky; bottom:0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-end; padding:16px 24px; border-top:1px solid #e4e8ed; background:var(--surface,#fff); }
 .field { padding:14px 0; border-bottom:1px solid #e4e8ed; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 .field input { min-width:0; }
+.field input:not([type=checkbox]), .field select, .relationPicker > input { background:var(--surface,#fff); color:inherit; border:1px solid #d9dfe6; border-radius:7px; padding:8px 10px; max-width:100%; }
+.field button, .relationPicker button { color:inherit; background:transparent; border:1px solid #d9dfe6; border-radius:7px; padding:7px 11px; cursor:pointer; }
+.field label { display:grid; gap:5px; min-width:0; }
 .choices { display:grid; gap:7px; max-height:180px; overflow:auto; }
 .choices label { display:flex; gap:8px; align-items:center; overflow-wrap:anywhere; }
 .relationPicker { display:grid; gap:8px; min-width:0; }

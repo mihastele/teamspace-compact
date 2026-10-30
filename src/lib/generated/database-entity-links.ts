@@ -11,3 +11,15 @@ export type DatabaseProjectLinkRow = {
   field_id: string;
   project_id: string;
 };
+export type TaskDatabaseRelationRow = {
+  workspace_id: string;
+  task_id: string;
+  field_path: string;
+  entry_path: string;
+};
+export type ProjectDatabaseRelationRow = {
+  workspace_id: string;
+  project_id: string;
+  field_path: string;
+  entry_path: string;
+};

@@ -302,6 +302,15 @@ is fetched or the saved/exported record order.
 30 seconds; after loading more, **Refresh** restarts the loaded pages. Tasks and
 projects retain their existing workflows and can be opened from relation values.
 
+Task and project pages can also link to entries in a selected data source. In a
+task or project editor, choose **Add data-source relation**, name the shared
+property and select a database. Task and project properties are separate. The
+property definition is created immediately; selected entry links save with the
+page. Existing task draft recovery includes those selections. Project edits keep
+their current reviewed-revision conflict behavior. Archived entries and databases
+can be retained or cleared, but cannot be newly linked. Task/project links are
+not yet shown in the database entry's **Linked from** section.
+
 Drafts and exact save retries are stored on this device, scoped by account and
 workspace, with one editor per draft across tabs. Reopen **New database** or
 **Add entry** to recover an unsaved new record. Conflicts preserve the draft;
@@ -313,7 +322,7 @@ and outgoing relation IDs. Its `truncated` flag reports more available entries;
 load the remaining pages before exporting the full collection. Export target
 databases separately for their content. Pages are live, not a frozen backup.
 
-Apply [migration 018](migrations/018-database-entity-relations.md) and earlier
+Apply [migration 019](migrations/019-entity-database-relations.md) and earlier
 unapplied migrations, then deploy the paired API/client. Migration 017 prepares
 empty block containment and does not yet expose nested-block editing. Foreign keys enforce entry links;
 member/confirmation RLS covers definitions, entries and the derived relation

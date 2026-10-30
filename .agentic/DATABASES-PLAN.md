@@ -64,8 +64,8 @@ The user chose automatic removal of incoming database links on permanent task
 deletion. The deletion trigger removes IDs from authoritative entry values and
 advances revisions in the same transaction, preserving stale-draft detection.
 Exports include outgoing IDs; export tasks/projects separately for their data.
-Existing entry backlinks are unchanged. Reciprocal editable task/project
-properties, a task/project backlink UI, rollups, shared database views and block
+Existing entry backlinks are unchanged. A task/project backlink UI for entries,
+rollups, shared database views and block
 migration remain future work. Authenticated browser/mobile/two-user and live
 migration/restore acceptance remain open.
 
@@ -80,25 +80,24 @@ data source and select its entries. They chose separate task and project
 property sets. This is distinct from entry properties that point to tasks or
 projects; an incoming link alone does not provide this editing flow.
 
-Proposed implementation: each relation definition has a stable identity, name,
-one immutable target database and an explicit task or project scope. Each value
-holds up to 50 distinct entry IDs. Keep existing single-project task relations
-and their stored values compatible. Provide a database selector when adding a
-property and a searchable entry picker on each relevant page. Project property
-definitions and values are independent of task properties. Preserve selected
-archived entries, allow their removal, and prohibit adding archived entries or
-entries from archived databases. A source's archive must retain its relations;
-task deletion removes its own relation values. There is no hard-delete API for
-database entries today, so do not invent a hard-delete policy in this increment.
+Migration 019 and the paired application add named relation definitions with one
+immutable target database and explicit task or project scope. Each page value
+holds up to 50 distinct entry IDs. Existing task properties retain their format.
+The selector searches entries, retains or removes archived selections, and
+blocks new archived selections. Property definitions are shared and created
+immediately; selections save with the task or project. Task draft recovery and
+reviewed revisions include selections; project saves keep their existing reviewed
+revision/conflict behavior. Project pages display their relations in read-only
+mode outside the editor. Values and definitions are included in board export;
+target database content is exported separately.
 
-Use a numbered PostgreSQL migration, same-workspace foreign keys and indexed
-incoming relations, workspace-member RLS, direct-write denial and trusted
-membership-checked services. Define reviewed revisions and exact-retry behavior
-for property/value saves, integrate task draft recovery and project conflict
-handling, and include definitions and values in exports and workspace deletion.
-Test clean/populated upgrades, legacy task fields, cross-workspace and revoked
-access, archive behavior, concurrent saves and deletion, retry, export, UI and
-authenticated two-user flows before release. Neither this schema nor its editor
-is implemented yet.
+PostgreSQL projections enforce same-workspace foreign keys with member-read RLS
+and denied direct writes. Trusted services authorize writes and validate target
+and archive state; task deletion removes its links and project archive retains
+them. Workspace deletion cascades projections and removes definitions/receipts.
+There is no hard-delete API for database entries; its future behavior must be
+designed before it is added. Task/project incoming-link display on database
+entries, opening linked entries directly from these pickers, project local draft
+recovery and authenticated two-user/mobile acceptance remain open.
 
 2026-10-30: independent databases additionally support Email and Phone as bounded text values. Their editors use email and telephone input modes; values are stored as entered, without claiming address or phone-number verification. They use the existing database record storage and access controls.

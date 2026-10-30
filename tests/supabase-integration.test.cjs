@@ -74,6 +74,7 @@ before(async () => {
   await sql(readFileSync('migrations/016-independent-databases.sql', 'utf8'));
   await sql(readFileSync('migrations/017-block-containment.sql', 'utf8'));
   await sql(readFileSync('migrations/018-database-entity-relations.sql', 'utf8'));
+  await sql(readFileSync('migrations/019-entity-database-relations.sql', 'utf8'));
   db = supabaseDocumentStore(rpc);
 });
 after(async () => { if (started) await command(['stop', container]); });
@@ -110,6 +111,76 @@ require('./task-service-api-cases.cjs')(test, { api, member, outsider, owner, pr
 require('./task-page-api-cases.cjs')(test, { api, member: member, outsider: outsider, prefix, read: value });
 require('./board-property-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
 require('./linked-content-api-cases.cjs')(test, { api, member, outsider, prefix, read: value });
+test('task and project data-source relation properties save with reviewed page revisions',async()=>{
+  const database=randomUUID(), target=randomUUID(), taskField=randomUUID(), projectField=randomUUID();
+  const save=(kind,id,body,uid=member)=>api(uid,'PUT',`${prefix}/${kind}/${id}`,body);
+  const definition={name:'Data',description:'',fields:[],archived:false,expectedRevision:0,operationId:randomUUID()};
+  assert.equal((await save('databases',database,definition)).status,200);
+  assert.equal((await save('databaseEntries',target,{databaseId:database,title:'Entry',content:{blocks:[]},propertyValues:{},archived:false,expectedRevision:0,operationId:randomUUID()})).status,200);
+  const taskDefinition={name:'Task links',scope:'task',targetDatabaseId:database,expectedRevision:0,operationId:randomUUID()};
+  const projectDefinition={...taskDefinition,name:'Project links',scope:'project',operationId:randomUUID()};
+  assert.equal((await save('entityRelationFields',taskField,taskDefinition)).status,200);
+  assert.equal((await save('entityRelationFields',taskField,taskDefinition)).status,200);
+  assert.equal((await save('entityRelationFields',taskField,{...taskDefinition,name:'Changed'})).status,409);
+  assert.equal((await save('entityRelationFields',taskField,{...taskDefinition,scope:'project',expectedRevision:1,operationId:randomUUID()})).status,400);
+  assert.equal((await save('entityRelationFields',projectField,projectDefinition)).status,200);
+  assert.equal((await api(outsider,'GET',`${prefix}/entityRelationFields`)).status,403);
+  await db.runTransaction(async tx=>{tx.create(db.doc('workspaces/foreign'),{name:'Foreign'});tx.create(db.doc(`workspaces/foreign/databases/${database}`),{name:'Foreign',fields:[],archived:false,revision:1});tx.create(db.doc(`workspaces/foreign/databaseEntries/${randomUUID()}`),{databaseId:database,title:'Secret',propertyValues:{},archived:false,revision:1});});
+  const foreignEntry=(await db.collection('workspaces/foreign/databaseEntries').get()).docs[0].id;
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,{databaseRelations:{[taskField]:[foreignEntry]},expectedRevision:0})).status,400);
+  const packet={databaseRelations:{[taskField]:[target]},expectedRevision:0,operationId:randomUUID()};
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,packet)).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,packet)).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,{databaseRelations:{[projectField]:[target]},expectedRevision:1})).status,400);
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,{databaseRelations:{[taskField]:[target]}})).status,409);
+  await db.runTransaction(async tx=>tx.create(db.doc(`${prefix}/projects/project`),{name:'Project',description:'',archived:false,revision:1}));
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[target]},expectedRevision:1})).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[target]},expectedRevision:1})).status,409);
+  assert.equal((await save('databaseEntries',target,{databaseId:database,title:'Entry',content:{blocks:[]},propertyValues:{},archived:true,expectedRevision:1,operationId:randomUUID()})).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/tasks/task`,{databaseRelations:{[taskField]:[target]},expectedRevision:1})).status,200);
+  assert.equal((await api(member,'POST',`${prefix}/tasks`,{title:'New',databaseRelations:{[taskField]:[target]},operationId:randomUUID()})).status,400);
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[]},expectedRevision:2})).status,200);
+  assert.equal(await sql('select count(*) from public.teamspace_project_database_relations;'),'0');
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[target]},expectedRevision:3})).status,400);
+  assert.equal((await save('databaseEntries',target,{databaseId:database,title:'Entry',content:{blocks:[]},propertyValues:{},archived:false,expectedRevision:2,operationId:randomUUID()})).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{databaseRelations:{[projectField]:[target]},expectedRevision:3})).status,200);
+  assert.equal((await api(member,'PATCH',`${prefix}/projects/project`,{archived:true,expectedRevision:4})).status,200);
+  assert.deepEqual((await value(`${prefix}/projects/project`)).databaseRelations[projectField],[target]);
+  assert.equal(await sql('select count(*) from public.teamspace_task_database_relations;'),'1');
+  assert.equal(await sql('select count(*) from public.teamspace_project_database_relations;'),'1');
+  const count=(table,uid)=>sql(`set role authenticated;select set_config('request.jwt.claim.sub','${uid}',false);select count(*) from public.${table};`).then(result=>result.split('\n').at(-1));
+  for(const table of ['teamspace_task_database_relations','teamspace_project_database_relations']){
+    assert.equal(await sql(`select relrowsecurity from pg_class where oid='public.${table}'::regclass`),'t');
+    assert.equal(await count(table,member),'1');assert.equal(await count(table,outsider),'0');
+    await assert.rejects(sql(`set role authenticated; delete from public.${table};`),/permission denied/);
+    await assert.rejects(sql(`set role service_role; delete from public.${table};`),/permission denied/);
+  }
+  assert.equal(await sql(`set role authenticated;select set_config('request.jwt.claim.sub','${member}',false);select count(*) from public.teamspace_documents where collection='${prefix}/entityRelationFields';`).then(result=>result.split('\n').at(-1)),'0');
+  await sql(`update auth.users set email_confirmed_at=now() where id='${outsider}'; update auth.users set email_confirmed_at=null where id='${member}';`);
+  for(const table of ['teamspace_task_database_relations','teamspace_project_database_relations']){
+    assert.equal(await count(table,outsider),'0');assert.equal(await count(table,member),'0');
+    await assert.rejects(sql(`set role anon; select * from public.${table};`),/permission denied/);
+  }
+  await sql(`update auth.users set email_confirmed_at=now() where id='${member}';`);
+  assert.equal((await api(member,'DELETE',`${prefix}/tasks/task`)).status,200);
+  assert.equal(await sql('select count(*) from public.teamspace_task_database_relations;'),'0');
+  await db.runTransaction(async tx=>tx.delete(db.doc(prefix)));
+  assert.equal(await sql('select count(*) from public.teamspace_project_database_relations;'),'0');
+  assert.equal(await sql(`select count(*) from public.teamspace_documents where collection in ('${prefix}/entityRelationFields','${prefix}/entityRelationOperations');`),'0');
+});
+test('concurrent entry archive and task relation save do not create an invalid new link',async()=>{
+  const database=randomUUID(),target=randomUUID(),field=randomUUID();
+  const save=(kind,id,body)=>api(member,'PUT',`${prefix}/${kind}/${id}`,body);
+  assert.equal((await save('databases',database,{name:'Data',description:'',fields:[],archived:false,expectedRevision:0,operationId:randomUUID()})).status,200);
+  assert.equal((await save('databaseEntries',target,{databaseId:database,title:'Entry',content:{blocks:[]},propertyValues:{},archived:false,expectedRevision:0,operationId:randomUUID()})).status,200);
+  assert.equal((await save('entityRelationFields',field,{name:'Related',scope:'task',targetDatabaseId:database,expectedRevision:0,operationId:randomUUID()})).status,200);
+  const [link,archive]=await Promise.all([
+    api(member,'PATCH',`${prefix}/tasks/task`,{databaseRelations:{[field]:[target]},expectedRevision:0,operationId:randomUUID()}),
+    save('databaseEntries',target,{databaseId:database,title:'Entry',content:{blocks:[]},propertyValues:{},archived:true,expectedRevision:1,operationId:randomUUID()}),
+  ]);
+  assert.equal(archive.status,200);assert.ok([200,400].includes(link.status),JSON.stringify(link));
+  assert.deepEqual((await value(`${prefix}/tasks/task`)).databaseRelations?.[field]??[],link.status===200?[target]:[]);
+});
 test('typed relation projection enforces access and task deletion clears authoritative values',async()=>{
   const database=randomUUID(), entry=randomUUID(), taskField=randomUUID(), projectField=randomUUID();
   const definition={fields:[{id:taskField,type:'relation',targetKind:'task'},{id:projectField,type:'relation',targetKind:'project'}]};
@@ -235,7 +306,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'10');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'11');
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
@@ -292,6 +363,7 @@ test('canonical migration upgrades populated legacy records atomically without c
     await query(readFileSync('migrations/016-independent-databases.sql','utf8'));
     await query(readFileSync('migrations/017-block-containment.sql','utf8'));
     await query(readFileSync('migrations/018-database-entity-relations.sql','utf8'));
+    await query(readFileSync('migrations/019-entity-database-relations.sql','utf8'));
     assert.equal(await query('select count(*) from public.teamspace_blocks;'),'0');
     assert.equal(await query("select relrowsecurity from pg_class where relname='teamspace_database_links';"),'t');
     assert.deepEqual(JSON.parse(await query(`select data from public.teamspace_all_records where path='${prefix}/tasks/legacy';`)),task);

@@ -8,6 +8,8 @@ const types = { text:'string', uuid:'string' };
 const definitions = [
   ['teamspace_database_task_links','DatabaseTaskLinkRow',['workspace_id','source_path','field_id','task_id']],
   ['teamspace_database_project_links','DatabaseProjectLinkRow',['workspace_id','source_path','field_id','project_id']],
+  ['teamspace_task_database_relations','TaskDatabaseRelationRow',['workspace_id','task_id','field_path','entry_path']],
+  ['teamspace_project_database_relations','ProjectDatabaseRelationRow',['workspace_id','project_id','field_path','entry_path']],
 ];
 const output = ['// Generated from PostgreSQL by scripts/generate-database-entity-link-types.mjs. Do not edit.'];
 for (const [table,name,expected] of definitions) {

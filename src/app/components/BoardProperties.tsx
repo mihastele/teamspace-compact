@@ -82,11 +82,12 @@ export function BoardProperties({ api, columns, hidden = [], onVisibilityChange,
         }) : api.boardProperties.map(property => <button type="button" className={s.definition} key={property.id} onClick={() => setEditing(property)}><span>{property.name}</span><small>{labels[property.type]}{property.projectId ? ` · ${api.projects.find(project=>project.id===property.projectId)?.name??"Project"}` : ""}</small></button>)}
         {api.boardProperties.length === 0 && !columns && <p className={s.hint}>Add the details your team needs.</p>}
         <button type="button" disabled={api.boardProperties.length >= MAX_PROPERTIES} onClick={() => setEditing("new")}>+ Add property</button>
-        <details className={s.export}><summary>Export data</summary><button type="button" onClick={() => {
+        <details className={s.export}><summary>Export data</summary><button type="button" onClick={async () => {
           setExportError("");
           let url: string | undefined;
           try {
-            url = URL.createObjectURL(new Blob([JSON.stringify({ version: 4, templates: api.taskTemplates, views: api.savedViews, projects: api.projects, properties: api.boardProperties, tasks: api.tasks }, null, 2)], { type: "application/json" }));
+            const relationFields = api.projectsEnabled ? (await api.databaseRequest("entityRelationFields","GET")).fields : [];
+            url = URL.createObjectURL(new Blob([JSON.stringify({ version: 5, templates: api.taskTemplates, views: api.savedViews, projects: api.projects, properties: api.boardProperties, relationFields, tasks: api.tasks }, null, 2)], { type: "application/json" }));
             const anchor = document.createElement("a"); anchor.href = url; anchor.download = "teamspace-board.json"; document.body.append(anchor); anchor.click(); anchor.remove();
             const downloadUrl = url; setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
           } catch { if (url) URL.revokeObjectURL(url); setExportError("Board export failed. Your data is unchanged."); }
