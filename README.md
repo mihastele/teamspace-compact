@@ -283,11 +283,15 @@ the entry's **Linked from** section open related pages. Renaming entries/propert
 preserves links. Archived databases/entries retain their links; new links cannot
 select archived targets. Restore a database before editing its entries. Search
 filters loaded entry titles; **Show archived entries** reveals loaded archives.
+Switch between **Table** and **List** to display the same loaded entries. The
+list shows properties and opens linked entries; use its sort controls to select
+the sort property and direction. The layout choice is local and lasts while the
+database screen is open.
 Click a table heading to sort loaded entries by that property; click again for
 descending order, then return to title order. **Reset sort** restores natural
 title order. Numbers sort numerically; options, people and relations use current
 display names. Empty values stay last in either direction. Sort settings stay
-local to this table and reset when switching databases; loading more rows or
+local to the current database and reset when switching databases; loading more rows or
 refreshing keeps the active sort. Sorting/search never changes which server page
 is fetched or the saved/exported record order.
 **Load more entries** continues a live keyset page. The first page refreshes every

@@ -43,3 +43,9 @@ Maintained Strict Mode manual fixture: npm run test:ui:database-relations;
 component search/limits/archive/disabled/loading/retry/keyboard/390px checks pass.
 Full editor, authenticated saves/two-user/recovery and automated DOM acceptance
 remain open.
+
+2026-10-30: added a local Table/List layout switch for the same loaded entries.
+List entries show typed properties and navigable relation values; list sort
+controls use the existing loaded-row sort and share search, archive and paging
+state with the table. This is not a saved or workspace-shared view. Browser,
+mobile and authenticated interaction acceptance remain open.
