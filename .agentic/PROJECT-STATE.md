@@ -1034,3 +1034,17 @@
   - Added `WorkspaceModal.tsx` allowing one-click workspace creation and invitation token redemption.
   - User profile section at the bottom displaying user name, email / status, and working Sign Out action.
 - PASSED standalone TypeScript typecheck (`tsc --noEmit`), full ESLint (`npm run lint`), and Next.js optimized Turbopack production build (`npm run build`).
+
+### 2026-11-11 - Resolution of React Error #185 (Maximum Update Depth Exceeded)
+
+- Diagnosed and resolved Minified React Error #185 ("Maximum update depth exceeded") caused by an infinite re-render loop:
+  - In `src/lib/client.ts`, `tasks.toSorted()`, `boardProperties.toSorted()`, and `projects.toSorted()` inside `useTeamspace()` generated fresh array references on every render.
+  - In `src/app/page.tsx`, `useEffect` listening on `api.tasks` continuously invoked `workspaceStore.syncFromApi()`.
+  - In `src/lib/workspace-store.ts`, `syncFromApi()` was unconditionally modifying `currentState` and invoking `emitChange()`, triggering subscriber notifications and continuous re-renders.
+  - In `src/app/components/NotionEditor.tsx`, Tiptap `setContent` was called without `{ emitUpdate: false }` and without verifying focus, risking secondary update cascades.
+- Implemented fixes:
+  - Memoized `sortedTasks`, `sortedBoardProperties`, and `sortedProjects` with `useMemo` in `src/lib/client.ts`.
+  - Added strict change detection in `workspaceStore.syncFromApi()` to return early and skip `emitChange()` when workspace, notes, or tasks have not changed.
+  - Guarded editor content sync in `NotionEditor.tsx` with `!editor.isFocused` and `{ emitUpdate: false }`.
+  - Updated `tests/note-component-identity.test.cjs` to verify component keys on the openNotion stage (`NotionEditor` and `DatabaseView`).
+- PASSED all 253 unit/model/controller/setup tests (`npm test`), full ESLint (`npm run lint`), standalone TypeScript typecheck (`tsc --noEmit`), and Next.js optimized Turbopack production build (`npm run build`).
