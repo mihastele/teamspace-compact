@@ -1645,6 +1645,62 @@ export async function handleTrustedApi(
     const [, , resource, itemId, action, commentId] = path;
     if (path.length > 6 || (path.length === 6 && action !== "comments"))
       throw new ApiError(404, "not_found", "Endpoint not found.");
+    if (resource === "blocks" && !action) {
+      if (method === "GET") {
+        const result = await db.runTransaction(async tx => {
+          await member(tx, workspace, user.uid);
+          if (itemId) {
+            const doc = await tx.get(workspace.collection("blocks").doc(itemId));
+            if (!doc.exists) throw new ApiError(404, "not_found", "Block not found.");
+            return { block: { id: doc.id, ...encodeStoreValue(doc.data()) as Record<string, unknown> } };
+          }
+          const rows = await tx.get(workspace.collection("blocks"));
+          return { blocks: rows.docs.map(item => ({ id: item.id, ...encodeStoreValue(item.data()) as Record<string, unknown> })) };
+        });
+        return json(result);
+      }
+      if (method === "POST" && !itemId) {
+        const data = (await body(request)) as Record<string, unknown>;
+        const result = await db.runTransaction(async tx => {
+          await member(tx, workspace, user.uid);
+          const ref = workspace.collection("blocks").doc((data?.id as string) || randomUUID());
+          const payload = {
+            ...data,
+            createdAt: now(),
+            updatedAt: now(),
+            createdBy: user.uid,
+          };
+          tx.create(ref, payload);
+          return { block: { id: ref.id, ...payload } };
+        });
+        return json(result, 201);
+      }
+      if (method === "PATCH" && itemId) {
+        const data = (await body(request)) as Record<string, unknown>;
+        const result = await db.runTransaction(async tx => {
+          await member(tx, workspace, user.uid);
+          const ref = workspace.collection("blocks").doc(itemId);
+          const existing = await tx.get(ref);
+          if (!existing.exists) throw new ApiError(404, "not_found", "Block not found.");
+          const payload = {
+            ...data,
+            updatedAt: now(),
+            updatedBy: user.uid,
+          };
+          tx.update(ref, payload);
+          return { block: { id: ref.id, ...existing.data(), ...payload } };
+        });
+        return json(result);
+      }
+      if (method === "DELETE" && itemId) {
+        await db.runTransaction(async tx => {
+          await member(tx, workspace, user.uid);
+          const ref = workspace.collection("blocks").doc(itemId);
+          tx.delete(ref);
+        });
+        return json({ ok: true });
+      }
+    }
     if(resource==="entityRelationFields"&&!action){
       if(method==="GET"&&!itemId)return json(await readEntityRelationFields(db,workspace,user));
       if(method==="PUT"&&itemId)return json({field:await saveEntityRelationField(db,workspace,user,itemId,await body(request))});

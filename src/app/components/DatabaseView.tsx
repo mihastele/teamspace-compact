@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
-import type { Block } from "@/lib/model";
+import type { Block, DatabaseProperty, PropertyType, ViewLayout } from "@/lib/model";
 import {
   Table2,
   Kanban,
-  Calendar,
+  Calendar as CalendarIcon,
   List as ListIcon,
   Plus,
   Search,
@@ -15,6 +15,9 @@ import {
   Trash2,
   Maximize2,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import styles from "./DatabaseView.module.css";
 
@@ -28,6 +31,9 @@ export default function DatabaseView({ block }: { block: Block }) {
     setActiveView,
     createDatabaseRow,
     updateRowProperty,
+    createDatabaseView,
+    deleteDatabaseView,
+    createDatabaseProperty,
     setSidePeekBlock,
     setActiveBlock,
     updateBlock,
@@ -52,7 +58,18 @@ export default function DatabaseView({ block }: { block: Block }) {
     y: number;
   } | null>(null);
 
+  // Popover states
+  const [showAddViewMenu, setShowAddViewMenu] = useState(false);
+  const [showAddPropMenu, setShowAddPropMenu] = useState(false);
+  const [newPropName, setNewPropName] = useState("");
+  const [newPropType, setNewPropType] = useState<PropertyType>("text");
+
+  // Calendar state
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
+
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const addViewRef = useRef<HTMLDivElement>(null);
+  const addPropRef = useRef<HTMLTableCellElement>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -62,10 +79,24 @@ export default function DatabaseView({ block }: { block: Block }) {
       ) {
         setContextMenu(null);
       }
+      if (
+        addViewRef.current &&
+        !addViewRef.current.contains(e.target as Node)
+      ) {
+        setShowAddViewMenu(false);
+      }
+      if (
+        addPropRef.current &&
+        !addPropRef.current.contains(e.target as Node)
+      ) {
+        setShowAddPropMenu(false);
+      }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setContextMenu(null);
+        setShowAddViewMenu(false);
+        setShowAddPropMenu(false);
       }
     };
     window.addEventListener("mousedown", handleOutsideClick);
@@ -103,6 +134,16 @@ export default function DatabaseView({ block }: { block: Block }) {
     );
   };
 
+  const renderGenericPill = (prop: DatabaseProperty, val: unknown) => {
+    const opt = prop.options?.find((o) => o.id === val);
+    if (!opt) return <span className={styles.emptyCell}>-</span>;
+    return (
+      <span className={`${styles.pill} ${styles[`pill_${opt.color || "default"}`]}`}>
+        {opt.name}
+      </span>
+    );
+  };
+
   const openContextMenu = (rowId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -111,6 +152,77 @@ export default function DatabaseView({ block }: { block: Block }) {
       x: Math.min(e.clientX, window.innerWidth - 200),
       y: Math.min(e.clientY, window.innerHeight - 240),
     });
+  };
+
+  // Calendar calculations
+  const year = calendarDate.getFullYear();
+  const month = calendarDate.getMonth();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonthDays = new Date(year, month, 0).getDate();
+
+  const calendarDays: {
+    dayNumber: number;
+    isCurrentMonth: boolean;
+    dateString: string;
+  }[] = [];
+
+  // Previous month trailing days
+  for (let i = firstDayIndex - 1; i >= 0; i--) {
+    const d = prevMonthDays - i;
+    const prevMonth = month === 0 ? 12 : month;
+    const prevYear = month === 0 ? year - 1 : year;
+    const dateString = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    calendarDays.push({
+      dayNumber: d,
+      isCurrentMonth: false,
+      dateString,
+    });
+  }
+
+  // Current month days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    calendarDays.push({
+      dayNumber: d,
+      isCurrentMonth: true,
+      dateString,
+    });
+  }
+
+  // Next month leading days to complete grid (up to multiple of 7)
+  const remaining = (7 - (calendarDays.length % 7)) % 7;
+  for (let d = 1; d <= remaining; d++) {
+    const nextMonth = month === 11 ? 1 : month + 2;
+    const nextYear = month === 11 ? year + 1 : year;
+    const dateString = `${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    calendarDays.push({
+      dayNumber: d,
+      isCurrentMonth: false,
+      dateString,
+    });
+  }
+
+  const todayString = new Date().toISOString().slice(0, 10);
+  const monthName = calendarDate.toLocaleString("default", {
+    month: "long",
+    year: "numeric",
+  });
+
+  // Additional dynamic properties beyond title
+  const dynamicProps = dbProperties.filter((p) => p.type !== "title" && p.id !== "prop-title");
+
+  const handleAddView = (layout: ViewLayout) => {
+    createDatabaseView(block.id, layout);
+    setShowAddViewMenu(false);
+  };
+
+  const handleAddProperty = () => {
+    if (!newPropName.trim()) return;
+    createDatabaseProperty(block.id, newPropName.trim(), newPropType);
+    setNewPropName("");
+    setNewPropType("text");
+    setShowAddPropMenu(false);
   };
 
   return (
@@ -138,11 +250,68 @@ export default function DatabaseView({ block }: { block: Block }) {
               >
                 {view.layout === "table" && <Table2 size={14} />}
                 {view.layout === "board" && <Kanban size={14} />}
-                {view.layout === "calendar" && <Calendar size={14} />}
+                {view.layout === "calendar" && <CalendarIcon size={14} />}
                 {view.layout === "list" && <ListIcon size={14} />}
                 <span>{view.name}</span>
+                {dbViews.length > 1 && (
+                  <span
+                    className={styles.deleteViewBtn}
+                    title="Delete view"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteDatabaseView(block.id, view.id);
+                    }}
+                  >
+                    <X size={12} />
+                  </span>
+                )}
               </button>
             ))}
+
+            {/* Add View Button & Popover */}
+            <div style={{ position: "relative" }} ref={addViewRef}>
+              <button
+                className={styles.addViewBtn}
+                title="Add view"
+                onClick={() => setShowAddViewMenu((prev) => !prev)}
+              >
+                <Plus size={14} />
+              </button>
+
+              {showAddViewMenu && (
+                <div className={styles.viewPopover}>
+                  <div className={styles.popoverHeader}>New View Layout</div>
+                  <button
+                    className={styles.popoverItem}
+                    onClick={() => handleAddView("table")}
+                  >
+                    <Table2 size={14} />
+                    <span>Table</span>
+                  </button>
+                  <button
+                    className={styles.popoverItem}
+                    onClick={() => handleAddView("board")}
+                  >
+                    <Kanban size={14} />
+                    <span>Board</span>
+                  </button>
+                  <button
+                    className={styles.popoverItem}
+                    onClick={() => handleAddView("list")}
+                  >
+                    <ListIcon size={14} />
+                    <span>List</span>
+                  </button>
+                  <button
+                    className={styles.popoverItem}
+                    onClick={() => handleAddView("calendar")}
+                  >
+                    <CalendarIcon size={14} />
+                    <span>Calendar</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className={styles.viewActions}>
@@ -169,17 +338,64 @@ export default function DatabaseView({ block }: { block: Block }) {
         </div>
       </div>
 
-      {/* View Content (Table or Board) */}
+      {/* View Content (Table, Board, List, or Calendar) */}
       <div className={styles.contentArea}>
+        {/* TABLE VIEW */}
         {(!currentView || currentView.layout === "table") && (
           <div className={styles.tableWrapper}>
             <table className={styles.table}>
               <thead>
                 <tr>
                   <th className={styles.thMain}>Name</th>
-                  {statusProp && <th className={styles.th}>Status</th>}
-                  {priorityProp && <th className={styles.th}>Priority</th>}
-                  <th className={styles.th}>Due Date</th>
+                  {dynamicProps.map((prop) => (
+                    <th key={prop.id} className={styles.th}>
+                      {prop.name}
+                    </th>
+                  ))}
+                  {/* Add Property Column Header */}
+                  <th className={styles.thAddProp} ref={addPropRef}>
+                    <button
+                      className={styles.addPropBtn}
+                      title="Add property"
+                      onClick={() => setShowAddPropMenu((prev) => !prev)}
+                    >
+                      <Plus size={14} />
+                    </button>
+                    {showAddPropMenu && (
+                      <div className={styles.propPopover}>
+                        <div className={styles.popoverHeader}>New Property</div>
+                        <input
+                          className={styles.propInput}
+                          placeholder="Property name"
+                          value={newPropName}
+                          onChange={(e) => setNewPropName(e.target.value)}
+                          autoFocus
+                        />
+                        <select
+                          className={styles.propSelect}
+                          value={newPropType}
+                          onChange={(e) =>
+                            setNewPropType(e.target.value as PropertyType)
+                          }
+                        >
+                          <option value="text">Text</option>
+                          <option value="number">Number</option>
+                          <option value="select">Select</option>
+                          <option value="status">Status</option>
+                          <option value="date">Date</option>
+                          <option value="checkbox">Checkbox</option>
+                          <option value="email">Email</option>
+                          <option value="url">URL</option>
+                        </select>
+                        <button
+                          className={styles.createPropBtn}
+                          onClick={handleAddProperty}
+                        >
+                          Create Property
+                        </button>
+                      </div>
+                    )}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -216,60 +432,127 @@ export default function DatabaseView({ block }: { block: Block }) {
                       </button>
                     </td>
 
-                    {statusProp && (
-                      <td className={styles.td}>
-                        <select
-                          className={styles.cellSelect}
-                          value={(row.properties?.[statusProp.id] as string) || ""}
-                          onChange={(e) =>
-                            updateRowProperty(row.id, statusProp.id, e.target.value)
-                          }
-                        >
-                          <option value="">Empty</option>
-                          {statusProp.options?.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                              {opt.name}
-                            </option>
-                          ))}
-                        </select>
-                        <div className={styles.pillDisplay}>
-                          {renderStatusPill(row.properties?.[statusProp.id])}
-                        </div>
-                      </td>
-                    )}
+                    {/* Dynamic Property Cells */}
+                    {dynamicProps.map((prop) => {
+                      const val = row.properties?.[prop.id];
 
-                    {priorityProp && (
-                      <td className={styles.td}>
-                        <select
-                          className={styles.cellSelect}
-                          value={(row.properties?.[priorityProp.id] as string) || ""}
-                          onChange={(e) =>
-                            updateRowProperty(row.id, priorityProp.id, e.target.value)
-                          }
-                        >
-                          <option value="">-</option>
-                          {priorityProp.options?.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                              {opt.name}
-                            </option>
-                          ))}
-                        </select>
-                        <div className={styles.pillDisplay}>
-                          {renderPriorityPill(row.properties?.[priorityProp.id])}
-                        </div>
-                      </td>
-                    )}
+                      if (prop.type === "status") {
+                        return (
+                          <td key={prop.id} className={styles.td}>
+                            <select
+                              className={styles.cellSelect}
+                              value={(val as string) || ""}
+                              onChange={(e) =>
+                                updateRowProperty(row.id, prop.id, e.target.value)
+                              }
+                            >
+                              <option value="">Empty</option>
+                              {prop.options?.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className={styles.pillDisplay}>
+                              {renderStatusPill(val)}
+                            </div>
+                          </td>
+                        );
+                      }
 
-                    <td className={styles.td}>
-                      <input
-                        type="date"
-                        className={styles.inlineDateInput}
-                        value={(row.properties?.["prop-due"] as string) || ""}
-                        onChange={(e) =>
-                          updateRowProperty(row.id, "prop-due", e.target.value)
-                        }
-                      />
-                    </td>
+                      if (prop.type === "select" || prop.id === "prop-priority") {
+                        return (
+                          <td key={prop.id} className={styles.td}>
+                            <select
+                              className={styles.cellSelect}
+                              value={(val as string) || ""}
+                              onChange={(e) =>
+                                updateRowProperty(row.id, prop.id, e.target.value)
+                              }
+                            >
+                              <option value="">-</option>
+                              {prop.options?.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className={styles.pillDisplay}>
+                              {prop.id === "prop-priority"
+                                ? renderPriorityPill(val)
+                                : renderGenericPill(prop, val)}
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      if (prop.type === "date" || prop.id === "prop-due") {
+                        return (
+                          <td key={prop.id} className={styles.td}>
+                            <input
+                              type="date"
+                              className={styles.inlineDateInput}
+                              value={(val as string) || ""}
+                              onChange={(e) =>
+                                updateRowProperty(row.id, prop.id, e.target.value)
+                              }
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (prop.type === "checkbox") {
+                        return (
+                          <td key={prop.id} className={styles.td}>
+                            <input
+                              type="checkbox"
+                              className={styles.checkboxInput}
+                              checked={Boolean(val)}
+                              onChange={(e) =>
+                                updateRowProperty(row.id, prop.id, e.target.checked)
+                              }
+                            />
+                          </td>
+                        );
+                      }
+
+                      if (prop.type === "number") {
+                        return (
+                          <td key={prop.id} className={styles.td}>
+                            <input
+                              type="number"
+                              className={styles.inlineTextInput}
+                              value={(val as number) ?? ""}
+                              onChange={(e) =>
+                                updateRowProperty(
+                                  row.id,
+                                  prop.id,
+                                  e.target.value ? Number(e.target.value) : null
+                                )
+                              }
+                              placeholder="Empty"
+                            />
+                          </td>
+                        );
+                      }
+
+                      // Default text / url / email
+                      return (
+                        <td key={prop.id} className={styles.td}>
+                          <input
+                            type="text"
+                            className={styles.inlineTextInput}
+                            value={(val as string) || ""}
+                            onChange={(e) =>
+                              updateRowProperty(row.id, prop.id, e.target.value)
+                            }
+                            placeholder="Empty"
+                          />
+                        </td>
+                      );
+                    })}
+
+                    <td className={styles.td} />
                   </tr>
                 ))}
               </tbody>
@@ -286,6 +569,7 @@ export default function DatabaseView({ block }: { block: Block }) {
           </div>
         )}
 
+        {/* BOARD VIEW */}
         {currentView?.layout === "board" && (
           <div className={styles.boardWrapper}>
             {statusProp?.options?.map((column) => {
@@ -367,6 +651,208 @@ export default function DatabaseView({ block }: { block: Block }) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* LIST VIEW */}
+        {currentView?.layout === "list" && (
+          <div className={styles.listWrapper}>
+            {filteredRows.map((row) => (
+              <div
+                key={row.id}
+                className={styles.listItem}
+                onClick={() => setSidePeekBlock(row.id)}
+                onContextMenu={(e) => openContextMenu(row.id, e)}
+              >
+                <div className={styles.listItemMain}>
+                  <span className={styles.rowIcon}>{row.icon || "📄"}</span>
+                  <input
+                    className={styles.listItemTitle}
+                    value={row.title || ""}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) =>
+                      updateRowProperty(row.id, "prop-title", e.target.value)
+                    }
+                    placeholder="Untitled"
+                  />
+                  <button
+                    className={styles.openPeekBtn}
+                    title="Open in Side Peek"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSidePeekBlock(row.id);
+                    }}
+                  >
+                    <ExternalLink size={12} />
+                    <span>OPEN</span>
+                  </button>
+                </div>
+
+                <div
+                  className={styles.listItemProps}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {statusProp && (
+                    <div className={styles.badgeWrapper}>
+                      <select
+                        className={styles.cellSelect}
+                        value={(row.properties?.[statusProp.id] as string) || ""}
+                        onChange={(e) =>
+                          updateRowProperty(row.id, statusProp.id, e.target.value)
+                        }
+                      >
+                        <option value="">Empty</option>
+                        {statusProp.options?.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className={styles.pillDisplay}>
+                        {renderStatusPill(row.properties?.[statusProp.id])}
+                      </div>
+                    </div>
+                  )}
+
+                  {priorityProp && (
+                    <div className={styles.badgeWrapper}>
+                      <select
+                        className={styles.cellSelect}
+                        value={(row.properties?.[priorityProp.id] as string) || ""}
+                        onChange={(e) =>
+                          updateRowProperty(row.id, priorityProp.id, e.target.value)
+                        }
+                      >
+                        <option value="">-</option>
+                        {priorityProp.options?.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className={styles.pillDisplay}>
+                        {renderPriorityPill(row.properties?.[priorityProp.id])}
+                      </div>
+                    </div>
+                  )}
+
+                  {row.properties?.["prop-due"] ? (
+                    <span className={styles.cardDate}>
+                      {String(row.properties["prop-due"])}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+
+            <button
+              className={styles.addBottomRowBtn}
+              onClick={() => {
+                const newRow = createDatabaseRow(block.id, "New entry");
+                setSidePeekBlock(newRow.id);
+              }}
+            >
+              <Plus size={14} />
+              <span>New</span>
+            </button>
+          </div>
+        )}
+
+        {/* CALENDAR VIEW */}
+        {currentView?.layout === "calendar" && (
+          <div className={styles.calendarWrapper}>
+            <div className={styles.calendarControls}>
+              <span className={styles.calendarMonthTitle}>{monthName}</span>
+              <div className={styles.calendarNavGroup}>
+                <button
+                  className={styles.calendarNavBtn}
+                  onClick={() =>
+                    setCalendarDate(new Date(year, month - 1, 1))
+                  }
+                  title="Previous month"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button
+                  className={styles.calendarNavBtn}
+                  onClick={() => setCalendarDate(new Date())}
+                >
+                  Today
+                </button>
+                <button
+                  className={styles.calendarNavBtn}
+                  onClick={() =>
+                    setCalendarDate(new Date(year, month + 1, 1))
+                  }
+                  title="Next month"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.calendarGrid}>
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                (day) => (
+                  <div key={day} className={styles.calendarDayHeader}>
+                    {day}
+                  </div>
+                )
+              )}
+
+              {calendarDays.map((cell, idx) => {
+                const cellRows = filteredRows.filter(
+                  (r) =>
+                    r.properties?.["prop-due"] === cell.dateString ||
+                    r.properties?.["date"] === cell.dateString
+                );
+                const isToday = cell.dateString === todayString;
+
+                return (
+                  <div
+                    key={idx}
+                    className={`${styles.calendarDayCell} ${!cell.isCurrentMonth ? styles.calendarDayCellOtherMonth : ""}`}
+                  >
+                    <div className={styles.calendarDayTopRow}>
+                      <span
+                        className={`${styles.calendarDayNumber} ${isToday ? styles.calendarDayToday : ""}`}
+                      >
+                        {cell.dayNumber}
+                      </span>
+                      <button
+                        className={styles.calendarAddBtn}
+                        title={`Add task on ${cell.dateString}`}
+                        onClick={() => {
+                          const newRow = createDatabaseRow(
+                            block.id,
+                            "New entry",
+                            { "prop-due": cell.dateString }
+                          );
+                          setSidePeekBlock(newRow.id);
+                        }}
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </div>
+
+                    <div className={styles.calendarEventsList}>
+                      {cellRows.map((item) => (
+                        <div
+                          key={item.id}
+                          className={styles.calendarEventItem}
+                          onClick={() => setSidePeekBlock(item.id)}
+                          onContextMenu={(e) => openContextMenu(item.id, e)}
+                          title={item.title || "Untitled"}
+                        >
+                          <span>{item.icon || "📄"}</span>
+                          <span>{item.title || "Untitled"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

@@ -1066,3 +1066,17 @@
   - On board cards and table rows (Open in Side Peek, Open as Page, Move Status To, Duplicate, and Delete).
 - Added `duplicateBlock(id)` in `src/lib/workspace-store.ts`.
 - PASSED all 253 unit/model/controller/setup tests (`npm test`), full ESLint (`npm run lint`), standalone TypeScript typecheck (`npx tsc --noEmit`), and Next.js optimized Turbopack production build (`npm run build`).
+
+### 2026-11-11 - Database Multi-Layout Views (List, Calendar), Dynamic Columns, and View Management
+
+- Implemented comprehensive multi-layout view rendering and view lifecycle in `src/app/components/DatabaseView.tsx`:
+  - Added List View (`currentView?.layout === "list"`): clean vertical list with horizontal row items, inline title editing, property badges (status, priority, due date), hover `OPEN` button, and bottom `+ New` button.
+  - Added Calendar View (`currentView?.layout === "calendar"`): monthly calendar grid, month navigation (`<`, `Today`, `>`), 7 weekday columns, day cells with numbered dates, events matching due dates with one-click SidePeek preview, and day-cell hover `+` button to create a task scheduled for that date.
+  - Added Add View popover via the `+` button in the view tabs bar, allowing users to instantiate Table, Board, List, or Calendar views on any database.
+  - Added view deletion button on tabs when more than one view exists.
+- Implemented dynamic database schema customization:
+  - Added "+ Add property" column in Table view header with interactive popover to add custom columns (Text, Number, Select, Status, Date, Checkbox, Email, URL).
+  - Implemented `createDatabaseProperty`, `deleteDatabaseProperty`, `createDatabaseView`, and `deleteDatabaseView` in `src/lib/workspace-store.ts` and exposed them via `useWorkspace()`.
+  - Dynamically rendered table cells for all database properties with inline editing (checkboxes, number inputs, text inputs, date pickers, select/status pills).
+- PASSED standalone TypeScript typecheck (`npx tsc --noEmit`), full ESLint (`npm run lint`), all 253 unit/model/controller/setup tests (`npm test`), and Next.js optimized Turbopack production build (`npm run build`).
+

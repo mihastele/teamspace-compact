@@ -457,6 +457,101 @@ export const workspaceStore = {
     workspaceStore.updateBlock(rowId, updates);
   },
 
+  createDatabaseView(databaseId: string, layout: "table" | "board" | "list" | "calendar", name?: string): DatabaseView {
+    const now = Date.now();
+    const id = `view-${layout}-${now}`;
+    const layoutNames: Record<"table" | "board" | "list" | "calendar", string> = {
+      table: "Table",
+      board: "Board",
+      list: "List",
+      calendar: "Calendar",
+    };
+    const newView: DatabaseView = {
+      id,
+      databaseId,
+      name: name || layoutNames[layout] || "View",
+      layout,
+      position: `v${now}`,
+      groupBy: layout === "board" ? "prop-status" : undefined,
+      visibleProperties: ["prop-title", "prop-status", "prop-due"],
+    };
+
+    const existingViews = currentState.views[databaseId] || [];
+    currentState = {
+      ...currentState,
+      views: {
+        ...currentState.views,
+        [databaseId]: [...existingViews, newView],
+      },
+      activeViewIdByDatabase: {
+        ...currentState.activeViewIdByDatabase,
+        [databaseId]: id,
+      },
+    };
+    emitChange();
+    return newView;
+  },
+
+  deleteDatabaseView(databaseId: string, viewId: string) {
+    const existingViews = currentState.views[databaseId] || [];
+    const remaining = existingViews.filter((v) => v.id !== viewId);
+    let nextActive = currentState.activeViewIdByDatabase[databaseId];
+    if (nextActive === viewId) {
+      nextActive = remaining[0]?.id || "";
+    }
+    currentState = {
+      ...currentState,
+      views: {
+        ...currentState.views,
+        [databaseId]: remaining,
+      },
+      activeViewIdByDatabase: {
+        ...currentState.activeViewIdByDatabase,
+        [databaseId]: nextActive,
+      },
+    };
+    emitChange();
+  },
+
+  createDatabaseProperty(
+    databaseId: string,
+    name: string,
+    type: DatabaseProperty["type"],
+    options?: DatabaseProperty["options"]
+  ): DatabaseProperty {
+    const now = Date.now();
+    const id = `prop-${now}`;
+    const newProp: DatabaseProperty = {
+      id,
+      name: name || "New property",
+      type,
+      position: `p${now}`,
+      options,
+    };
+    const existingProps = currentState.properties[databaseId] || [];
+    currentState = {
+      ...currentState,
+      properties: {
+        ...currentState.properties,
+        [databaseId]: [...existingProps, newProp],
+      },
+    };
+    emitChange();
+    return newProp;
+  },
+
+  deleteDatabaseProperty(databaseId: string, propertyId: string) {
+    const existingProps = currentState.properties[databaseId] || [];
+    currentState = {
+      ...currentState,
+      properties: {
+        ...currentState.properties,
+        [databaseId]: existingProps.filter((p) => p.id !== propertyId),
+      },
+    };
+    emitChange();
+  },
+
   setWorkspace(workspace: Workspace) {
     currentState = {
       ...currentState,
@@ -646,6 +741,10 @@ export function useWorkspace() {
     duplicateBlock: workspaceStore.duplicateBlock,
     createDatabaseRow: workspaceStore.createDatabaseRow,
     updateRowProperty: workspaceStore.updateRowProperty,
+    createDatabaseView: workspaceStore.createDatabaseView,
+    deleteDatabaseView: workspaceStore.deleteDatabaseView,
+    createDatabaseProperty: workspaceStore.createDatabaseProperty,
+    deleteDatabaseProperty: workspaceStore.deleteDatabaseProperty,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,

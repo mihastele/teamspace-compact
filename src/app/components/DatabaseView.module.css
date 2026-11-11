@@ -499,3 +499,391 @@
   background: var(--pill-red-bg);
   color: var(--pill-red-fg);
 }
+
+/* View Creation & Tabs Popover */
+.addViewBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--fg-secondary);
+}
+
+.addViewBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.viewPopover {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 6px;
+  z-index: 100;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popoverHeader {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  padding: 4px 8px;
+}
+
+.popoverItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 4px;
+  color: var(--fg-primary);
+  text-align: left;
+}
+
+.popoverItem:hover {
+  background-color: var(--bg-hover);
+}
+
+.deleteViewBtn {
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--fg-subtle);
+}
+
+.viewTab:hover .deleteViewBtn {
+  opacity: 1;
+}
+
+.deleteViewBtn:hover {
+  background: var(--bg-hover);
+  color: #eb5757;
+}
+
+/* Dynamic Table Add Property Column */
+.thAddProp {
+  width: 36px;
+  min-width: 36px;
+  padding: 4px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  position: relative;
+}
+
+.addPropBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--fg-secondary);
+}
+
+.addPropBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.propPopover {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 10px;
+  z-index: 110;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.propInput {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--fg-primary);
+  outline: none;
+}
+
+.propSelect {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--fg-primary);
+  outline: none;
+}
+
+.createPropBtn {
+  background: var(--accent-blue);
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: center;
+}
+
+.createPropBtn:hover {
+  background: var(--accent-blue-hover);
+}
+
+.checkboxInput {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+}
+
+.inlineTextInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--fg-primary);
+  width: 100%;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.inlineTextInput:focus {
+  background: var(--bg-hover);
+}
+
+/* List Layout */
+.listWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.listItem:hover {
+  background-color: var(--bg-hover);
+}
+
+.listItemMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.listItemProps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listItemTitle {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fg-primary);
+  border: none;
+  background: transparent;
+  outline: none;
+  flex: 1;
+}
+
+.listItemTitle:focus {
+  background: var(--bg-card);
+}
+
+/* Calendar Layout */
+.calendarWrapper {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.calendarControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.calendarMonthTitle {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--fg-primary);
+}
+
+.calendarNavGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendarNavBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.calendarNavBtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  width: 100%;
+}
+
+.calendarDayHeader {
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--fg-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.calendarDayHeader:last-child {
+  border-right: none;
+}
+
+.calendarDayCell {
+  min-height: 90px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg-card);
+}
+
+.calendarDayCell:nth-child(7n) {
+  border-right: none;
+}
+
+.calendarDayCellOtherMonth {
+  background: var(--bg-hover);
+  opacity: 0.5;
+}
+
+.calendarDayTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.calendarDayNumber {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--fg-secondary);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.calendarDayToday {
+  background: #eb5757;
+  color: #ffffff !important;
+}
+
+.calendarAddBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--fg-subtle);
+}
+
+.calendarDayCell:hover .calendarAddBtn {
+  display: flex;
+}
+
+.calendarAddBtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.calendarEventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  max-height: 80px;
+}
+
+.calendarEventItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendarEventItem:hover {
+  background: var(--bg-hover);
+  border-color: var(--fg-secondary);
+}
+
