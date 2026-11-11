@@ -13,11 +13,11 @@
 | Agentic ticket expansion | PostgreSQL-focused features; Firebase baseline retained. M1a/M1b/M2/M3 implemented; M4a provider/read tools and M4b private durable queue/audit lifecycle implemented/tested internally. Next M4c checkpoint engine/provenance resume, worker/process/Compose wiring and run API/UI; M5 confirmed writes remain ahead | 2026-10-17 |
 | Project lifecycle policy | Inherit workspace access; reversible archive preserves tickets/links and prevents new ticket assignments to archived projects; implemented/tested for PostgreSQL, live upgrade/acceptance pending | 2026-10-17 |
 | Saved views/query policy | Workspace-shared revision-checked board/table/list definitions; typed AST, live keyset pages, explicit editable IANA timezone (defaults UTC); implementation tested, live/browser acceptance pending | 2026-10-17 |
-| Agent audit policy | Configurable 1–365 days, default 30 for new runs; initiating user and workspace owner/admin, authorized run/checkpoint/receipt exports, immediate expiry hiding, bounded operator prune, workspace-root deletion cascade. Implemented/tested in internal migration 014/client; live migration, cleanup scheduling and worker/API/UI integration pending | 2026-10-17 |
+| Agent audit policy | Configurable 1â€“365 days, default 30 for new runs; initiating user and workspace owner/admin, authorized run/checkpoint/receipt exports, immediate expiry hiding, bounded operator prune, workspace-root deletion cascade. Implemented/tested in internal migration 014/client; live migration, cleanup scheduling and worker/API/UI integration pending | 2026-10-17 |
 | Task pages and templates | Explicit Save/reviewed revisions, rich task blocks, task-local properties, shared copy-based templates with edit/archive/restore, local draft/retry recovery. Tested locally; migration 015/rules and matching deployment/live acceptance pending | 2026-10-18 |
 | Task attribute UX | Inline task field editing; one Table Properties menu for visibility/definitions; saved-view cards honor selected fields. Locally verified; live acceptance pending | 2026-10-18 |
 | Note boards | Named shared boards/filters in notes; safe in-dialog cancellation, repeated Escape/focus/mobile checks and maintained manual component fixture verified; authenticated/deployed acceptance and automated DOM suite pending | 2026-10-19 |
-| Independent databases | PostgreSQL named collections, typed fields including email, phone and grouped status, entry/task/project relations in both directions, entry and task/project backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 020 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
+| Independent databases | PostgreSQL named collections, typed fields including email, phone, grouped status and created time, entry/task/project relations in both directions, entry and task/project backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 020 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
 | Development preview | npm run dev:preview; http://127.0.0.1:3107; child-only provider overrides; npm run dev:connected for configured backend | 2026-10-18 |
 | Deployment setup | npm run deploy:setup -- staging/production; npm run deploy -- <env> doctor/build/up/status/stop/backup/migrate/prune. Generated isolated profiles; staging full stack running, migrations through 016 applied, local captured email confirmation verified; production launch pending | 2026-10-18 |
 | License | Not yet selected | 2026-10-03 |
@@ -58,15 +58,15 @@
 
 ## Log
 
-### 2026-10-03 — Milestone 0: session recovery
+### 2026-10-03 â€” Milestone 0: session recovery
 
-- Read SPEC.md and referenced chat “Plan a hackathon night”. Previous session stopped after starter/spec creation; user had no Firebase project.
+- Read SPEC.md and referenced chat â€œPlan a hackathon nightâ€�. Previous session stopped after starter/spec creation; user had no Firebase project.
 - PROJECT-STATE.md did not exist; initialized continuity record without changing prior history.
 - Proposed implementation matching the agreed auth/access/storage spec. User authorized building the application and parallel agents.
 - Chose official Firebase SDKs over custom auth/database integrations; exact versions checked against npm registry and recent maintenance confirmed. Existing license is undecided, recorded above.
 - STOPPED checkpoint: building UI, trusted backend, client integration and authorization tests concurrently; no live database modified.
 
-### 2026-10-03 — Milestones 1–5: trusted collaboration implementation
+### 2026-10-03 â€” Milestones 1â€“5: trusted collaboration implementation
 
 - Implemented Firebase Google sign-in integration, workspace create/join, membership index, random hashed transactional invitations, owner transfer/removal and member leave protection.
 - Added trusted server API with ID-token validation, per-user distributed limits, strict input/immutable-field validation, transaction membership checks and revision-checked note saves.
@@ -77,13 +77,13 @@
 - PASSED: 9 validation cases + 7 rule suites + 12 trusted-API cases, including outsider denial, concurrent note/invite transactions, owner operations, rate limits, exact upload bounds, private thumbnail transparency and corrupt image rejection. API bucket operations mocked; Firestore transactions and image decoding real.
 - No exotic technology deviation, code TODOs, private credentials, live migrations or deployment. Setup instructions updated alongside implementation.
 
-### FAILED — 2026-10-03: verification issues resolved
+### FAILED â€” 2026-10-03: verification issues resolved
 
 - Windows Java 21 emulator startup initially failed with AF_UNIX Invalid argument/loopback connection error. Repro: standard emulator launch on this Corretto installation. Process-only nonexistent jdk.net.unixdomain.tmpdir forced TCP fallback; all suites then passed. Workaround documented without changing machine settings.
 - Initial trusted dispatcher returned mutation promises without awaiting inside its error boundary. Integration failures exposed uncaught authorization errors; awaited dispatch fixed the boundary and all expected HTTP statuses passed.
 - First integrated lint found hydration-state effects and generated CommonJS output being linted. Moved external hydration into callbacks, corrected render-time ref use, excluded generated build output, and scoped CommonJS test imports. Lint now passes.
 
-### 2026-10-03 — Milestone 5: interface and release preparation
+### 2026-10-03 â€” Milestone 5: interface and release preparation
 
 - Replaced starter with responsive navy/cobalt workspace, board/task dialogs, explicit note save states and safe formatted previews, member/invite controls, and attachment flows. Added search/keyboard shortcut, drag plus accessible status selector, empty/loading/error states, reduced motion and visible focus.
 - Notes preserve drafts across navigation/workspaces, warn before reload/signout loss, detect newer/deleted remote revisions and offer copy/reload. Fixed doubled invitation URLs, new-note selection after save, task audit-field round trips and joined-workspace selection.
@@ -92,7 +92,7 @@
 - BLOCKED release: no Firebase project/service credentials or Vercel deployment supplied. Do not call the local preview shared/authenticated or claim production readiness. Next: provision Firebase, set environment locally/Vercel, deploy rules/indexes/TTL, configure bucket CORS/staging lifecycle and authorized auth domains, then complete deployed two-user acceptance and dependency review.
 
 
-### 2026-10-03 — Nested notes and shared workspace extension
+### 2026-10-03 â€” Nested notes and shared workspace extension
 
 - User requested Notion-style root notes, subnotes and deeper descendants, with multiple workspace users collaborating on notes and Kanban. Extended the existing member-authorized, live saved-update model; explicit Save and revision conflict protection remain. Simultaneous typing is not implemented and would require a separate editor/data-model decision.
 - Added expandable alphabetical note hierarchy, root/subnote creation, ancestor breadcrumbs, search retaining ancestor context, and parent moves committed together with content on Save. Moving a note carries its subtree without rewriting descendants. No application nesting depth cap.
@@ -104,12 +104,12 @@
 - PASSED manual browser checks: root/child/grandchild creation, persisted hierarchy after refresh, breadcrumbs, search with ancestors, parent move with subtree retention, blocked parent deletion, descendant-free parent choices, navigation preserving unsaved content, and 390px/1280px layouts without horizontal overflow. Screenshot at .agentic/verification/nested-notes.jpg (gitignored). Existing automated-browser and deployed two-user verification gaps remain open above.
 - No new dependency, exotic technology deviation, code TODO, credential, live migration or deployment. Release remains BLOCKED on Firebase provisioning; license and dependency review remain open.
 
-### FAILED — 2026-10-03: rate-limit verification stabilized
+### FAILED â€” 2026-10-03: rate-limit verification stabilized
 
 - First combined emulator run passed hierarchy/authorization cases but an existing invitation rate-limit test crossed the real minute boundary and unexpectedly received a legitimate new-window allowance. Scoped the test clock to a fixed window and explicitly tested allowance after advancing one minute. Reran the entire clean emulator suite successfully; application rate-limit behavior unchanged.
 
 
-### 2026-10-03 — Discoverable subnotes and inline block editing
+### 2026-10-03 â€” Discoverable subnotes and inline block editing
 
 - User reported subnote creation could not be found and requested Notion-style right-click actions plus instant block formatting. Consulted official Notion writing/editing and subpage guidance. Kept the existing paragraph/heading/bullet schema and explicit-save model; no costly library/schema decision required.
 - Every saved tree row now has visible Add subnote (+) and ellipsis actions, a right-click menu, and keyboard context-menu support. The note body also lists clickable child pages with Add subnote. Unsaved parents explain that saving is required first. New/reopened drafts receive title focus; menu Escape restores its trigger; menus stay workspace-scoped.
@@ -120,29 +120,29 @@
 - OPEN TEST GAP: this session could not verify new context-menu keyboard focus, inline typing/paste, mobile layout or structured block save/reload in browser. Browser tool automatically rejected selecting localhost with a URL-security policy error (despite http being listed as allowed); respected the rejection without alternate UI surfaces or workarounds. Previous screenshots/checks predate this editor and are not evidence for it. No persisted automated editor/browser suite yet; these checks remain open alongside deployed two-user acceptance.
 - Release remains BLOCKED on Firebase provisioning; license/dependency release review unchanged. No secret or live data mutation performed.
 
-### FAILED — 2026-10-03: preview launch argument forwarding resolved
+### FAILED â€” 2026-10-03: preview launch argument forwarding resolved
 
 - PowerShell/npm forwarded `npm run dev -- --port 3000` as `next dev 3000`, treating the port as a directory. Launched the installed Next executable directly with the port option; server became ready and HTTP smoke check passed. No application build failure or machine setting change.
 
 
-### 2026-10-03 — Markdown shortcuts and embedded shared board
+### 2026-10-03 â€” Markdown shortcuts and embedded shared board
 
 - User requested hash-plus-space heading conversion, distinct H2 and broader Markdown support, Kanban inside notes, and lower agent usage. Worked with one agent and no delegation. Explained account-wide usage snapshot and official usage factors without inventing per-chat token attribution or claiming a pricing/model change.
 - Asked the data-model decision required by AGENTS.md; user explicitly chose embedding the existing workspace board over independent boards. Extracted one reusable WorkspaceBoard component for Board view and note blocks; cards, drag status changes, creation and task dialogs use the same live task data/trusted APIs. Removing a block/note leaves tasks intact.
-- Added exact typed shortcuts for H1–H6, bullets, ordered lists, task lists, quotes, code fences and dividers. Heading levels and task checked state persist directly; legacy heading blocks default to H1. Added slash commands/type controls and scrollable keyboard menu. Multiline Markdown paste retains source in a live rendered Markdown block.
+- Added exact typed shortcuts for H1â€“H6, bullets, ordered lists, task lists, quotes, code fences and dividers. Heading levels and task checked state persist directly; legacy heading blocks default to H1. Added slash commands/type controls and scrollable keyboard menu. Multiline Markdown paste retains source in a live rendered Markdown block.
 - Added CommonMark/GFM renderer for emphasis, strikethrough, inline/fenced code, lists, task lists, images, links, tables and footnotes. Raw HTML is not interpreted; unsafe URL protocols are rejected, safe external links isolate their opener, invalid image URLs render alt text. Structured headings/lists edit directly; complex Markdown retains editable source plus live preview.
 - Migration 003 documents additive block types and optional level/checked fields, compatible legacy reads, export/deletion and deploy/rollback expectations. Updated maintained TypeScript models and strict server field/type validation. No new table/index/rule, no live DB mutation or backfill. Clean emulator schemas/authorization verified: workspace/member/note/task/attachment access remains member-read/server-write, Storage default-deny. Embedded boards cannot name a foreign workspace.
 - Added exact dependencies react-markdown 10.1.0 and remark-gfm 4.0.1, both MIT, over extending ad-hoc regular expressions or enabling raw HTML. Registry license/version and upstream activity checked: react-markdown commit 2026-10-03; stable remark-gfm latest commit/release 2025-02-10 with issues updated 2026-04-23. Project license remains undecided; permissive dependency licenses recorded for its eventual license review. Lockfile updated; no major upgrade to existing dependencies. Runtime audit remains 2 moderate/0 high findings; full install audit remains 16 (unchanged release gate).
 - PASSED: 28 unit/tree/validation/actual-renderer cases, 8 rules suites, 21 trusted API cases (57 total), final lint/typecheck/optimized build and preview HTTP 200. New tests verify heading persistence, shortcut semantics, schema/legacy compatibility, real GFM rendering, unsafe HTML/URL handling, rich-block trusted persistence, outsider denial and preservation of tasks when removing an embed.
 - OPEN TEST GAP: live typing/caret/checkbox/drag/menu layout and embedded task dialog interactions are not browser-verified; previous browser policy rejection remains an unresolved verification limitation. Server rendering/security tests are not a substitute for that acceptance. Firebase provisioning, live two-user deployment, license, dependency review and browser automation remain open. No screenshot claimed for this new interface.
 
-### FAILED — 2026-10-03: verification output and cleanup rejection
+### FAILED â€” 2026-10-03: verification output and cleanup rejection
 
 - Importing maintained note types expanded the compiler's inferred root, which could leave old test entry paths pointing at stale generated output. Fixed explicit server compilation root and test imports; all suites now read the freshly emitted server files. Added actual renderer/security tests.
 - Automatic approval review rejected a proposed generated .test-build cleanup command as "blocked by policy". Did not delete or use alternate deletion methods; corrected compiler paths instead. Repository source/build remains valid and no partial migration remains.
 
 
-### 2026-10-03 — Small increment: recoverable block edits
+### 2026-10-03 â€” Small increment: recoverable block edits
 
 - User asked for a small/medium spec increment with limited remaining account usage. Added one focused editor improvement with no subagents, dependency, schema change, migration or backend changes.
 - Undo/Redo buttons and scoped Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y restore content, block type/metadata, deletion and ordering. Same-block typing within 750ms coalesces; structural actions create distinct checkpoints. Twenty checkpoints bound memory; new edits after undo discard redo.
@@ -152,18 +152,18 @@
 - OPEN TEST GAP: keyboard/caret and toolbar interactions remain unverified in browser, alongside earlier rich-editor/mobile/embedded-board acceptance. Prior browser policy restriction remains recorded; no new browser check or screenshot claimed. Firebase provisioning/license/dependency/deployed two-user gates unchanged.
 
 
-### 2026-10-03 — Small increment: Download Markdown
+### 2026-10-03 â€” Small increment: Download Markdown
 
 - Added note toolbar Download Markdown for the current title/content, including unsaved or conflicting drafts. Export does not save, alter dirty state or mutate workspace data.
 - Preserves heading levels, checklist states, Unicode, multiline quotes/code and Markdown. Portable .md filename strips forbidden path/device-name hazards; title is a single escaped heading. Board embeds are textual references; tasks/attachments/subnotes are not bundled. UI tooltip states export scope, failures retain drafts, temporary DOM/blob URLs are cleaned up.
 - Updated README/SPEC. No subagents, dependencies, schema/backend changes, migrations, exotic technology deviation, TODOs, secrets or live data mutation.
 - PASSED: 37 unit/tree/validation/renderer/history/export cases (3 new export regressions), final lint and optimized build including TypeScript. Unchanged 29 rules/API cases remain previously validated; no backend rerun needed. Browser download completion remains an open acceptance check alongside prior editor checks. Existing release gates unchanged.
 
-### FAILED — 2026-10-03: export handler placement corrected
+### FAILED â€” 2026-10-03: export handler placement corrected
 
 - First build caught download handler inserted into TaskDialog instead of Notes because both have save functions. Moved handler into Notes; final lint/build passed. No broken state remains.
 
-### 2026-10-03 — Small increment: search saved note content
+### 2026-10-03 â€” Small increment: search saved note content
 
 - Added workspace note search across saved titles and block text, with case-insensitive matching and normalized whitespace. Body matches show a bounded plain-text snippet; matching descendants retain their ancestor path even when collapsed. Accessible note names retain the title and associate the snippet as a description.
 - Search uses only notes already loaded for the active workspace. Unsaved drafts become searchable after Save; attachments and tasks inside board blocks are not indexed. Updated README/SPEC.
@@ -171,7 +171,7 @@
 - OPEN TEST GAP: live snippet layout and mobile search acceptance remain unverified in browser alongside earlier editor/download checks. Existing browser-policy limitation and Firebase/license/dependency/deployed two-user release gates remain unchanged.
 - No subagents, dependencies, schema/backend changes, migrations, exotic technology deviation, code TODOs, secrets or live data mutation.
 
-### 2026-10-03 — Small increment: duplicate blocks
+### 2026-10-03 â€” Small increment: duplicate blocks
 
 - Added Duplicate block to each block options menu. Inserts an independent copy immediately below, preserving text/type, heading level and checklist state; copying a board embeds the same shared workspace board without copying or mutating tasks. Copies remain drafts until Save and participate in existing Undo/Redo.
 - Existing editor commit guards enforce block count, per-block length and total text limits. Duplication disables during Save and at 1,000 blocks; rejected oversized copies leave the current draft intact. Updated README/SPEC.
@@ -179,15 +179,15 @@
 - OPEN TEST GAP: block menu interaction, focus and mobile layout remain unverified in browser alongside prior acceptance gaps. Existing Firebase provisioning blocker, license decision, dependency review and deployed two-user gates remain unchanged.
 - No subagents, dependencies, migrations, exotic technology deviation, code TODOs, secrets or live data changes.
 
-### 2026-10-04 — Real-time collaboration: architecture investigation
+### 2026-10-04 â€” Real-time collaboration: architecture investigation
 
 - User requested production-grade simultaneous editing, durability, deterministic ordering, reconnect recovery and adversarial tests. Read project state, AGENTS, current schema/editor/drafts, Firebase client/server/rules, existing emulator tests and CI before implementation.
 - Existing notes are revision-checked whole-array saves without block IDs; dirty drafts do not merge remote updates and survive navigation only in memory. Confirmed existing trusted API/member transactions and workspace listeners should be reused.
 - Evaluated transactional per-block conflicts against Yjs same-block text merging; presented both and proceeded with the recommended Yjs direction after user asked to continue. No dependency installed. Wrote .agentic/COLLABORATION-PLAN.md with data flow, proposed boundaries, structural-ordering/open capacity decisions, offline outbox, security/migration, presence alternatives and final-state/adversarial acceptance plan.
-- FAILED — investigation agent reached the account usage limit. Stopped the implementation agent immediately; it confirmed no file mutations. Application source, dependencies, schema and database remain unchanged. Full collaboration ticket is NOT implemented or complete; next is finalizing the shared model/ordering contract and building the pure synchronization harness when usage is available.
+- FAILED â€” investigation agent reached the account usage limit. Stopped the implementation agent immediately; it confirmed no file mutations. Application source, dependencies, schema and database remain unchanged. Full collaboration ticket is NOT implemented or complete; next is finalizing the shared model/ordering contract and building the pure synchronization harness when usage is available.
 - Documentation-only checkpoint: git diff --check passes. No runtime tests rerun because application code unchanged; previous 43 unit and 29 rules/API cases remain the last runtime verification. New synchronization, browser and deployed two-user checks do not yet exist or pass. Existing provisioning/license/dependency gates remain open.
 
-### 2026-10-04 — Bounded real-time collaboration implementation
+### 2026-10-04 â€” Bounded real-time collaboration implementation
 
 - Resumed after the user confirmed usage reset. Reused the existing Firebase/member-authorized trusted API, workspace note subscription, editor and materialized NoteContent. Parallel model/backend/editor implementation was explicitly authorized; primary agent implemented durable controller/storage and conducted integration/adversarial review.
 - Added Yjs incremental same-block text merging, stable UUIDs, permanent tombstones, deterministic fractional positions with disjoint UUID intervals, minimal move deltas and atomic format registers. Local actions and remote reconciliation have distinct origins; stale rendered actions produce intent against their captured CRDT baseline. Foreign document callbacks are fenced.
@@ -202,19 +202,19 @@
 - OPEN ACCEPTANCE GAP: authenticated two-browser typing/caret/IME/mobile and deployed two-user checks have not run. Existing URL-security browser restriction was respected without alternate UI workarounds. .env.local is absent; Firebase project provisioning remains blocked. No screenshot, live collaboration deployment or production-readiness claim. The complete ticket definition of done is NOT met until browser/deployed acceptance passes.
 - KNOWN LIMITS: small-team transactional checkpoints incur note-level contention; 64KB updates, 350KB binary checkpoints and 800KB combined JSON bound state/history, with no automatic compaction. Structural undo is unsupported. Concurrent textless-block conversion/typing can require explicit recovery. Browser storage clearing can lose unacknowledged work. These are documented limits, not silent shortcuts; no unrelated application rewrite.
 
-### FAILED — 2026-10-04: verification issues resolved
+### FAILED â€” 2026-10-04: verification issues resolved
 
 - Initial emulator launch repeated the known Windows/Corretto AF_UNIX startup failure; retried using the already documented process-only nonexistent socket-directory workaround. Final clean rules/API suite passed; no machine settings changed.
 - New acknowledgement/journal regression initially showed Retry waiting on an existing backoff timer. Retry now clears that timer; the full final 81-case suite passes, including acknowledgement followed by journal failure, invalid Undo rollback and durable shutdown.
 
-### 2026-10-04 — Commit and push workflow
+### 2026-10-04 â€” Commit and push workflow
 
 - User explicitly requested committing changes and pushing to the remote. Recorded the ongoing preference: commit coherent completed changes after relevant verification and push the current branch to origin without rewriting shared history.
 - Working tree was clean; collaboration implementation already committed as 14547d7. Preparing to push that implementation and this documentation checkpoint on codex/teamspace-application to origin.
 - Setup wizard remains a proposal, with guided setup versus automatic cloud provisioning awaiting a scope decision. No wizard implementation or authentication change was made.
 - Documentation-only checkpoint: git diff --check validation; application checks remain the previously recorded 121 passing tests, lint/typecheck/build. No runtime code changed. Existing Firebase provisioning and browser acceptance gates remain open.
 
-### 2026-10-04 — Guided setup iteration
+### 2026-10-04 â€” Guided setup iteration
 
 - User authorized choosing features and committing/pushing every iteration. Chose the proposed guided setup slice; automatic cloud provisioning remains out of scope and undecided. Previous implementation and workflow checkpoint were successfully pushed to origin/codex/teamspace-application through da1c1d2.
 - Added a local-preview floating setup button and five-step native modal guide with responsive navigation, heading focus, Escape close and trigger focus restoration. Closing/reopening retains the current step in mounted component state. Reserved page space for the floating action; mobile guide resets its scroll on navigation.
@@ -224,18 +224,18 @@
 - PASSED: all 81 unit/model/controller/store/editor-helper tests, lint, standalone typecheck, final optimized production build and git diff --check. Previously validated 9 rules/31 API cases unchanged; not rerun because this slice changes no server/access/schema behavior.
 - OPEN TEST GAP: no automated setup-dialog interaction suite or live keyboard/clipboard/mobile verification. Existing browser-tool restriction remains respected; compilation/tests do not substitute for browser acceptance. No new screenshot or production-readiness claim. Firebase provisioning, deployed two-user collaboration acceptance, repository license and dependency release review remain open.
 
-### FAILED — 2026-10-04: setup guide lint corrected
+### FAILED â€” 2026-10-04: setup guide lint corrected
 
 - Initial lint rejected three unescaped apostrophes in JSX prose. Corrected the text; final lint/typecheck/build pass. No broken state remains.
 
-### 2026-10-04 — OAuth setup and optional 2FA clarification
+### 2026-10-04 â€” OAuth setup and optional 2FA clarification
 
 - User clarified that setup means user OAuth login, while retaining 2FA as optional by default. Made Google OAuth provider enablement, authorized domains and actual sign-in verification the main Sign-in & workspace guide step; linked official Firebase instructions.
 - Moved authenticator guidance into a collapsed-by-default Optional 2FA section. Recorded opt-in policy in SPEC/README/Current Facts; no MFA requirement or pretend enablement toggle added. Enrollment/challenge implementation remains an explicit open feature, so app-level enrollment must stay disabled until supported and verified. Existing Google login and authorization behavior unchanged.
 - PASSED: 81 unit/model/controller/store/editor-helper tests, lint, standalone typecheck, optimized production build and git diff --check. No server/schema/rules changes; previously validated 40 rules/API cases not rerun. No additional test for reversible guide copy; browser keyboard/mobile/dialog verification remains an open gap under the recorded browser-tool restriction.
 - No dependency, migration, credential, live provider change or cloud provisioning. Previous guided setup iteration b9396f5 pushed successfully. This iteration will be committed/pushed per user preference; Firebase provisioning, deployed collaboration acceptance, licensing and dependency review gates remain open.
 
-### 2026-10-04 — Board deadline focus
+### 2026-10-04 â€” Board deadline focus
 
 - User requested continuing remaining requirements and authorized selecting features plus committing/pushing each iteration. Extended the existing due-date and reusable shared-board experience with All tasks, Overdue, Due today, Next 7 days and No due date filters. Focused filters exclude completed work; count/clear controls combine with existing search/assignee filters. Each board view owns its filter; neither tasks nor shared data change when filtering.
 - Main and note-embedded boards use the same component. Cards label Today/Overdue and include deadlines in accessible task names; date/footer content wraps on narrow cards. Equal task positions use a deterministic ID comparison for display without modifying stored positions.
@@ -245,7 +245,7 @@
 - OPEN TEST GAP: live filter selection, midnight/focus timer cleanup, screen-reader announcements and mobile/embedded board layout remain browser acceptance items under the existing browser-tool restriction; pure date tests do not verify DOM interaction. Firebase provisioning, deployed two-user acceptance, license/dependency release gates remain open. No production-readiness or screenshot claim.
 - Previous OAuth clarification iteration fb40e27 pushed successfully. Preparing this verified iteration for commit/push on codex/teamspace-application per user preference.
 
-### 2026-10-04 — Direct task actions and selective task saves
+### 2026-10-04 â€” Direct task actions and selective task saves
 
 - User invited convenience-focused design/UX improvements. Added a native keyboard/touch Status control to main and embedded board cards, outside the task-details button. Card opening and dragging remain available; pending moves disable status/drag for that card. Per-board in-flight guards prevent duplicate submissions, move acknowledgements have live announcements, and failures expose Retry move. Focus returns to the stable due-date control unless the user has focused another control.
 - Added a narrow client status action using the existing trusted PATCH endpoint, capturing the signed-in UID. Drag now uses the same status-only mutation rather than resending task snapshots. Reused existing member-authorized transactions and live task subscription; no server route or Firebase write permission changed. Board instances are keyed by workspace to fence pending feedback across navigation.
@@ -255,14 +255,14 @@
 - OPEN TEST GAP: direct status selection, pending/retry DOM behavior, drag from the revised card, focus restoration and mobile/embedded layout remain browser acceptance checks under the recorded tool restriction. Automated state/transaction tests do not verify those interactions. Deployed two-user collaboration, Firebase provisioning, license and dependency review gates remain open.
 - Previous deadline iteration 55f3cc9 pushed successfully. Preparing this verified iteration for commit/push on codex/teamspace-application per user preference.
 
-### 2026-10-04 — Page history investigation and pending policy choices
+### 2026-10-04 â€” Page history investigation and pending policy choices
 
 - User requested page history/restore first, commit it, then implement comments/mentions. Inspected saved-note/Yjs revision/generation data flow, shared subscriptions, recovery controller, trusted transactions, schema/rules/indexes and fenced recursive deletion. Previous direct-task iteration ac940f5 pushed successfully.
 - Wrote .agentic/PAGE-HISTORY-PLAN.md with immutable snapshots, transactional capture/restore, revision CAS, retry receipts, generation fencing/recovery, membership security, local preview, export/deletion and final-state tests. Retention and restore-location scope are material data/schema decisions; asked two native questions under AGENTS.md's ambiguity/retention rules. No answer received at this checkpoint; dependent implementation has not started.
 - Important recovery finding: current generation changes block the old controller and preserve pending work; restarting accepts a new generation only when the previous journal has no pending operations. History restore needs explicit clean-view reload and dirty-view recovery UX; resetting a generation alone would be incomplete.
 - Documentation-only planning checkpoint. Application/schema/dependencies unchanged; last runtime evidence remains 91 unit cases, 9 rules suites and 33 API cases, lint/typecheck/build. No history feature or comments implemented, no production-readiness claim, no secret or live database change. Next: receive policy choices, implement/test history, commit/push it, then proceed to comments/mentions.
 
-### 2026-10-04 — Page history and safe restore
+### 2026-10-04 â€” Page history and safe restore
 
 - Resumed after usage reset. User approved five-minute automatic checkpoints retained 30 days, permanent named versions, and title/content-only restore preserving parent, children, attachments and shared board tasks. Reused trusted member transactions, global revision CAS, Yjs generations, shared workspace subscriptions and browser recovery storage. Parallel backend/UI/review work was previously explicitly authorized.
 - Added atomic checkpoint capture during durable saves, bounded summary pagination and selected-version reads, permanent names with immutable revision identities, expiry enforcement before TTL cleanup, historical Markdown downloads and explicit restore confirmation. A reviewed revision never silently advances when remote props change; concurrent changes require Refresh review. Local preview mirrors behavior through atomic localStorage persistence with device-local labeling.
@@ -275,11 +275,11 @@
 - KNOWN LIMITS: only the latest device-local archived recovery is exposed for download; older copies remain stored without an archive-list UI. Other closed stale-generation journals can require additional recovery confirmations. Browser data clearing removes pending work/archives/local preview history. Named versions and permanent operation receipts grow until page deletion; full workspace/account export/deletion flows remain open product features as documented in the migration. No code TODO or technology deviation introduced.
 - Comments/mentions remain the next separate iteration after committing/pushing history. Required scope question opened: page/task conversations versus also individual block anchors. Answer pending; no comments schema/UI implemented while that material decision is unresolved.
 
-### FAILED — 2026-10-04: history verification corrections
+### FAILED â€” 2026-10-04: history verification corrections
 
 - Initial standalone typecheck detected nullable shared-cache handling in acknowledged restore reconciliation; scoped the captured cache before dereferencing it. Initial lint found intentionally omitted preview content reported as unused; made projection intent explicit. Final checks pass and no broken state remains.
 
-### 2026-10-04 — Page/task conversations and member mentions
+### 2026-10-04 â€” Page/task conversations and member mentions
 
 - User resolved the remaining scope choice: page/task conversations now, individual block comments later depending on client demand. Previous history iteration 44a26ea was committed and pushed successfully. Continued authorized parallel implementation/review, reusing trusted member APIs, active-entity subscriptions, existing plain CSS and browser recovery primitives.
 - Added one conversation to saved pages/tasks, live latest-50 message display, plain-text rendering, server-resolved @member chips, member picker with composer preview, author-only deletion, visible acknowledgment/retry states and Markdown conversation/draft downloads. Unsaved entities explain that saving is required first. Conversations survive page restores and are removed with their parent. Local preview has atomic browser persistence and honest device-local labeling.
@@ -292,11 +292,11 @@
 - KNOWN LIMITS: latest 50 messages only (older messages retained without pagination UI), immutable messages except deletion, and one active draft composer per account/entity across tabs. Mentions tag members here; no inbox/email/notification delivery. Full workspace export, moderation, block anchors and account-wide deletion remain later features. Browser draft recovery can outlive parent deletion/revocation until cleared or acknowledged, with download/copy recovery; clearing browser storage removes it. These limits are explicit in docs/migration rather than unfinished code shortcuts.
 - Preparing this verified iteration for commit/push to origin/codex/teamspace-application per the user's ongoing preference.
 
-### FAILED — 2026-10-04: conversation integration checks corrected
+### FAILED â€” 2026-10-04: conversation integration checks corrected
 
 - Initial lint caught render-time ref initialization; initialized draft state directly. Integration typecheck caught recovery callback attached to a native select rather than Conversation; moved it to the intended component. Scoped task risk state and removed unused accidental attachment state. Final lint/typecheck/build pass; no broken or partial migration remains.
 
-### 2026-10-04 — Deployment backend choice and classic email/password authentication
+### 2026-10-04 â€” Deployment backend choice and classic email/password authentication
 
 - Implemented the user's choices: one Firebase or Supabase backend per deployment and strict EMAIL_CONFIRMATION_REQUIRED configuration, default true. Email/password registration, login, reset, confirmation and resend now accompany optional Google OAuth. MFA remains optional and not implemented; no enrollment requirement was introduced. Setup guidance, README, SPEC and environment examples changed together.
 - Reused existing trusted business logic through a narrow document/storage port, preserving Yjs, idempotent receipts, history, conversations, generation fences and recovery. Firebase retains native transactions. Supabase uses epoch-checked reads and atomic RPC commits with bounded retries; a global commit lock deliberately favors correctness and maintainability over high-write throughput. Full workspace snapshots and global contention target small workspaces; pagination and partitioned epochs remain documented scale limits. No automatic cross-provider migration.
@@ -310,13 +310,13 @@
 - OPEN ACCEPTANCE GAP: full GoTrue/PostgREST/Storage stack, live email/SMTP delivery, OAuth callbacks, upload CORS and authenticated two-browser UX acceptance remain unverified. SQL tests use auth/storage fixture schemas and an RPC bridge, not live Supabase services. Existing browser tool security restriction remains respected. No production-readiness claim, production provisioning, secrets in the repo or unrelated rewrite.
 - Previous conversation iteration 70aad24 was pushed. Preparing this verified backend/authentication iteration for commit and push on codex/teamspace-application under the user's ongoing authorization.
 
-### FAILED — 2026-10-04: alternative-backend verification corrections
+### FAILED â€” 2026-10-04: alternative-backend verification corrections
 
 - Initial stack bootstrap compared an annotated tag object to a commit; corrected to the peeled pinned commit. Initial port/nullability and listener-refactor checks were repaired before the final passing builds.
 - PostgreSQL test bridge initially passed JSON null instead of SQL null; corrected the fixture bridge. A CRDT fixture referenced a legacy block identifier; corrected the fixture. All real database suites reran successfully; no half-migration remains.
 - Delegated agents encountered account usage limits; root completed implementation and verification. Automatic approval review rejected scoped generated-output cleanup; no alternate deletion was attempted, and generated outputs remain ignored. No shared history rewrite or browser-policy bypass.
 
-### 2026-10-04 — Shared task calendar and agenda
+### 2026-10-04 â€” Shared task calendar and agenda
 
 - User requested the next major feature. Read continuity/spec and the installed Next.js client-component guide; reported completed backend/auth milestone and existing configuration/license release gates. Proposed calendar using existing task deadlines, shared state and trusted task editor; no material schema/auth/retention decision or new technology was required. Previous backend iteration 71a9265 was pushed successfully.
 - Added Calendar workspace navigation, Monday-first month grid, selected-day task list, previous/next month and Today controls, month/agenda display, Show completed, overdue sections and undated task discovery. Existing workspace search and My tasks apply to the calendar. Task details reuse existing selective patches, attachments, conversations and error/recovery behavior; Add task for this day prefills its due date. No calendar interaction writes snapshots or introduces additional backend listeners.
@@ -326,7 +326,7 @@
 - OPEN TEST GAP: calendar click/keyboard focus, task-date creation/save/retry integration, mobile layout and authenticated two-user calendar acceptance are not browser-verified. Existing browser security-policy restriction remains respected. Pure date/state tests and successful compilation do not substitute for DOM acceptance. No deployed backend, screenshot or production-readiness claim.
 - Updated README/SPEC in the same iteration. No dependencies, migrations, secrets, code TODOs, exotic technology deviation or unrelated rewrite. Calendar uses current task deadlines only; recurring events, external calendar integrations and drag-to-reschedule are outside this iteration. Preparing verified changes for commit/push under ongoing user authorization.
 
-### 2026-10-04 — Direct workspace membership investigation; scope questions pending
+### 2026-10-04 â€” Direct workspace membership investigation; scope questions pending
 
 - User requested immediate development membership and production administrator addition without invitation-email acceptance. Inspected owner/membership authorization, create/redeem/remove transactions, both authentication providers, confirmation-policy guard, member UI and account workspace discovery.
 - Existing application has workspace owners but no deployment-wide administrator role. Existing grants bind provider UIDs; supporting future unregistered emails would require a separate pending-grant model and verified identity matching. Development auto-join is materially different from owner-initiated addition. Asked three native questions under AGENTS.md's explicit ambiguity/auth rules; no answers received at this checkpoint, so dependent implementation has not started.
@@ -334,13 +334,13 @@
 - Found a discovery requirement: the browser currently loads account workspaces at sign-in/create/join rather than observing later additions. Direct grants need an explicit refresh or guarded account-membership reconciliation so an already signed-in added user can discover access. Development auto-join must also define whether removal/leave is respected or undone on the next visit; finalize with the chosen mode before implementation.
 - Documentation-only planning checkpoint. Application, dependencies, authentication, schema and live data unchanged. git diff --check passes; no runtime tests rerun. Latest calendar iteration f172b9b is pushed, with 132 unit checks and lint/typecheck/build passing; last backend authorization/API/PostgreSQL evidence remains unchanged. NEXT: receive scope answers, propose final authorization/data flow, implement and test on both backends, then commit/push the feature.
 
-### 2026-10-04 — Workspace and root administrator roles selected
+### 2026-10-04 â€” Workspace and root administrator roles selected
 
 - User clarified that both workspace admins and root admins are required. Proposed workspace-scoped membership management, deployment-wide access administration, and retaining ownership transfer as a separate owner capability. Recommended root account IDs configured server-side to prevent self-promotion; asked root provisioning, development auto-join and future-registration scope questions before changing authentication/schema.
 - Reviewed current role model, owner authorization, membership reads and management UI. Current owner/member role union has no administrator implementation. Existing member-only SDK reads and denied writes must remain enforced; root access administration must not accidentally grant blanket content reads or permit workspace admins to promote themselves or alter owners/root authority.
 - Documentation-only checkpoint; no application, schema, live data or dependency mutation and no runtime tests rerun. git diff --check passes. Prior investigation c470b72 is pushed. Administrator implementation remains pending the material scope answers under AGENTS.md.
 
-### 2026-10-04 — Workspace/root administration and immediate membership
+### 2026-10-04 â€” Workspace/root administration and immediate membership
 
 - User resolved all material choices: root IDs configured server-side, all signed-in development users automatically join one configured test workspace, and admins directly add existing registered accounts only. Proposed authorization boundaries before implementation and preserved email-confirmation policy separately from invitation acceptance. Previous planning checkpoint bfb4c47 is pushed.
 - Added owner/admin/member workspace roles, owner/root promotion and demotion, workspace-admin invitations and ordinary-member removal, and a root access-management panel across workspaces. Only owners transfer ownership; administrators cannot demote owners or promote themselves. Root status is an exact server-only ROOT_ADMIN_UIDS allowlist, never account metadata or a client-supplied role. Root administration does not bypass membership for private content. No SDK write permission was relaxed.
@@ -353,11 +353,11 @@
 - OPEN ACCEPTANCE GAP: live Firebase/Supabase Auth directory resolution, production/root UI, focus/mobile, development sign-up and real two-user membership discovery remain unverified without configured providers/browser access. Existing browser-policy restriction remains respected. Added users discover access through explicit Refresh workspace list or sign-in; no background membership poll. Root lists explicitly cap at 1,000 and support known workspace IDs. Addition retry identity is form-local across Retry, not refresh; acknowledged membership/receipts remain durable. Full account/workspace export/deletion and live release gates remain open.
 - README/SPEC and both empty environment examples updated with deployment steps in this iteration. No TODO, dependency/license change or unrelated rewrite. Preparing verified changes for commit and push under ongoing user authorization.
 
-### FAILED — 2026-10-04: administration verification corrections
+### FAILED â€” 2026-10-04: administration verification corrections
 
 - Initial typecheck found Refresh workspace list returned rows where callers require void; made it a void action. Initial lint found a root-member effect dependency issue; used a stable loader and request-sequence guards. Final lint/typecheck/build pass, with no partial migration or broken application left behind.
 
-### 2026-10-04 — Self-hosted website PORT and tracked Supabase migrations
+### 2026-10-04 â€” Self-hosted website PORT and tracked Supabase migrations
 
 - Continued after workspace/root administration (391c586). User will provision the first live installation themselves; implemented setup tooling and configurable website PORT without touching a live database or starting the full Supabase stack.
 - Added a multi-stage production website image with standalone Next output, a pinned official Node 24 Alpine base and an unprivileged runtime user. Docker context excludes local credentials, Git history and provider volumes. Compose maps WEB_BIND_ADDRESS:PORT to internal website port 3000, defaulting to loopback:3000. Supabase API port remains independent.
@@ -368,7 +368,7 @@
 - PASSED: production Docker image build and temporary isolated website container HTTP smoke on a dynamically mapped loopback port; runtime UID 1000, homepage HTTP 200 and configured Supabase response. Temporary website/test database containers were cleaned up. This does not assert live Auth/Storage readiness; previous Firestore/rules evidence remains unchanged and was not rerun for this Docker/Supabase-only iteration.
 - Updated README, SPEC and migration documentation together with first-install backend/migrate/policy/web ordering, PORT/Auth URL configuration, private transport, backup cautions and existing-schema upgrade limitations. No new package, ad-hoc live schema change, force push or unrelated rewrite. Existing live two-user/full-stack acceptance, license and dependency review gates remain open.
 
-### 2026-10-04 — Self-hosted Supabase test setup configuration and stack recovery
+### 2026-10-04 â€” Self-hosted Supabase test setup configuration and stack recovery
 
 - Generated aligned test configuration across `.env` and `.env.supabase` (gitignored), eliminating variable precedence collisions in Docker Compose. Configured classic email/password authentication with `EMAIL_CONFIRMATION_REQUIRED=false` and `ENABLE_EMAIL_AUTOCONFIRM=true` for test operation without external SMTP delivery.
 - Resolved PostgreSQL internal role password synchronization across `authenticator`, `supabase_auth_admin`, `supabase_storage_admin`, `supabase_admin`, `supabase_functions_admin` and `postgres`.
@@ -378,7 +378,7 @@
 - Rebuilt website container with verified public anonymous key arguments. All 12 Supabase containers (`web`, `api-gw`, `db`, `auth`, `storage`, `rest`, `realtime`, `supavisor`, `meta`, `studio`, `edge-functions`, `imgproxy`) are running and passing health checks.
 - PASSED: all 138 unit/model/provider/storage cases, compose configuration validation, lint, and HTTP smoke tests (website HTTP 200, Auth health HTTP 200, Storage status HTTP 200, RPC state HTTP 200).
 
-### 2026-10-04 — Configurable domain name for invite links
+### 2026-10-04 â€” Configurable domain name for invite links
 
 - Added configurable domain name and base URL resolution for shareable workspace invite links instead of hardcoding browser loopback origin (`localhost`).
 - Added `src/lib/app-url.ts` providing URL and domain normalization (automatic scheme addition for bare domains/loopback, trailing slash cleanup) and layered resolution: `APP_URL`, `SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`, request headers (`x-forwarded-host`, `x-forwarded-proto`, `host`), or browser location origin.
@@ -386,7 +386,7 @@
 - Added `APP_URL` and `SITE_URL` to `docker.compose.supabase.yml` web service environment and documented in `.env.example`, `.env.supabase.example`, `SetupGuide.tsx`, `README.md`, and `SPEC.md`.
 - PASSED: 144 unit/model/provider/storage/app-url cases, Compose validation, standalone typecheck, lint, and optimized production build (`next build`).
 
-### 2026-10-04 — Notion board properties and linked blocks investigation
+### 2026-10-04 â€” Notion board properties and linked blocks investigation
 
 - User requested verifying and adding Notion-style custom board fields, linked blocks, options and dates. Read the complete continuity record, AGENTS.md, current task/block models, editor command surface, collaboration format validation and existing spec. Working tree was clean at investigation start (4ed4152).
 - Verified official Notion documentation: boards group database pages by properties and support custom fields; Select and Multi-select store configurable options; Date supports dates/ranges and optional time. Linked database views share underlying records with independent filters/views. Synced blocks reuse content across locations and propagate edits, subject to source access. Sources: https://www.notion.com/help/boards ; https://www.notion.com/help/database-properties ; https://www.notion.com/help/guides/using-linked-databases ; https://www.notion.com/help/synced-blocks .
@@ -395,7 +395,7 @@
 - Proposed reuse: trusted member-authorized transactions and both provider ports; stable property/option identities and selective task patches; same-workspace content references and existing Yjs recovery, with explicit missing-source/cycle handling. Detailed migration/export/deletion and history behavior must follow the selected scope before implementation. No auth policy or retention change is authorized by inference.
 - Corrected the outdated provisioning release-gate summary to reflect the later local Supabase setup log; no fresh live-stack check or production-readiness claim. Documentation-only checkpoint: application/schema/dependencies/live data unchanged; no runtime tests rerun. Existing browser/two-user acceptance, license and dependency review gates remain open. NEXT: receive scope choices, implement and verify selected features, document migrations and README/SPEC changes, then commit/push completed implementation.
 
-### 2026-10-04 — Custom properties on the existing shared board
+### 2026-10-04 â€” Custom properties on the existing shared board
 
 - User selected extending the existing workspace board with named text/select/multi-select/date fields. Implemented this authorized slice while the separate linked-block question remains pending. No multiple-database architecture or synced-content reference model was chosen by inference. Existing `/kanban` embeds continue to share the workspace tasks and now also share custom fields.
 - Added Properties management on main/embedded boards, task-detail field controls, populated card summaries and saved board JSON download. Select options and property names can be added/renamed; stable UUIDs preserve values across renames. Bounded to 32 fields, 50 options per field and 2,000 characters per text value. Existing field types/options cannot be removed in this iteration; date ranges/times/reminders and grouping/calendar views by custom fields remain outside this slice. Built-in Due date continues to drive the calendar.
@@ -406,12 +406,12 @@
 - OPEN ACCEPTANCE GAP: custom-property dialog/keyboard/checkbox/date-picker/export/mobile and authenticated two-user UI behavior are not browser-verified. Existing browser security restriction remains respected; pure/real-database tests and compilation do not replace DOM acceptance. Migration 009 has not been applied to the configured local/live stack and the running website has not been redeployed. License/dependency review and live acceptance gates remain open.
 - Updated README/SPEC and continuity facts. No subagents, new dependency, exotic technology deviation, code TODO, secret or unrelated rewrite. Preparing verified changes for commit/push on codex/teamspace-application under ongoing authorization. NEXT: receive linked-board-view versus synced-content versus both answer, then implement the selected linking behavior.
 
-### FAILED — 2026-10-04: targeted emulator command quoting corrected
+### FAILED â€” 2026-10-04: targeted emulator command quoting corrected
 
 - PowerShell/Firebase CLI split a test-name pattern containing spaces and rejected the targeted command with Too many arguments before tests launched. Replaced spaces with regex dots in the pattern; the targeted real Firestore concurrency regression passed and emulator shut down. Application and schema remained valid throughout.
 
 
-### 2026-10-04 — Linked board views and synced content
+### 2026-10-04 â€” Linked board views and synced content
 
 - Continued from pushed custom-board-field iteration 0f0290c. User explicitly resolved the pending linking question: implement both linked board views and synced editable content. Reused the previously verified official Notion feature research, existing shared board, saved-note identities and collaboration infrastructure. Read the installed Next.js client-component guide before coding. No subagents or inferred multiple-database/auth/retention scope.
 - Added per-board-block saved name, search, status/assignee/deadline filters and position/title/deadline sorting. Current viewer resolves against the reader; legacy embeds keep default behavior. Settings use the existing atomic Yjs format register and stale-dialog checks. Tasks remain shared and removing/duplicating an embed never deletes/copies task data.
@@ -424,13 +424,13 @@
 - OPEN ACCEPTANCE GAP: source-picker/settings dialogs, focus, IME/Undo/recovery/navigation/source removal, mobile layouts, exports and authenticated two-user UI behavior are not browser-verified. The existing browser security-policy restriction remains respected; database/pure tests and compilation do not replace DOM acceptance. The configured local/live website has not been redeployed, and prior migration 009 still needs applying there. License, dependency review and broader live-release gates remain open.
 - Updated README/SPEC and continuity facts in the same iteration. No new dependency, exotic technology deviation, code TODO, secret, unrelated rewrite or shared-history rewrite. Preparing completed changes for commit/push on codex/teamspace-application under ongoing authorization. NEXT: browser/two-user acceptance and administrator deployment of current application/migration 009, or user-selected next feature.
 
-### FAILED — 2026-10-04: linked-content verification corrections
+### FAILED â€” 2026-10-04: linked-content verification corrections
 
 - Initial typecheck found an overly narrow source status type and incorrect MarkdownText prop usage; corrected both. Initial lint flagged renderBoard callbacks capturing editor refs; moved invocation into a small component. Unused fixture destructuring warnings were removed. All final checks pass.
 - A temporary test-script edit was immediately restored from HEAD with only the new test file appended; the complete original suite and new cases ran successfully afterward. No reduced test command remains committed.
 - Running standalone typecheck concurrently with next build raced generated .next/types removal and reported missing generated declarations. Repeated typecheck sequentially after build; it passes. No source/type error or partial migration remains.
 
-### 2026-10-04 — Shared task table
+### 2026-10-04 â€” Shared task table
 
 - User requested continuing project work. Read continuity and current spec, reported the completed linked-content iteration 6b54232 and existing browser/deployment/license gates. Initially offered optional next-focus choices; the continuity record confirms prior explicit authorization to choose features and commit/push each iteration. Continued with the recommended task table under that authorization; no new material schema/library/auth/retention decision was needed.
 - Added Table workspace navigation, task/custom-field columns, status/deadline filters, column visibility, local reset and sort/result announcements. Workspace search/My tasks combine with table filters. Task titles open the existing selective-patch editor; Add task, custom property management and board JSON export reuse current controls. The same task subscriptions serve Board, Calendar and Table; no additional read/write channel or copied records.
@@ -441,7 +441,7 @@
 - OPEN ACCEPTANCE GAP: table navigation/dialog opening, sort/column/filter keyboard interaction, focus, long-text/mobile scrolling and real two-user live changes are not browser-verified. Existing browser security restriction remains respected; pure tests and compilation do not replace DOM acceptance. Prior migration 009/local website redeployment, license/dependency review and broader live acceptance remain open.
 - Preparing this verified iteration for commit/push on codex/teamspace-application under ongoing user authorization. NEXT: administrator deployment/browser acceptance or a user-selected feature; optional next-focus question may still receive steering.
 
-### 2026-10-04 — Local recovery archive browser and specification work queue
+### 2026-10-04 â€” Local recovery archive browser and specification work queue
 
 - User requested advancing other tickets/specification requirements. Continued from pushed Table iteration 6bf6671; reviewed continuity/spec and existing open recovery limitations under ongoing authorization to choose/commit/push iterations. Selected the documented gap that older archived generations remain stored but only the newest is downloadable. Read the installed Next.js client-component guide before editing. No new auth, retention or schema decision was introduced.
 - Added Local recovery archives to configured saved notes and linked-source recovery panels. Native dialog lists dated generation/pending-count metadata newest first, individual Markdown downloads, Refresh and Load older archives. Current note title labels exported archived content; journals never stored historical titles, so no title-history claim. Focus/Escape restoration and guarded asynchronous loading/downloads follow existing UI conventions.
@@ -453,11 +453,11 @@
 - OPEN ACCEPTANCE GAP: dialog focus/Escape, paging/refresh during two-tab archival, actual Markdown downloads, closing/navigating during reads, linked-source recovery and mobile layout remain unverified in browser under the existing security-policy restriction. No screenshot or deployed/two-user readiness claim. Clearing browser data still removes local archives; server/account/workspace export/deletion remains separately scoped. Prior migration 009/live redeployment, license/dependency and release gates remain open.
 - Preparing verified changes for commit/push on codex/teamspace-application. NEXT: work through .agentic/WORK-QUEUE.md; browser/deployment acceptance and remote CI evidence precede a production-release claim.
 
-### FAILED — 2026-10-04: archive browser initial-read lint correction
+### FAILED â€” 2026-10-04: archive browser initial-read lint correction
 
 - Initial lint flagged the dialog effect calling its stateful asynchronous loader. Initialize loading state directly and start the first external read in a lifetime-guarded microtask; event-triggered refresh/paging sets its own loading state. Final lint/typecheck/build and the full unit suite pass. No partial migration or broken application remains.
 
-### 2026-10-04 — Remote CI evidence and dependency release review
+### 2026-10-04 â€” Remote CI evidence and dependency release review
 
 - Continued from pushed recovery archive implementation 9784c4b under authorization to choose and commit/push completed iterations. Selected work-queue tickets R4/R5; application code, schema, dependencies, live installation and host runtime remain unchanged.
 - Verified public GitHub Actions run https://github.com/mihastele/teamspace-compact/actions/runs/37223851701 for exact application commit 9784c4bd58f50bacc591614e55ea9d1cfa72a191. Every verify-job step succeeded: clean install, lint/typecheck, unit suite, Firestore/Storage rules and trusted API tests, isolated PostgreSQL suite, Supabase setup/Compose checks, runtime audit gate and production build. Used read-only public GitHub API because gh is unavailable. Closed R4 for that application commit; no claim about later commits or live deployment.
@@ -466,7 +466,7 @@
 - Updated README, current release summary and work queue; prior log entries preserved. Documentation-only verification: diff check passed, refreshed audits and exact remote CI job evidence inspected. No application tests rerun locally for documentation-only changes; current application evidence remains 165 unit + 13 rules + 57 Firestore API + 21 PostgreSQL checks, now independently confirmed by remote CI. Browser/two-user acceptance remains unverified under the recorded browser security restriction.
 - No new dependency, migration, exotic technology deviation, code TODO, secret, auth/retention change or deployment. Preparing this completed review iteration for commit/push. NEXT: receive the Node tooling decision and perform the approved dependency update; browser/deployment/license/export-policy tickets retain their explicit gates.
 
-### 2026-10-17 — Local browser acceptance and mobile navigation overflow
+### 2026-10-17 â€” Local browser acceptance and mobile navigation overflow
 
 - Continued from clean fbb6648 under ongoing authorization to select, commit and push completed iterations. Reported the implemented milestones and outstanding Node-support/license/deployment decisions. Selected R2 local browser acceptance without inferring approval for dependency/runtime upgrades, live migrations or policy changes.
 - Started the installed Next development preview on loopback port 3000. Current in-app browser access worked after initial compilation; no security bypass or alternate browser automation was used. Verified local preview labeling; no authenticated backend or live installation was exercised.
@@ -476,15 +476,15 @@
 - PASSED: all 165 unit/model/controller/store/editor/provider cases, lint without warnings, optimized production build, sequential standalone typecheck and diff check. Server/API/schema/rules/storage unchanged; prior 13 rules suites, 57 Firestore API and 21 PostgreSQL cases remain the last backend evidence and were not rerun. Remote CI for this CSS iteration remains pending; old CI evidence applies only to its recorded commit.
 - No new dependency, migration, exotic technology deviation, code TODO, secret, auth/retention change, live deployment or history rewrite. Preparing verified changes for commit/push on codex/teamspace-application. NEXT: continue remaining browser acceptance; obtain the Node tooling decision before dependency remediation and retain administrator deployment/license/export-policy gates.
 
-### FAILED — 2026-10-17: browser startup and selector attempts resolved
+### FAILED â€” 2026-10-17: browser startup and selector attempts resolved
 
 - Initial browser navigation preceded server startup and returned connection refused; tab binding to its generated data URL was policy-denied and not bypassed. A new navigation to the original localhost URL during compilation timed out, as did focus emulation. After HTTP 200, inventory identified the same loaded tab and normal binding/interaction succeeded.
 - A Status label selector matched a hidden column checkbox instead of the status select; inspected current DOM and selected the observed Status combobox explicitly. All subsequent filter assertions passed. No application or migration failure remains.
 
-### 2026-10-17 — Agentic projects/tickets proposal: repository audit and plan
+### 2026-10-17 â€” Agentic projects/tickets proposal: repository audit and plan
 
 - User supplied a detailed agentic project/ticket specification and requested assessing it before implementation. Audited models/validation/trusted dispatcher/framework route, both storage adapters, SQL/rules, client subscriptions, task/block/field/view UI, comments/attachments/history/recovery, Compose/scripts and CI/tests against the supplied requirements.
-- Wrote .agentic/AGENTIC-TICKETS-AUDIT.md with exists/partially exists/missing classification for every requested area, concrete models/paths/endpoints/components, reuse boundaries and six ordered milestones covering service extraction, canonical Projects/Tasks and normalized custom fields, shared query/saved-view contracts, durable read-only agent, confirmed writes and full-stack acceptance. Proposed migrations 011–015 are plans only; no migration files were created/applied.
+- Wrote .agentic/AGENTIC-TICKETS-AUDIT.md with exists/partially exists/missing classification for every requested area, concrete models/paths/endpoints/components, reuse boundaries and six ordered milestones covering service extraction, canonical Projects/Tasks and normalized custom fields, shared query/saved-view contracts, durable read-only agent, confirmed writes and full-stack acceptance. Proposed migrations 011â€“015 are plans only; no migration files were created/applied.
 - Main findings: Tasks/board/table/calendar and four workspace custom-field types already exist; stable option UUIDs must be retained. Embedded JSON options/values do not meet normalized-field requirements. Projects, reusable workspace saved views, nested AND/OR/custom-field filters, agent/tool confirmation/audit/worker/queue are missing. Existing note CRDT journals/history checkpoints cannot be represented as worker durability. The ticket specifies custom fields, not arbitrary executable block plugins or external SaaS integrations.
 - Found a static route wiring defect: client.ts sends PUT for boardProperties and api.ts dispatches PUT, but src/app/api/[...path]/route.ts does not export PUT. Existing trusted API tests bypass that framework boundary. Recorded repair plus route-boundary regression as first implementation work. An unauthenticated local HTTP probe returned 404 and did not independently establish the configured-deployment response; no successful end-to-end field-save claim was made.
 - Highlighted additional contract gaps: task create has no idempotency, task updates lack reviewed-revision CAS, full snapshots/global epoch are insufficient for indexed composable queries, existing week filter differs from ticket wording, audit data needs explicit retention/export/deletion and permission rules. Proposed preserving Task IDs/comments/attachments, using one canonical data source after migration and adapting snapshots/invalidation; no parallel Ticket schema or blind dual writes.
@@ -492,7 +492,7 @@
 - Documentation-only verification: git diff --check passed; source/route contracts inspected. No runtime suite rerun because application code is unchanged. Prior 165 unit tests, lint/typecheck/build and partial local browser acceptance remain the latest local baseline; backend/live acceptance gaps remain open. No new dependency, technology implementation deviation, code TODO, secret, live mutation or deployment. Updated work queue/open decisions; preparing audit/plan for commit/push under ongoing workflow authorization.
 
 
-### 2026-10-17 — Agentic tickets M1a: route repair and shared service foundation
+### 2026-10-17 â€” Agentic tickets M1a: route repair and shared service foundation
 
 - User accepted the recommended expansion after the audit. Recorded PostgreSQL-focused new-feature scope with existing Firebase functionality retained, current Next web/API plus a planned separate worker. Started the first implementation slice. Asked structured policy questions on configurable 30-day agent audits and reversible Project archiving before dependent migrations; no answer was inferred from the recommended/preselected options.
 - Read the installed Next route-handler guide before editing. Fixed missing PUT export on src/app/api/[...path]/route.ts so configured custom-field saves reach existing server validation/authorization. Added actual route-source forwarding/async-params tests and routed both real-database API harnesses through that entry file, replacing their dispatcher-only entry while retaining fixture authentication.
@@ -504,7 +504,7 @@
 - OPEN: M1b task-create idempotency/reviewed revision updates and indexed query contracts; M2 canonical Projects/normalized fields, M3 reusable composable views and M4/M5 agent/worker/confirmation/audit remain unimplemented. This slice is not completion of the full ticket. No new live authenticated custom-property-save/browser/two-user claim; full-stack and license/dependency gates remain open. Remote CI for this application commit is pending. Preparing verified M1a changes for commit/push under ongoing authorization; dependent project/audit storage work awaits the pending lifecycle answers.
 
 
-### 2026-10-17 � Approved lifecycle policies and M1b task mutation durability
+### 2026-10-17 — Approved lifecycle policies and M1b task mutation durability
 
 - User explicitly selected configurable 30-day default retention for full agent prompts/outputs/before-after content, initiating-user/workspace-administrator access, authorized exports and workspace deletion cleanup. User also approved inherited workspace Project access and reversible archiving that preserves linked tickets while rejecting new assignments. Updated Current Facts, open decisions and implementation/work queue; these policies remain future Project/agent implementation requirements, not claims of a deployed retention worker or Project UI.
 - Added optional operationId to Task POST/PATCH and expectedRevision to PATCH, validated separately from editable fields. Canonical payload hashes bind mutation kind, target, reviewed revision and validated input, normalizing object-key order while preserving arrays. Actor/workspace-scoped private receipts and task writes commit together. Deterministic create IDs plus transaction checks converge duplicate delivery once; same ID with changed target/kind/content conflicts. Replays reauthorize membership and return current content without undoing later edits or advancing timestamps/revisions.
@@ -514,7 +514,7 @@
 - PASSED final: 168 unit/model/controller/store/editor/provider/validation cases, 13 authorization rules suites, 66 real Firestore API cases, 30 real PostgreSQL cases and 1 built-production HTTP route case (278 checks); lint without warnings, optimized build, sequential standalone typecheck, diff check. Seven new shared integration cases per backend cover concurrent/reordered retry delivery, stale review races, timestamp invariance, current-state replay, payload/target/kind/actor binding, deletion/revocation, rejected input reuse, minimal receipts and administrative revision invalidation. One new unit case covers control-field validation, immutability and create/update distinctions. Final emulators and isolated SQL containers shut down normally.
 - README and implementation progress describe the API contracts and their limits. The existing task form has not adopted durable request packets or reviewed-write UI; this is server groundwork, not browser-refresh task recovery or a complete agent feature. Indexed queries, canonical PostgreSQL Projects/fields, composable saved views, worker, tool confirmation/audit UI and full-stack acceptance remain ahead. Existing browser/deployment/license/dependency release gates remain open; no new dependency, exotic technology deviation, code TODO, credential, live installation mutation or shared-history rewrite. Preparing this verified stage for commit/push; next is the canonical PostgreSQL schema/migration work under the approved lifecycle policies.
 
-### FAILED � 2026-10-17: task durability Firestore compatibility and targeted command repaired
+### FAILED — 2026-10-17: task durability Firestore compatibility and targeted command repaired
 
 - Initial full Firestore run passed 64/66 API cases but legacy task creates returned 500 because the new create branch passed explicit undefined to CollectionReference.doc; Firestore treats doc(undefined) differently from doc(), while the Supabase adapter generated an ID for either. Restored the explicit no-argument legacy branch. Recompiled and reran all 168 unit cases and the entire clean Firestore/rules suite: 66/66 API and 13/13 rules pass. Final build/HTTP/typecheck/lint pass; no broken application remains.
 - A targeted emulator rerun used a pipe-delimited test-name regex without nested shell quoting; the emulator shell interpreted it as a pipeline and rejected the command before test execution. Replaced it with the single task pattern to isolate the legacy-create failure, then ran the final whole suite. No application state or migration was changed by the command failure. Diagnostic output is gitignored under .agentic/verification/task-durability-*.log.
@@ -563,7 +563,7 @@
 - Initial lint reported unstable/missing callback dependencies and one unused fixture import. Corrected callback captures/dependencies and import; final lint passes without warnings. The one documented initial-view schema effect intentionally excludes later schema array replacements so they cannot reset drafts; separate schema-signature invalidation handles query refresh.
 
 
-### 2026-10-17 — Agentic M4a: bounded provider and authorized read/proposal tools
+### 2026-10-17 â€” Agentic M4a: bounded provider and authorized read/proposal tools
 
 - Continued from completed M3. Implemented internal server-only `agent-provider.ts` and `agent-tools.ts`; no agent route, UI, queue, audit table or background worker is exposed yet. M4 remains IN PROGRESS rather than complete.
 - Provider uses native fetch and the official documented Chat Completions function-calling protocol for the approved hosted/local compatibility requirement. Explicit model/API root, disabled default, PostgreSQL gate, runtime key, explicit plain-HTTP opt-in, bounded completion tokens, 30-second deadline/cancellation, no redirects, byte-bounded requests/responses/arguments and closed read/proposal tool-name allowlist. Validates history/call correlation, duplicate IDs, object JSON arguments and finish reasons; refuses writes, malformed/truncated/oversized output. Returns selected visible text/calls/numeric usage only; excludes provider-specific reasoning/metadata and raw error bodies. Sanitized typed failures distinguish cancellation and retry categories; no implicit retry or paid call.
@@ -571,15 +571,15 @@
 - Catalog gives bounded exact-name Project/member discovery, field/type/operator summaries and one field's options; substring Project discovery is not implemented. Ticket/summary pages cap at 20 with explicit truncation, cursor bounds and observed-only counts, not totals or invented blockers. Details bound comments/custom-value excerpts. Proposals reuse typed task/custom-field validation and current Project/member/scope/option checks, return saved=false, and never mutate workspace content. Query rate-limit metadata still uses the existing service.
 - No schema change or new data table; maintained TypeScript provider/tool contracts added. Existing membership, policy, RLS and export/deletion behavior reused; approved configurable 30-day agent audit access/retention/export/workspace deletion still awaits M4b and has not been claimed as implemented. No live database, model request, credentials, dependency addition, deployment or UI change. Native fetch and existing services are boring technology; compatibility protocol choice documented in AGENT-PROVIDER.md with official sources. README and implementation status updated. CI timeout raised from 15 to 25 minutes for the additional isolated PostgreSQL cases.
 - PASSED: 203 unit/model/protocol tests including 22 provider cases, 40 existing PostgreSQL cases plus all seven final agent-tool cases, 1 built production HTTP smoke, lint without warnings, standalone typecheck and optimized build. Broad PostgreSQL run initially passed 45/46 with the comment-status fixture mismatch below; final targeted agent run passed 7/7 on final compiled tool code (including the new pagination case), so all 47 distinct PostgreSQL cases are covered. Provider tests use synthetic fetch fixtures and owned loopback HTTP servers, including redirect non-forwarding and cancellation; database tests use owned credential-free isolated PostgreSQL containers. Local logs are gitignored under .agentic/verification/m4-foundation-*.log. Firebase emulator suites were not rerun because no Firebase/runtime route changed; their M3 results remain historical evidence, not a new run.
-- OPEN TEST/IMPLEMENTATION GAPS: no durable run/checkpoint/provenance/event persistence, account reauthentication/leases/retries/quotas/cancellation API, audit RLS/retention/prune/export/deletion tests, worker build/health/Compose wiring, run/proposal UI or live model/two-user acceptance. No TODO or shortcut is being hidden behind an exposed feature. NEXT — M4b numbered durable queue/audit migration and fenced worker lifecycle before exposing provider calls; M5 approval-bound writes remain separate.
+- OPEN TEST/IMPLEMENTATION GAPS: no durable run/checkpoint/provenance/event persistence, account reauthentication/leases/retries/quotas/cancellation API, audit RLS/retention/prune/export/deletion tests, worker build/health/Compose wiring, run/proposal UI or live model/two-user acceptance. No TODO or shortcut is being hidden behind an exposed feature. NEXT â€” M4b numbered durable queue/audit migration and fenced worker lifecycle before exposing provider calls; M5 approval-bound writes remain separate.
 
-### FAILED — 2026-10-17: M4a verification issues corrected
+### FAILED â€” 2026-10-17: M4a verification issues corrected
 
 - Initial standalone TypeScript compile found control-flow narrowing lost through an inferred arrow throw helper and unknown JSON fields. Replaced it with an explicit never-returning function declaration and explicit field guards; final compile/typecheck/build pass. Test execution after that initial compile used emitted JavaScript and was not treated as a successful TypeScript check.
 - Initial broad PostgreSQL run's new comment fixture incorrectly expected HTTP 201; the existing comment API returns 200. Corrected the assertion without changing application behavior. An added archived-option test then omitted archived=false when restoring the option; the existing API correctly preserves archival on omission, so the later proposal correctly remained rejected. Corrected the fixture to request restoration explicitly. Final targeted agent run passed all seven cases, including actual comment/value excerpts, live option archival, published-policy changes, membership revocation and live pagination. No application workaround, migration or reverted user change.
 
 
-### 2026-10-17 — Agentic M4b: private durable queue and audit lifecycle
+### 2026-10-17 â€” Agentic M4b: private durable queue and audit lifecycle
 
 - Continued from committed/pushed M4a (1b90f6b). Added migration 014 with three private tables: teamspace_agent_runs (prompt/context/checkpoint/result/lease/expiry), teamspace_agent_events (bounded ordered full-content payloads), teamspace_agent_requests (minimal workspace-lifetime retry receipts without prompt/output). This is internal storage, not a completed/exposed agent. No producer route, model call, worker or run UI starts automatically.
 - Creation reauthorizes actual Auth account/workspace/membership/published policy; binds operation UUID to canonical JSONB prompt/context digest, serializes per-workspace creation, enforces 5 active runs/user, 20/workspace and 10 accepted creates/user/workspace/minute. Replays converge once and return current status; changed payloads conflict; expired/pruned identities cannot resurrect. Selected same-workspace saved-note/Project references are checked; archived Projects remain valid read-only context. No source content is auto-expanded.
@@ -587,24 +587,24 @@
 - Every queue operation locks document state SHARE before run rows; ordinary document changes use UPDATE first, preventing deletion lock inversion. Queue-only updates never advance the document epoch. Worker payload/checkpoint/result/event limits reserve room for system recovery/cancel/failure events; generic checkpoint version 1 still needs the future engine's semantic message/provenance/phase validation. No task/comment/Project mutation capability was added.
 - RLS confirmed ENABLED on all three affected tables. Run/event reads are limited to the currently authorized initiating user or workspace owner/admin and disappear after expiry. Column grants exclude fence/worker/checkpoint details from ordinary authenticated reads; explicit authorized export includes checkpoint without lease keys. Receipts and internal helpers are SDK-private. Both authenticated/service-role direct table writes are denied; only the trusted service RPC owns queue mutations. No private agent rows were added to compatibility snapshots or Realtime publication.
 - Implemented authorized full run/event/checkpoint export plus bounded keyset minimal-receipt export, including receipts whose content already expired. Workspace-root deletion cascades all three tables; no Auth-user FK blocks account deletion or erases the admins' audit history prematurely. Existing full workspace/account export/deletion UI remains an earlier acceptance gap; these new exports are internal client methods, not newly exposed download buttons.
-- Approved content retention now has a server-only AGENT_AUDIT_RETENTION_DAYS setting (1–365, default 30), fixed on new runs only. RLS/service reads hide content immediately at expiry. The existing operator-scheduled prune script now deletes expired run/events in batches of 500, bounded to 100 batches/invocation; minimal retry receipts remain until workspace deletion and are separately exportable. Physical cleanup resumes when the scheduled script runs; no scheduler or worker was silently installed. Migration 014 must precede updated cleanup deployment, documented in README/migration guide. Compose passes retention at runtime only; a synthetic override/config check passed without starting services or printing configuration.
+- Approved content retention now has a server-only AGENT_AUDIT_RETENTION_DAYS setting (1â€“365, default 30), fixed on new runs only. RLS/service reads hide content immediately at expiry. The existing operator-scheduled prune script now deletes expired run/events in batches of 500, bounded to 100 batches/invocation; minimal retry receipts remain until workspace deletion and are separately exportable. Physical cleanup resumes when the scheduled script runs; no scheduler or worker was silently installed. Migration 014 must precede updated cleanup deployment, documented in README/migration guide. Compose passes retention at runtime only; a synthetic override/config check passed without starting services or printing configuration.
 - Added maintained TypeScript run/lease/checkpoint/event/receipt/export models and a validated client, lazily available through supabaseAdmin().agentQueue(required). The project has no ORM/schema generator; maintained models were compiled/typechecked. Selected DTO fields prevent widened RPC responses from leaking lease or internal metadata; errors remain stable/sanitized. Existing web/Firebase callers do not need agent settings/migration merely to construct their normal backend.
-- PASSED: 209 unit/model/protocol cases (6 new queue client/configuration/DTO cases), all 59 PostgreSQL cases (12 new queue cases), final fresh-schema 12/12 queue rerun, 2/2 DTO/export rerun, 2/2 clean/populated migration rerun, 1 built-production HTTP smoke, lint without warnings, optimized build, sequential standalone typecheck, Compose config and diff checks. Repeated targeted checks are not additional distinct tests. The tracked runner now applies six SQL migrations; clean concurrent/idempotent/checksum/permission tests and populated 013→014 preservation pass. Fixtures are isolated owned PostgreSQL with synthetic accounts and SQL RPC bridges, not live GoTrue/PostgREST/provider acceptance. Containers stopped normally. Logs at gitignored .agentic/verification/m4b-*.
+- PASSED: 209 unit/model/protocol cases (6 new queue client/configuration/DTO cases), all 59 PostgreSQL cases (12 new queue cases), final fresh-schema 12/12 queue rerun, 2/2 DTO/export rerun, 2/2 clean/populated migration rerun, 1 built-production HTTP smoke, lint without warnings, optimized build, sequential standalone typecheck, Compose config and diff checks. Repeated targeted checks are not additional distinct tests. The tracked runner now applies six SQL migrations; clean concurrent/idempotent/checksum/permission tests and populated 013â†’014 preservation pass. Fixtures are isolated owned PostgreSQL with synthetic accounts and SQL RPC bridges, not live GoTrue/PostgREST/provider acceptance. Containers stopped normally. Logs at gitignored .agentic/verification/m4b-*.
 - No new dependency, exotic technology deviation, secret, paid/live model call, live migration/deployment, browser UI change or history rewrite. PostgreSQL native queue/locks and existing Supabase/native tools were chosen. README, empty environment example, runtime Compose config, migration guide, provider/implementation docs and work queue updated together. Firebase rules/API emulators were not rerun: runtime routes/Firestore behavior unchanged; their prior M3 results remain historical evidence only.
-- NEXT — M4c: bounded engine with atomic pre-call/result checkpoints/events, persisted/restored scoped provenance and message/phase validation; account refresh/abort/retry integration; standalone worker build with source server-only marker handled safely, health/graceful shutdown/startup-periodic prune and optional Compose profile; run API/UI and authorized export downloads. Fake-provider end-to-end/restart/lease/retention races and later live/two-user acceptance remain open. M5 approval-bound writes stay separate. No hidden TODO is being shipped as an exposed feature; the full original ticket and M4 remain incomplete.
+- NEXT â€” M4c: bounded engine with atomic pre-call/result checkpoints/events, persisted/restored scoped provenance and message/phase validation; account refresh/abort/retry integration; standalone worker build with source server-only marker handled safely, health/graceful shutdown/startup-periodic prune and optional Compose profile; run API/UI and authorized export downloads. Fake-provider end-to-end/restart/lease/retention races and later live/two-user acceptance remain open. M5 approval-bound writes stay separate. No hidden TODO is being shipped as an exposed feature; the full original ticket and M4 remain incomplete.
 
-### FAILED — 2026-10-17: M4b receipt export verification corrected
+### FAILED â€” 2026-10-17: M4b receipt export verification corrected
 
 - Initial targeted PostgreSQL run passed 9/11 cases; both receipt-export paths failed because an unqualified digest column conflicted with the PL/pgSQL local digest variable. The client correctly returned a sanitized agent_queue_unavailable error rather than raw SQL or private content. Qualified receipt columns in the new, not-yet-applied migration 014. Final fresh-schema queue run passed 12/12 (including an added workspace-wide capacity case), final DTO/export and clean/populated migration reruns passed, and the full 59-case PostgreSQL suite passed. No applied migration/checksum was edited, no app workaround or partial live migration remains.
 
-### 2026-10-17 — Temporary local network preview
+### 2026-10-17 â€” Temporary local network preview
 
 - User requested local access and automatic shutdown after ten minutes. Started the existing production build on 0.0.0.0:3000; Ethernet IPv4 is 192.168.64.101. Queued the in-app browser at http://localhost:3000.
 - Owned hidden Node supervisor PID 66444 starts only its Next child PID 34396 and terminates that child ten minutes after HTTP readiness. Ready at 2026-10-17T19:36:30Z; automatic stop deadline 2026-10-17T19:46:30Z (21:46:30 Europe/Ljubljana). Timer is part of the independent running supervisor and does not require another assistant turn. State and launcher/logs are gitignored under .agentic/verification/timed-preview*. No unrelated services were started or stopped.
 - PASSED: HTTP 200 from both 127.0.0.1:3000 and 192.168.64.101:3000; supervisor state confirms readiness and shutdown deadline. Application source/configuration/dependencies/database unchanged; no runtime suite rerun for this operational preview. OPEN verification: access from the physical phone and eventual timer expiry have not yet been observed. Existing authenticated acceptance gaps remain; this is browser-local preview, not the configured Supabase installation.
 - Initial sandbox process could not establish readiness; socket checks reported access forbidden. Relaunched with explicit execution approval outside the sandbox, then both HTTP checks passed. Next emitted a standalone-output startup recommendation, but the existing next start process served HTTP successfully. No credentials printed or copied, schema migration, firewall change or technology deviation.
 
-### 2026-10-18 — Task blocks and templates gap clarification
+### 2026-10-18 â€” Task blocks and templates gap clarification
 
 - User asked why Kanban tasks and other entries lack editable blocks, templates and configurable database attributes. Inspected current TaskDialog, Task model, BoardProperties, README/SPEC and continuity history; no application or database change.
 - Confirmed task descriptions remain plain text in a fixed dialog; rich blocks belong to notes. Reusable entry templates and multiple independent custom databases are not implemented. Existing workspace-board scope was explicitly selected earlier; expansion needs a material architecture/UX decision before implementation.
@@ -612,7 +612,7 @@
 - Recommended prioritizing editable task-page bodies, accessible property management and reusable templates before further agent expansion. This is a proposed direction, not a completed feature or silently selected schema.
 - Documentation-only verification: source contracts inspected and git diff --check run; runtime tests not rerun because code is unchanged. Existing task-block/template/browser acceptance gaps remain open. Preserved pre-existing continuity-file edits and all prior log entries. No dependency, secret, migration, live mutation or technology deviation.
 
-### 2026-10-18 — Editable task pages authorized; editing-mode decision pending
+### 2026-10-18 â€” Editable task pages authorized; editing-mode decision pending
 
 - User accepted prioritizing editable task pages, property controls and reusable templates. Audited existing BlockEditor, TaskDialog, Task model, task mutation validation/services and client preview/API path; read installed Next server/client component guide.
 - Prepared .agentic/TASK-PAGES-PLAN.md with experience, compatibility, authorization, export/deletion, migrations, template independence and verification requirements. Existing task mutation services support revision/idempotency controls, but client.saveTask does not forward them yet.
@@ -620,7 +620,7 @@
 - Documentation-only verification: source inspection and git diff --check; no runtime tests rerun because application code is unchanged. Existing browser/deployment/license/dependency gates remain. Preserved prior continuity edits; no dependency, secret, migration, live data change or technology deviation.
 
 
-### 2026-10-18 — Editable task pages and shared templates
+### 2026-10-18 â€” Editable task pages and shared templates
 
 - User explicitly chose Save with conflict protection. Prioritized this slice over further agent implementation; M4c/M5 remain ahead. Reused the existing block editor, typed task services, membership policy, revision/idempotency controls and provider adapters. Read installed Next server/client and route-handler guides. No new dependency or exotic technology deviation.
 - Tasks now open as spacious task pages with editable text/headings/lists/checklists/quotes/code/dividers/Markdown, task-local property management and shared template controls. Existing Task IDs/comments/attachments/Project/view links remain authoritative. Legacy descriptions become literal paragraphs; rich bodies persist as optional content and derive a first-10,000-character compatibility excerpt for cards/search/tools. Full body survives detail/snapshot/query/export paths. Board/synced/subpage blocks remain note-only and are excluded from task commands.
@@ -632,29 +632,29 @@
 - README/SPEC, migration rollout/export/deletion contract, task-page plan, work queue and Current Facts updated together. Template archive retains content; task deletion removes its body; workspace deletion removes templates. Full account/workspace export/deletion UI and attachment cleanup remain earlier open work. No secret, paid/provider call, shared-history rewrite, hidden code TODO or dependency/runtime change.
 - OPEN ACCEPTANCE: matching client/API plus migration 015/Firestore rules rollout (including earlier unapplied migrations), real authenticated two-user template propagation/conflicts/exports, browser outage/response-loss/quota/IME checks and a persisted React/browser suite. Existing license, dependency/Node-tooling and other release gates remain. Preparing coherent verified changes for commit/push under standing authorization.
 
-### FAILED — 2026-10-18: task-page verification corrections resolved
+### FAILED â€” 2026-10-18: task-page verification corrections resolved
 
 - Initial unit regression expected preview status writes not to advance revision; updated it to assert the new revision behavior. Initial lint also found the pre-existing gitignored timed-preview launcher plus an unused type import; scoped ESLint to ignore generated verification artifacts and removed the unused import. Final checks pass without reducing the source/test checks.
 - Browser tests found optional empty template IDs/dates were not normalized; fixed nullable defaults. Draft-lock tests exposed Strict Mode/remount handover timing; canceled queued requests and reload recovery/current data before granting ownership. Conflict review initially passed the Markdown export object instead of its markdown string, causing a runtime assertion; corrected it, reloaded the durably retained draft and verified the full successful conflict/rebase flow.
 - Broad PostgreSQL migration test expected six ledger entries after registering the seventh tracked migration. Updated only the assertion; final clean/populated/RLS/root-deletion targeted run passes 4/4. No applied migration/checksum, live state or historical continuity entry was rewritten.
 
-### 2026-10-18 — Simplified task pages and attribute controls
+### 2026-10-18 â€” Simplified task pages and attribute controls
 
 - User requested a minimal Apple-inspired task/attribute experience without repeated property panels. Removed task-page Manage properties / Properties nesting; custom field names now open their definition/options directly and one Add property action creates fields in place. Kept existing trusted saves, revisions, draft recovery and server validation.
 - Combined Table column visibility and definition editing into a single Properties menu, with one row per field, inline Edit for custom definitions, Add property, and secondary Export data. Escape dismisses the menu and restores summary focus. Removed the separate Columns panel and redundant table instruction paragraph; retained sorting, fixed title visibility, reset, local settings and export content.
 - Gave task pages a larger title, quiet aligned attribute rows, restrained borders, compact Templates disclosure, and an uninterrupted body. Moved draft download below task content and removed repeated unsaved-task attachment/conversation prompts. Save/Cancel remain in the fixed footer. Property editor copy explains shared impact rather than internal preservation rules.
 - Saved-view cards now render only selected visible columns; removed the automatic custom-field summary that displayed fields excluded by the view. No query/config schema changed. README controls updated in the same iteration. Existing CSS/native React controls used; no dependency, migration, auth/retention change, exotic technology, secret, code TODO, live data mutation or deployment.
-- PASSED browser-local acceptance: create Design review text property directly inside an existing seeded preview task, edit its definition from its name, save value Ready and reopen, see saved value in Table, hide/restore Assignee via the consolidated menu, and dismiss menu with Escape. At 390x844: task dialog clientWidth and scrollWidth both 341px; page width 375px within 390px viewport; Save stays visible at y749–785. Screenshots at gitignored .agentic/verification/task-design-desktop.png and task-design-mobile.png. Synthetic property/value remain in the isolated port-3107 browser-local preview; no authenticated data was touched.
+- PASSED browser-local acceptance: create Design review text property directly inside an existing seeded preview task, edit its definition from its name, save value Ready and reopen, see saved value in Table, hide/restore Assignee via the consolidated menu, and dismiss menu with Escape. At 390x844: task dialog clientWidth and scrollWidth both 341px; page width 375px within 390px viewport; Save stays visible at y749â€“785. Screenshots at gitignored .agentic/verification/task-design-desktop.png and task-design-mobile.png. Synthetic property/value remain in the isolated port-3107 browser-local preview; no authenticated data was touched.
 - PASSED: all 212 existing unit/model/controller/provider/query cases and lint. Production build and sequential typecheck recorded below after final verification. No new implementation-mirroring tests added for this reversible presentation change. OPEN TEST GAP: no persisted React/browser suite; all ten PostgreSQL field types, scoped definitions, saved-view visibility, authenticated two-user propagation and live deployment remain browser acceptance items. Backend/API/rules/database suites were not rerun because these paths are unchanged.
 
-### FAILED — 2026-10-18: sandbox verification restrictions resolved
+### FAILED â€” 2026-10-18: sandbox verification restrictions resolved
 
 - Sandboxed unit run passed 211/212; the native-fetch loopback fixture failed with agent_transport. Rerun outside the sandbox passed all 212 without source/test changes. Sandboxed production builds could not create the required firebase-admin Windows junction; approved external build completed successfully before final copy changes, with final verification recorded below. Lint/typecheck passed normally. No product workaround or reduced checks.
 - Initial port-3000 preview listener was denied and browser navigation reached a different existing app. Started only this repo's owned preview on port 3107; did not stop or alter the unrelated port-3000 app.
 
 - FINAL verification: production build on final source, sequential standalone typecheck, lint and git diff --check pass. All 212 unit cases pass. Owned port-3107 development preview stopped normally after screenshot/acceptance checks; other applications untouched. Preparing coherent commit/push under standing authorization. Live deployment and authenticated/saved-view browser gates remain open.
 
-### 2026-10-18 — Independent task copies and repeatable development setup
+### 2026-10-18 â€” Independent task copies and repeatable development setup
 
 - Continued from pushed redesign 4b4d193 under user authorization to choose features and commit completed work. Added Duplicate task to the compact task actions menu, alongside draft download. Copies open as new drafts, preserve editable title/body/status/assignee/due date/Project/priority/estimate/custom values, use fresh block UUIDs and bound the title to 200 characters. Explicit allowlisting through existing template defaults excludes Task ID, revision, audit/authority, comments and attachment relationships. Save uses existing reviewed/durable/idempotent creation and server validation; no immediate or hidden write.
 - Duplication disables during unsaved source edits, pending saves/composition, missing ownership, unreadable recovery and unsafe comment recovery. Existing new-task recovery is checked before opening a copy and never overwritten. New/prefilled task baselines now start empty so copied/template/prefilled content becomes recoverable before first Save; empty untouched tasks remain clean. Errors retain original/copy drafts. No auth, retention, schema, migration or API change.
@@ -793,7 +793,7 @@
 
 ### FAILED - 2026-10-21: relation fixture verification corrections resolved
 
-- Initial unit suite passed 235/236; a new fixture assertion assumed an English collation position for Č on this Slovenian host. Kept locale-sensitive application ordering and corrected the test to assert Unicode preservation/search plus numeric Client 2/Client 10 order without assuming one language's alphabet. Final full 236/236 passes; no behavior workaround or reduced suite.
+- Initial unit suite passed 235/236; a new fixture assertion assumed an English collation position for ÄŒ on this Slovenian host. Kept locale-sensitive application ordering and corrected the test to assert Unicode preservation/search plus numeric Client 2/Client 10 order without assuming one language's alphabet. Final full 236/236 passes; no behavior workaround or reduced suite.
 - First browser tab creation timed out before fixture inspection and left no tab. Recovered inventory, opened the ready loopback fixture normally and completed checks. A setChecked request removed the unavailable selected row successfully but its post-action locator check timed out because that row disappeared under the search; current DOM confirmed the intended ID removal/count. Used single-click controls for subsequent disappearance cases. No security bypass, duplicate selection change, live mutation or unresolved product failure.
 
 
@@ -965,7 +965,17 @@
 ### 2026-10-30 - Grouped status integration
 
 - Integrated the grouped database status increment with the task/project data-source relation changes on the current branch, retaining both sets of documentation and current facts. PASSED all 252 unit/model/controller/provider/setup cases, lint and optimized Turbopack production build including TypeScript in the shared checkout; concurrent uncommitted changes from another chat were present, so this is not isolated verification of the committed tree. Browser/automated DOM and authenticated status acceptance remain open, as do the existing live migration and two-user gates. No schema, dependency, staging data or deployment changes.
-- NEEDS DECISION: a future Created time property cannot recover original creation timestamps for existing database entries, because they were not recorded. User was asked whether older entries should remain blank or show an approximate last-update timestamp.
+- RESOLVED (database created time, 2026-10-30): user chose to leave creation time blank for older database entries lacking a recorded timestamp. New entries receive an immutable server-generated timestamp; Created time is read-only in UTC and sorts unknown values last.
+
+
+### 2026-10-30 - Independent database created time
+
+- User chose to leave creation time blank for older database entries lacking a recorded timestamp. New entries receive an immutable server-generated timestamp; Created time is read-only, displayed in UTC, exported with loaded entries and sorted chronologically with unknown values last. Existing entries remain unknown after editing. Trusted saves reject attempted client values; existing record access controls apply. No migration, dependency, staging data or deployment change. README, SPEC and database plan updated.
+- PASSED 253 unit/model/controller/provider/setup cases, lint, TypeScript and optimized webpack production build. Focused disposable PostgreSQL/API case passed for creation, exact retries, read/export, update preservation, forged values, legacy blank records and outsider denial. OPEN TEST GAP: no automated DOM, browser or authenticated/two-user acceptance for this property; full PostgreSQL regression suite was not rerun. No exotic technology deviation. Work isolated because another chat is modifying overlapping files.
+
+### FAILED - 2026-10-30: created time test response corrected
+
+- The first PostgreSQL/API test asserted a timestamp at the top level of a PUT response, but that endpoint wraps its record in a record field. Corrected the assertion and reran the focused test successfully; no product behavior was changed.
 
 
 ### 2026-10-30 - Data-source relation navigation and backlinks

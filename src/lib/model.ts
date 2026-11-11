@@ -2,7 +2,7 @@ export type Status = "todo" | "doing" | "done";
 export type BoardProperty = {
   id: string;
   name: string;
-  type: "text" | "longText" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "person" | "relation" | "url" | "email" | "phone" | "status";
+  type: "text" | "longText" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "person" | "relation" | "url" | "email" | "phone" | "status" | "createdTime";
   projectId?: string | null;
   options: { id: string; name: string; color?: string; archived?: boolean; group?: "todo" | "doing" | "done" }[];
   revision: number;

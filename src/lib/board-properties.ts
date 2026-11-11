@@ -19,7 +19,7 @@ export function propertyDefinition(value: unknown, database = false): Omit<Board
   const data = record(value);
   if (Object.keys(data).some(key => !["name", "type", "options", "projectId"].includes(key)))
     throw new Error("Unexpected property field.");
-  if (!(propertyTypes as readonly string[]).includes(data.type as string) && !(database && ["email", "phone", "status"].includes(data.type as string)))
+  if (!(propertyTypes as readonly string[]).includes(data.type as string) && !(database && ["email", "phone", "status", "createdTime"].includes(data.type as string)))
     throw new Error("Invalid property type.");
   if (!Array.isArray(data.options) || data.options.length > 50)
     throw new Error("A property supports up to 50 options.");

@@ -161,3 +161,17 @@ test('database statuses preserve workflow groups, identities, archived values an
   assert.deepEqual(sorted([row('done',{[id]:done}),row('todo',{[id]:todo}),row('doing',{[id]:doing}),row('empty')],`property:${id}`,'descending',fields),['done','doing','todo','empty']);
   assert.throws(()=>require('../.test-build/board-properties.js').propertyDefinition({name:'Status',type:'status',options:[]}));
 });
+
+
+test('created time is read-only, shows UTC and sorts unknown timestamps last',()=>{
+  const id=randomUUID(),fields=databaseFields([{id,name:'Created',type:'createdTime',options:[]}]);
+  assert.deepEqual(databaseValues({},fields),{});
+  assert.throws(()=>databaseValues({[id]:'2026-10-30'},fields));
+  assert.throws(()=>databaseValues({[id]:null},fields));
+  const {createdTimeDisplay}=require('../.test-build/databases.js');
+  assert.equal(createdTimeDisplay({createdAt:Date.UTC(2026,9,30,12,30)}),'2026-10-30 12:30:00 UTC');
+  assert.equal(createdTimeDisplay({}),'');
+  const rows=[{...row('late'),createdAt:2000},{...row('early'),createdAt:1000},row('old')];
+  assert.deepEqual(sorted(rows,`property:${id}`,'ascending',fields),['early','late','old']);
+  assert.deepEqual(sorted(rows,`property:${id}`,'descending',fields),['late','early','old']);
+});
