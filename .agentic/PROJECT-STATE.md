@@ -997,3 +997,10 @@
 ### FAILED - 2026-10-30: fixture locator and documentation path corrected
 
 - The first project fixture selection used an exact label locator that did not resolve the select; locating its combobox by accessible name succeeded and the project rename passed. An initial Next documentation lookup used the wrong local guide directory; the installed client-component guide was then read successfully. Neither caused a product or data failure.
+
+
+### 2026-11-11 - Branch divergence reconciliation and created-time integration
+
+- Audited all git branches for divergence and feature value. Confirmed `codex/database-status` was already 100% integrated via cherry-pick `fe1fd5e` / `84388b4`. Identified `codex/database-created-time` (`b225566`) as a worthwhile divergence adding the independent database `createdTime` property type with immutable server timestamps, UTC formatting, chronological sorting, and server validation.
+- Created dedicated reconciliation branch `reconcile/merge-codex-branches` from `codex/teamspace-application` and merged `codex/database-created-time`. Resolved minor documentation and service decoding conflicts cleanly without dropping backlinks or entity relation properties.
+- PASSED all 253 unit/model/controller/provider/setup tests, full ESLint, standalone TypeScript typecheck (`tsc --noEmit`), and Next.js optimized Turbopack production build. Ready for user verification and manual merge to main.
