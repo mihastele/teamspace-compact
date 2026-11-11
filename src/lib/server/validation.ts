@@ -1,6 +1,7 @@
 import type { NoteBlock } from "../model";
 import { taskBlockTypes, taskDescription } from "../task-pages";
 import { propertyValuePatch } from "../board-properties";
+import { entityRelationValues } from "../entity-database-relations";
 import { validateBoardView, validateBlockSource, validateLinkedContentLimits } from "../linked-content";
 export class ApiError extends Error {
   constructor(
@@ -86,6 +87,7 @@ export function taskInput(
     "dueDate",
     "position",
     "propertyValues",
+    "databaseRelations",
     "projectId", "priority", "estimate",
   ]);
   const out: Record<string, unknown> = {};
@@ -100,6 +102,10 @@ export function taskInput(
   }
   if ("propertyValues" in input) {
     try { out.propertyValues = propertyValuePatch(input.propertyValues); }
+    catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
+  }
+  if ("databaseRelations" in input) {
+    try { out.databaseRelations = entityRelationValues(input.databaseRelations); }
     catch (error) { throw new ApiError(400, "invalid_input", (error as Error).message); }
   }
   if (!partial || "title" in input) out.title = text(input.title, "Title", 200);
@@ -141,7 +147,7 @@ export function taskInput(
 export function taskMutationInput(value: unknown, partial: boolean) {
   const input = object(value, [
     "title", "description", "status", "assigneeId", "dueDate", "position", "propertyValues",
-    "operationId", "expectedRevision", "projectId", "priority", "estimate", "content",
+    "operationId", "expectedRevision", "projectId", "priority", "estimate", "content", "databaseRelations",
   ]);
   const { operationId, expectedRevision, ...fields } = input;
   if (!partial && "expectedRevision" in input)

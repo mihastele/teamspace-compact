@@ -520,12 +520,12 @@
   color: #6d7b91;
   font-size: 12px;
 }
-.deadlineToolbar label {
+.deadlineToolbar > label {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.deadlineToolbar select {
+.deadlineToolbar > label select {
   padding: 8px 10px;
   border: 1px solid #dce3ef;
   border-radius: 7px;
@@ -535,6 +535,7 @@
 .deadlineToolbar > span {
   font-size: 11px;
 }
+.boardProperties { margin-left: auto; }
 .addCard {
   width: 100%;
   padding: 12px;
@@ -645,6 +646,13 @@
   padding: 18px 25px;
   border-top: 1px solid #e9ecf3;
   background: #fafbfc;
+}
+.projectDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
 }
 .danger {
   background: transparent;

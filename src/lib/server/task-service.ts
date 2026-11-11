@@ -5,6 +5,7 @@ import { ApiError, identifier, integer, object, taskMutationInput, uuid } from "
 import { propertyDefinition, validatePropertyChange, validatePropertyValues } from "../board-properties";
 import type { BoardProperty } from "../model";
 import { requireProjects } from "./project-service";
+import { validateEntityRelationValues } from "./entity-database-service";
 
 export function taskRevision(value: Record<string, unknown>): number {
   const revision = value.revision ?? 0;
@@ -26,6 +27,7 @@ function taskView(id: string, value: Record<string, unknown>) {
     ...(value.content !== undefined ? { content: value.content } : {}),
     assigneeId: value.assigneeId ?? null, dueDate: value.dueDate ?? null,
     position: value.position, propertyValues: value.propertyValues ?? {}, revision: taskRevision(value),
+    ...(value.databaseRelations !== undefined ? {databaseRelations:value.databaseRelations} : {}),
     ...(value.projectId !== undefined ? { projectId: value.projectId } : {}),
     ...(value.priority !== undefined ? { priority: value.priority } : {}),
     ...(value.estimate !== undefined ? { estimate: value.estimate } : {}),
@@ -93,7 +95,7 @@ export async function saveTask(
     if (prior.data()?.deleting)
       throw new ApiError(409, "deleting", "This task is being deleted.");
     const previous = prior.data() ?? {};
-    if (taskId && ("content" in value || (previous.content && "description" in value)) && expectedRevision === undefined)
+    if (taskId && ("content" in value || "databaseRelations" in value || (previous.content && "description" in value)) && expectedRevision === undefined)
       throw new ApiError(409, "revision_required", "Reopen this task and review its latest version before editing the body.");
     if (["projectId", "priority", "estimate"].some(key => key in value)) requireProjects(db);
     const projectId = ("projectId" in value ? value.projectId : previous.projectId) as string | null | undefined;
@@ -105,6 +107,10 @@ export async function saveTask(
     if (expectedRevision !== undefined && taskRevision(previous) !== expectedRevision)
       throw new ApiError(409, "revision_conflict", "This task changed. Review the latest version before applying these changes.");
     const patch = { ...value };
+    if ("databaseRelations" in value) {
+      requireProjects(db);
+      patch.databaseRelations = await validateEntityRelationValues(tx,workspace,"task",value.databaseRelations,previous.databaseRelations ?? {});
+    }
     if (previous.content && "description" in value && !("content" in value))
       patch.content = { blocks: [{ type: "paragraph", text: value.description }] };
     if ("propertyValues" in value) {

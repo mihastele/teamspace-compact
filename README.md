@@ -2,6 +2,10 @@
 
 A college team workspace with a live Kanban board, task calendar, nested shared notes, conflict-safe collaborative editing and private attachments. Next.js with either Firebase or Supabase for the entire deployment; Vercel or self-hosted Docker hosting.
 
+**Development direction (October 2026):** Supabase/PostgreSQL is the active backend for new development and the planned unified block architecture. Firebase remains in the existing codebase but is not currently in development; future changes may not support it. See [the block architecture proposal](.agentic/BLOCK-ARCHITECTURE.md).
+
+Migration 017 prepares empty block containment storage; it does not migrate existing content or enable the redesigned editor. Review [its migration notes](migrations/017-block-containment.md) and back up the target before applying it to an existing installation.
+
 ## Set up staging or production
 
 The deployment generator creates a standard Docker Compose file, isolated data
@@ -263,19 +267,55 @@ later milestones.
 
 On PostgreSQL deployments, open **Databases → New database**. Name the collection
 and add properties; **Properties** edits names/options or archives/restores it.
-Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs and
-relations use the existing property controls. A relation chooses one target
-database and can select multiple entries, including entries in the same database.
-Property types, relation targets and saved option IDs stay stable.
+Text, long text, numbers, dates, checkboxes, select/multi-select, people, URLs,
+email addresses, phone numbers, status, created time and relations use the existing property controls.
+Created time is read-only and shown in UTC. Entries created before this feature
+have no recorded creation time and display a blank value.
+Status options can be renamed, archived and assigned to To do, In progress or
+Complete groups. New status properties start with one option per group.
+Email and phone values are stored as entered and are not verified. A relation targets one database,
+tasks, or projects and can select multiple records of that kind. Database-entry
+relations can target entries in the same database.
+Property types, relation targets and saved option IDs stay stable. Relation
+pickers search target titles while keeping selected links visible. Uncheck a
+selected link or use **Clear links** to remove it, including unavailable entries.
+Archived entries/databases/projects cannot be newly linked; selected archived
+links can be removed. Each relation accepts up to 50 records. Permanently deleting
+a linked task removes its links from entry values and advances the affected entry
+revisions; a stale open draft will need review. Failed target reads preserve
+selections and offer **Retry loading entries**; search never saves or changes
+the selection. Existing explicit Save and draft recovery still apply.
 
 **Add entry** opens a rich page body with explicit Save. Table relation values and
 the entry's **Linked from** section open related pages. Renaming entries/properties
 preserves links. Archived databases/entries retain their links; new links cannot
 select archived targets. Restore a database before editing its entries. Search
 filters loaded entry titles; **Show archived entries** reveals loaded archives.
+Switch between **Table** and **List** to display the same loaded entries. The
+list shows properties and opens linked entries; use its sort controls to select
+the sort property and direction. The layout choice is local and lasts while the
+database screen is open.
+Click a table heading to sort loaded entries by that property; click again for
+descending order, then return to title order. **Reset sort** restores natural
+title order. Numbers sort numerically; options, people and relations use current
+display names. Empty values stay last in either direction. Sort settings stay
+local to the current database and reset when switching databases; loading more rows or
+refreshing keeps the active sort. Sorting/search never changes which server page
+is fetched or the saved/exported record order.
 **Load more entries** continues a live keyset page. The first page refreshes every
-30 seconds; after loading more, **Refresh** restarts the loaded pages. Existing
-Tasks/Projects remain separate.
+30 seconds; after loading more, **Refresh** restarts the loaded pages. Tasks and
+projects retain their existing workflows and can be opened from relation values.
+
+Task and project pages can also link to entries in a selected data source. In a
+task or project editor, choose **Add data-source relation**, name the shared
+property and select a database. Task and project properties are separate. The
+property definition is created immediately; use **Rename** to change its shared
+name immediately. A conflicting rename must be reopened against the latest name.
+Selected entry links save with the page. Existing task draft recovery includes those selections. Project edits keep
+their current reviewed-revision conflict behavior. Archived entries and databases
+can be retained or cleared, but cannot be newly linked. Open a selected entry
+from the task or project once its page changes are saved. The entry's **Linked
+from** section shows task and project sources, with a separate 200-link limit.
 
 Drafts and exact save retries are stored on this device, scoped by account and
 workspace, with one editor per draft across tabs. Reopen **New database** or
@@ -288,8 +328,9 @@ and outgoing relation IDs. Its `truncated` flag reports more available entries;
 load the remaining pages before exporting the full collection. Export target
 databases separately for their content. Pages are live, not a frozen backup.
 
-Apply [migration 016](migrations/016-independent-databases.md) and earlier unapplied
-migrations, then deploy the paired API/client. Foreign keys enforce entry links;
+Apply [migration 020](migrations/020-entity-relation-backlinks.md) and earlier
+unapplied migrations, then deploy the paired API/client. Migration 017 prepares
+empty block containment and does not yet expose nested-block editing. Foreign keys enforce entry links;
 member/confirmation RLS covers definitions, entries and the derived relation
 index. Workspace deletion removes content/links/receipts. Limits are 64 databases
 per workspace, 32 properties per database and 1,000 entries per database, including
@@ -380,6 +421,27 @@ authentication, including custom-property PUT requests. `npm run test:http` runs
 after the build and starts an isolated loopback production server without backend
 credentials, checks PUT in the framework's Allow header and verifies that it
 reaches the guarded API. It does not write data or replace authenticated acceptance.
+
+For a repeatable manual check of note-board dialogs, run
+`npm run test:ui:named-boards` and open http://127.0.0.1:3118. This mounts the real
+components with synthetic in-memory data; it never connects to your backend.
+Follow [the fixture checklist](tests/fixtures/named-boards/README.md), then stop
+with Ctrl+C. This is separate from automated tests and authenticated acceptance.
+
+For the recovery archive browser, run `npm run test:ui:recovery-archives` and open
+http://127.0.0.1:3119. Follow [the recovery checklist](tests/fixtures/recovery-archives/README.md)
+for real IndexedDB paging, Markdown downloads, corruption and scope isolation.
+It uses synthetic device-local records; stop with Ctrl+C. Full-app authenticated
+recovery remains a separate check.
+
+For relation search/selection, run `npm run test:ui:database-relations` and open
+http://127.0.0.1:3120. Follow [the relation picker checklist](tests/fixtures/database-relations/README.md).
+Targets/read states are synthetic; this does not connect to a backend or save
+entries. Stop with Ctrl+C. Full-editor/authenticated acceptance remains separate.
+
+For task/project relation controls and database layouts, run
+`npm run test:ui:database-entity-relations` and follow [the fixture checklist](tests/fixtures/database-entity-relations/README.md).
+It uses synthetic in-memory records and does not connect to a backend.
 
 Task/field operations and conversations share server-only services in
 `src/lib/server/task-service.ts` and `conversation-service.ts`. The authenticated
@@ -563,8 +625,36 @@ multi-select any/all, date bounds and numeric comparisons. Archived options rema
 searchable. Empty values also match negative comparisons. Numbers sort numerically;
 text uses case-insensitive deterministic database ordering; nulls stay last.
 A saved view's changes appear in all linked representations. In a `/kanban` note
-block, choose **Shared saved view** to reference one; clearing it restores that
-block's independent settings. Note history/export retains the reference.
+block, use **Named board / saved view** to choose one, or **New named board** to
+create and link a board directly from the note. Choose a name, status/priority
+grouping, timezone and nested property/Project filters before creating it. Multiple
+blocks can choose different named boards over the same tickets. **Refresh boards**
+retries loading the picker. **This block’s basic settings** restores its previous
+independent settings. Creating a named board starts with fresh filters; it does not
+convert the basic block's older deadline/search settings.
+
+Embedded named boards expose **Filters and presentation**: property/Project filters,
+AND/OR groups, layouts, sorts and visible fields. **Apply settings** previews the
+configuration in this instance; **Save changes** updates every reference to the
+named view. **Save as new view** saves and links a separate view to this block.
+Newer remote definitions preserve unapplied edits and require **Reopen saved
+settings** before a reviewed overwrite. Ticket relation fields select Projects;
+filtering properties inside a related record is not implemented.
+
+Create retries retain the original request while the dialog stays open, including
+when the response is lost. If the board was saved but the block changed before
+linking, select the saved board from the picker. Closing/reloading can lose local
+setup drafts/retry identity; saved boards remain available in Views. Note
+history/export retains the view reference, and removing a block never removes its
+saved view or tickets. This flow needs a configured PostgreSQL workspace; Firebase
+and browser-local preview retain basic linked-board controls. No new migration is
+needed beyond existing saved-view migration 013.
+
+**Cancel** or Escape opens a confirmation inside board setup. **Keep editing**
+preserves the name, filters and exact pending retry; Escape from the confirmation
+also returns to editing. Discarding unsaved setup returns focus to its opener.
+After an attempted save, **Close setup** explains that any saved board is kept
+and can be selected from the picker.
 
 Views query canonical PostgreSQL rows with bounded keyset paging, rather than
 loading the full task snapshot for filtering. Counts/exports describe **loaded

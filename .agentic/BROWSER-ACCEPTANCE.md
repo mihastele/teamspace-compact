@@ -125,3 +125,147 @@ outage/response-loss retry, quota/read failure and IME recovery. Verify Load mor
 loaded-title search, the export truncation flag, 30-second refresh versus expanded
 pages, downloads, Escape/focus restoration, 390px overflow and authenticated
 two-user propagation/revocation. No screenshot or manual-acceptance claim.
+
+
+## 2026-10-19 — Named board React component fixture
+
+Tested actual SavedViewLink/NewNamedBoard/TicketViews/TicketFilters components
+bundled by the installed Next webpack/TypeScript tools in a gitignored fixture
+on 127.0.0.1:3118. Its in-memory API is synthetic, with two tasks, two Projects
+and relation/number fields; this is not authenticated API/CRDT/two-user acceptance.
+
+- PASS: initial name focus; create Website work with Project equals Website,
+  automatic linking, one matching task and unchanged second block.
+- PASS: second board, synthetic accepted save with lost response, frozen settings
+  and Retry create and link; write/board counters prove retry made no duplicate.
+- PASS: embedded Filters and presentation exposes property/Project controls,
+  sorting/grouping/visible fields; remote update retains a dirty name and exposes
+  a review warning. Pristine second board follows the newer shared name.
+- PASS: disabled note editing disables new/link/save/filter controls. Stale shared
+  Save rejects; Save as new view creates and links an independent definition.
+- PASS: at 390x844 the new-board dialog clientWidth/scrollWidth are both 339px;
+  document width 375px stays within 390px. Initial name focus remains correct.
+- UNVERIFIED: Escape/confirmation/focus restoration. Browser CDP commands stalled
+  when the native discard confirmation opened; subsequent dialog/cleanup/viewport
+  reset calls timed out and the tool reset. No successful cancellation or final
+  viewport-reset claim. The temporary browser tab is agent-created; fixture server
+  was stopped through its owned process session. No live data was involved.
+- No screenshot file was saved. Fixture CSS was loaded from the real components;
+  whole-app styling, note CRDT/history integration, IME and authenticated two-user
+  acceptance remain open, as does a persisted automated DOM suite. UI checks
+  preceded the final save-lifetime/ref guard refinement; final production build
+  and typecheck cover that refinement, not a new browser rerun.
+
+## 2026-10-19 — Named board cancellation and maintained fixture
+
+R14 (renumbered from the duplicate R13 label; deployment setup remains R13).
+Added the maintained `tests/fixtures/named-boards/` harness, launched through
+`npm run test:ui:named-boards` at 127.0.0.1:3118. Real components run under Strict
+Mode with a synthetic in-memory API. It is a manual fixture, not an automated
+browser suite. CSS source injection does not reproduce Next's module scoping.
+
+- PASS: initial Board name focus, Escape opens an in-dialog confirmation with
+  Keep editing focused; draft fields are disabled during review.
+- PASS: second Escape keeps the native dialog open/modal and returns to the
+  original Board name input, preserving its name and Project equals Website
+  filter. Subsequent creation displays only Design homepage; slot 2 is unchanged.
+- PASS: Cancel / Keep editing restores Cancel focus; Cancel / Discard setup
+  removes the dialog and focuses its own New named board trigger. No writes or
+  boards are added by discard (`0` writes / `1` initial board).
+- PASS: accepted save with synthetic lost response freezes the original request;
+  cancellation warns that a board may already exist. Keep editing then Retry
+  create and link adds exactly one board/write. Closing another uncertain setup
+  retains its saved board in the picker and leaves the slot's selection unchanged.
+- PASS: at 390x844, dialog clientWidth=scrollWidth=324px, page width=375px;
+  both confirmation actions end at y786 within the viewport. Tab moves from Keep
+  editing to Discard setup; Shift+Tab returns. Viewport reset succeeded afterward.
+  Screenshot: `.agentic/verification/board-cancel-mobile.png` (gitignored).
+- Initial testing exposed repeated native Escape closing the dialog despite the
+  cancel handler while CSS kept the closed element visible. Intercepting Escape
+  at keydown and hiding closed dialogs fixed it; the final maintained fixture
+  verifies the corrected open/modal state and restored input focus.
+- A reload while setup was open retained the earlier page through its unsaved
+  warning; discarded that synthetic draft before reloading and rerunning. A
+  request to press Tab on the inert body failed; used the enabled dialog actions
+  to finish successfully. No browser setting/security workaround was used.
+
+The final fixture includes explicit errors for unsupported synthetic filters/task
+mutations. It does not establish backend authorization, CRDT/history/IME behavior,
+durable setup recovery, whole-app styling or authenticated two-user acceptance.
+The complete automated unit suite, build/typecheck/lint and HTTP smoke remain
+separate evidence. No live accounts, database or deployed application changed.
+
+## 2026-10-20 — R1 recovery archive component acceptance
+
+Maintained fixture: `npm run test:ui:recovery-archives`, loopback:3119. Real
+RecoveryArchives, IndexedDB, Yjs decode and Markdown export under React Strict
+Mode, with synthetic device-local records. No backend or live account involved.
+
+- PASS: initial Close focus; Tab to Refresh and Shift+Tab back; Escape removes
+  dialog and restores its Local recovery archives trigger; close/reopen works.
+- PASS: first page has 20 archives; Load older yields 25 and removes the button.
+  Actual downloaded Markdown contains archive 25's `café 🐈` text and current
+  fixture title/timestamp. Downloaded files were read from disk for verification.
+- PASS: second tab adds a newer archive while the original first page is open.
+  Continuation still yields the original 25; Refresh then downloads the new
+  `NEW ARCHIVE FROM ANOTHER TAB` content.
+- PASS: newest corrupt checkpoint reports Invalid base64 collaboration payload
+  and keeps data/retry guidance. Next valid archive still downloads successfully.
+- PASS: page/source/account/workspace selections remain separate. The latter
+  three each list one archive; actual files contain the corresponding isolated
+  scope text. Active page journal compares byte-for-byte equal to its saved JSON
+  baseline after all paging, downloads and corrupt reads.
+- PASS: 390x844 dialog clientWidth=scrollWidth=339px, page width=390px. Close,
+  scrolling content and download controls remain usable. Screenshot at
+  `.agentic/verification/recovery-archives-mobile.jpg` (gitignored). Browser
+  viewport reset, both temporary tabs closed and owned fixture server stopped.
+- Tooling correction: viewport first applied to the other open fixture tab;
+  measurements still showed 1280px. Closed that tab and reapplied; final 390px
+  measurements/screenshot above are from the intended tab. No app change needed.
+
+All 229 unit/model/controller/provider/setup cases and warning-free lint pass.
+Production code/schema is unchanged; prior build/backend evidence remains
+historical. This manual fixture is not an automated DOM suite. It uses CSS source
+injection, so full-app CSS module integration is not established. Source scope
+checks do not establish linked-source recovery-panel placement, controller/restore
+or IME integration. Full-app authenticated recovery and deliberately delayed-read
+close/navigation checks remain open; R1/R2 are not closed as a whole.
+
+
+## 2026-10-21 — Independent database table sorting: acceptance pending
+
+Typed loaded-row sorting has unit coverage, but no new browser interaction
+acceptance is claimed for this increment. Verify on an authenticated PostgreSQL
+workspace: keyboard header activation, ascending/descending/default cycling and
+aria-sort, Reset sort, renamed option/person/relation labels, search/archive
+filters, Load more and Refresh retaining order, database switching resetting it,
+and narrow-screen table scrolling. Confirm the loaded-entry count and more
+available indicator do not imply sorting the entire server collection. Existing
+R12 two-user/access/recovery/mobile acceptance remains open.
+
+
+## 2026-10-21 — Searchable database relation picker component
+
+Real DatabaseRelationPicker rendered under React Strict Mode with synthetic
+60-entry targets, retained archived/unavailable selections and read-state
+controls. Repeat with `npm run test:ui:database-relations`; checklist in
+`tests/fixtures/database-relations/README.md`.
+
+- Case-insensitive Unicode search retains selected entries outside the query.
+  Selecting a result updates exact IDs; removing unavailable/archived entries
+  clears their IDs, and unselected archived entries are disabled.
+- At 50 selections a new target is disabled; removing one enables its replacement
+  and the count returns to 50. Loading/failure leave selections unchanged; Retry
+  restores names while keeping the query/IDs.
+- Archived target database blocks new links while retaining removal controls.
+  Disabled editing blocks checkboxes and Clear links. Search remains local.
+- Tab from search focuses Client 1; Space removes it. Clear links clears filtered
+  selections; an unmatched query shows No matching entries and disabled Clear.
+- At 390x844: page width 390px; picker client/scroll widths 358px. Screenshot:
+  `.agentic/verification/relation-picker-mobile.jpg` (gitignored). Viewport reset,
+  temporary tab closed and owned fixture server stopped; no port-3120 listener.
+
+This verifies the component only. The fixture uses CSS source injection, not
+production module scoping, and does not exercise parent target-fetch fencing,
+entry locks/draft saves, real providers or two-user acceptance. Those and the
+persisted automated DOM suite remain open. No live workspace data changed.

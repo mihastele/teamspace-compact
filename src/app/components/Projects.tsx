@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import type { useTeamspace } from "@/lib/client";
 import type { Project, Task } from "@/lib/model";
 import s from "../page.module.css";
+import EntityDatabaseRelations from "./EntityDatabaseRelations";
 
 type Api = ReturnType<typeof useTeamspace>;
-function ProjectEditor({ api, project, close }: { api: Api; project?: Project; close: () => void }) {
+function ProjectEditor({ api, project, close, onOpenEntry }: { api: Api; project?: Project; close: () => void; onOpenEntry:(id:string)=>void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(()=>{
     const element=dialog.current, prior=document.activeElement as HTMLElement|null;
@@ -15,15 +16,18 @@ function ProjectEditor({ api, project, close }: { api: Api; project?: Project; c
   },[]);
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
+  const [databaseRelations,setDatabaseRelations] = useState(project?.databaseRelations ?? {});
   const [operationId] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  function attemptClose(){if(!busy && ((name===(project?.name??"") && description===(project?.description??"")) || confirm("Discard unsaved project changes?")))close();}
+  const changed=name!==(project?.name??"") || description!==(project?.description??"") || JSON.stringify(databaseRelations)!==JSON.stringify(project?.databaseRelations??{});
+  function attemptClose(){if(!busy && (!changed || confirm("Discard unsaved project changes?")))close();}
   return <dialog ref={dialog} className={s.dialog} aria-labelledby="project-editor-title" onCancel={event=>{event.preventDefault();attemptClose();}}><form className={s.dialogBody} onSubmit={async event => {
     event.preventDefault(); if (busy) return;
     setBusy(true); setError("");
     try {
-      await api.saveProject(project ? { id: project.id, expectedRevision: project.revision, name, description } : { name, description, operationId });
+      const relations=Object.keys(databaseRelations).length ? {databaseRelations} : {};
+      await api.saveProject(project ? { id: project.id, expectedRevision: project.revision, name, description, databaseRelations } : { name, description, operationId, ...relations });
       close();
     } catch (error) { setError(error instanceof Error ? error.message : "Project could not be saved."); }
     finally { setBusy(false); }
@@ -33,13 +37,16 @@ function ProjectEditor({ api, project, close }: { api: Api; project?: Project; c
     <fieldset disabled={busy}>
       <label className={s.field}>Project name<input autoFocus required maxLength={200} value={name} onChange={event=>setName(event.target.value)}/></label>
       <label className={s.field}>Description<textarea maxLength={10000} value={description} onChange={event=>setDescription(event.target.value)}/></label>
+      <EntityDatabaseRelations api={api} scope="project" values={databaseRelations} disabled={busy} onChange={setDatabaseRelations} navigationDisabled={busy||changed} onOpenEntry={id=>{close();onOpenEntry(id);}}/>
     </fieldset>
-    <button disabled={busy}>{busy ? "Saving…" : "Save project"}</button>{" "}
-    <button type="button" disabled={busy} onClick={attemptClose}>Cancel</button>
+    <div className={s.projectDialogActions}>
+      <button className={s.secondary} type="button" disabled={busy} onClick={attemptClose}>Cancel</button>
+      <button className={s.primary} disabled={busy}>{busy ? "Saving…" : "Save project"}</button>
+    </div>
   </form></dialog>;
 }
 
-export default function Projects({ api, onTask, search, initialSelection, onSelect }: { api: Api; onTask: (task: Partial<Task>) => void; search: string; initialSelection: string | null; onSelect: (id:string)=>void }) {
+export default function Projects({ api, onTask, onOpenEntry, search, initialSelection, onSelect }: { api: Api; onTask: (task: Partial<Task>) => void; onOpenEntry:(id:string)=>void; search: string; initialSelection: string | null; onSelect: (id:string)=>void }) {
   const [selected, setSelected] = useState<string | null>(initialSelection);
   useEffect(()=>{queueMicrotask(()=>setSelected(initialSelection));},[initialSelection]);
   const [editing, setEditing] = useState(false);
@@ -49,7 +56,7 @@ export default function Projects({ api, onTask, search, initialSelection, onSele
   const [busy, setBusy] = useState(false);
   const project = api.projects.find(project=>project.id===selected);
   const tasks = project ? api.tasks.filter(task=>task.projectId===project.id) : [];
-  if (creating || (editing && project)) return <ProjectEditor key={creating?"new":project!.id} api={api} project={creating?undefined:project} close={()=>{setCreating(false);setEditing(false);}}/>;
+  if (creating || (editing && project)) return <ProjectEditor key={creating?"new":project!.id} api={api} project={creating?undefined:project} close={()=>{setCreating(false);setEditing(false);}} onOpenEntry={onOpenEntry}/>;
   return <section aria-label="Projects">
     <p className={s.hint}>Everyone in this workspace can access these projects. Archiving preserves linked tasks and prevents new assignments.</p>
     {error && <p role="alert">{error}</p>}
@@ -61,6 +68,7 @@ export default function Projects({ api, onTask, search, initialSelection, onSele
     {project && <article>
       <h2>{project.name}{project.archived?" (archived)":""}</h2>
       <p style={{whiteSpace:"pre-wrap"}}>{project.description}</p>
+      <EntityDatabaseRelations api={api} scope="project" values={project.databaseRelations??{}} disabled readOnly onChange={()=>{}} onOpenEntry={onOpenEntry} />
       <button disabled={busy} onClick={()=>setEditing(true)}>Edit project</button>{" "}
       <button disabled={busy} onClick={async()=>{
         setBusy(true);setError("");

@@ -5,7 +5,7 @@ export type TaskSavePacket = Partial<Task> & { operationId: string; expectedRevi
 export type TaskDraftRecord = { version: 1; baseline: Partial<Task>; draft: Partial<Task>; packet: TaskSavePacket | null };
 
 export function taskDraftBaseline(task: Partial<Task>): Partial<Task> {
-  const keys = ["id", "revision", "title", "description", "content", "status", "assigneeId", "dueDate", "propertyValues", "projectId", "priority", "estimate"] as const;
+  const keys = ["id", "revision", "title", "description", "content", "status", "assigneeId", "dueDate", "propertyValues", "databaseRelations", "projectId", "priority", "estimate"] as const;
   return Object.fromEntries(keys.filter(key => task[key] !== undefined).map(key => [key, task[key]]));
 }
 

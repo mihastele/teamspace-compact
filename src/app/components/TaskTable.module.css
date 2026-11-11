@@ -1,8 +1,9 @@
 .tableView { padding: 20px 24px; min-width: 0; }
-.controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .controls > label { display: grid; gap: 5px; font-size: 12px; color: #52627a; }
-.controls select, .controls > button { border: 1px solid #d4dce8; border-radius: 6px; padding: 8px 10px; background: white; color: #172338; font: inherit; cursor: pointer; }
-.controls > button { margin-top: 19px; font-size: 12px; }
+.controls select, .tableActions > button { border: 1px solid #d4dce8; border-radius: 6px; padding: 8px 10px; background: white; color: #172338; font: inherit; cursor: pointer; }
+.tableActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.tableActions > button { font-size: 12px; }
 .hint { font-size: 12px; color: #637592; line-height: 1.5; }
 .scroll { overflow-x: auto; border: 1px solid #dce3ee; border-radius: 8px; max-width: 100%; }
 .scroll table { border-collapse: collapse; width: 100%; text-align: left; font-size: 13px; }

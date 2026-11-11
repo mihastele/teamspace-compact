@@ -2,13 +2,13 @@ export type Status = "todo" | "doing" | "done";
 export type BoardProperty = {
   id: string;
   name: string;
-  type: "text" | "longText" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "person" | "relation" | "url";
+  type: "text" | "longText" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "person" | "relation" | "url" | "email" | "phone" | "status" | "createdTime";
   projectId?: string | null;
-  options: { id: string; name: string; color?: string; archived?: boolean }[];
+  options: { id: string; name: string; color?: string; archived?: boolean; group?: "todo" | "doing" | "done" }[];
   revision: number;
 };
 export type PropertyValue = string | string[] | number | boolean | null;
-export type Project = { id: string; name: string; description: string; archived: boolean; revision: number };
+export type Project = { id: string; name: string; description: string; archived: boolean; revision: number; databaseRelations?: Record<string, string[]> };
 export type BoardView = {
   savedViewId?: string;
   name: string;
@@ -30,6 +30,7 @@ export type Task = {
   dueDate: string | null;
   position: number;
   propertyValues?: Record<string, PropertyValue>;
+  databaseRelations?: Record<string, string[]>;
   projectId?: string | null;
   priority?: "none" | "low" | "medium" | "high" | "urgent";
   estimate?: number | null;

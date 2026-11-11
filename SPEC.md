@@ -1,5 +1,7 @@
 # Teamspace — hackathon build spec
 
+> Development direction, October 2026: Supabase/PostgreSQL is the active target. Firebase is retained in the current implementation but is not currently in development. The existing model described below remains active; migration 017 prepares empty block containment storage, while the unified model in `.agentic/BLOCK-ARCHITECTURE.md` is not yet integrated or migrated.
+
 ## Purpose
 
 A small shared workspace for a college team: track work on a Kanban board and keep project notes beside it. Prioritize reliable saving, clear permissions, and quick navigation.
@@ -23,7 +25,7 @@ A small shared workspace for a college team: track work on a Kanban board and ke
 6. Upload images and PDFs to tasks or notes; view and delete attachments.
 7. Responsive interface, loading/empty/error states, keyboard-accessible controls.
 
-Notifications and public publishing remain outside scope. On October 18 the user approved independent databases alongside Tasks/Projects; the first PostgreSQL increment adds named collections, rich entry bodies, typed properties and multi-entry relations with incoming links. Migration 016 and matching deployment/authenticated acceptance remain required. Formulas/rollups and generic entry comments/attachments/saved layouts are future increments. See `.agentic/DATABASES-PLAN.md`. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
+Notifications and public publishing remain outside scope. On October 18 the user approved independent databases alongside Tasks/Projects; the first PostgreSQL increment adds named collections, rich entry bodies, typed properties and multi-entry relations with incoming links. Independent database properties also include email and phone as bounded, unverified text values, status options grouped into To do, In progress and Complete, and read-only creation time for new entries; older entries with unknown creation times remain blank. The database table and local list layout display loaded rows with typed-property sorting, empty values last, stable ID ties, current option/member/relation labels and local resettable settings; search/sort do not change server pagination or exports. List entries expose relation links and their own sort controls. Layout selection is local and not a saved view. Relation properties target one database, tasks or projects, with local title search, retained/unavailable selections and a 50-record limit. Trusted writes validate same-workspace targets and archive state; deleting a task removes incoming entry links and advances entry revisions transactionally. Separate task and project relation properties target entries in one chosen database; selections save with the page and task draft recovery. Migration 020 adds separately bounded task/project backlinks and page-to-entry navigation; matching deployment/authenticated acceptance remain required. Formulas/rollups and generic entry comments/attachments/saved layouts are future increments. See `.agentic/DATABASES-PLAN.md`. The approved October 17 PostgreSQL agentic-ticket expansion is tracked in `.agentic/AGENTIC-TICKETS-IMPLEMENTATION.md`; agent execution remains future work. The user selected custom fields on the existing workspace board on October 4. Nested notes were added October 3; simultaneous text/block collaboration was added October 4 at the user's request. Browser/deployed acceptance remains a release gate.
 
 ### Custom board fields
 
@@ -296,6 +298,20 @@ The application UI, Firebase client integration, trusted API handlers, default-d
 - Existing note board blocks optionally store savedViewId; shared settings stay
   authoritative while independent legacy settings remain intact. History/downloads
   preserve reference IDs. Changing/removing a reference never deletes tasks/views.
+- Notes can create and link named saved boards in place, choosing name, grouping,
+  timezone and typed property/Project filters. Multiple embeds select independent
+  definitions over shared tickets. Basic legacy settings remain intact on unlink.
+- Embedded saved views expose the shared filter/presentation editor. Apply previews
+  locally; Save changes uses reviewed revisions; Save as new view links the copied
+  definition to this block. New remote definitions preserve dirty view settings.
+- New-board creation freezes the exact request on first send and retains its UUID
+  across dialog-local retries; acknowledged creation survives a stale link failure.
+  Unmount/account/workspace changes fence late linking. Setup drafts are not durable
+  across reload. Closing an uncertain creation may leave a saved unlinked view.
+  Cancel/Escape opens an in-dialog review focused on Keep editing; Escape again
+  returns to the unchanged draft and restores focus. Confirmed discard returns to
+  the opener. After a send, Close setup warns that any saved view remains available.
+  PostgreSQL only; existing Firebase/preview basic-board behavior is retained.
 - Views uses typed filters and canonical indexed queries; board moves persist only
   intended status/priority fields. Counts and exports describe loaded rows. URLs
   retain authorized workspace/view/Project/task context and validated overrides.

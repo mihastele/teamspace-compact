@@ -1,0 +1,172 @@
+// Research only: no authorization, persistence, receipts, or production writer.
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const Y = require("yjs");
+const legacy = require("../../.test-build/collaboration-model.js");
+const blocks = require("../../.test-build/block-collaboration.js");
+
+function clone(doc) {
+  return legacy.decodeDocument(legacy.encodeDocument(doc), { gc: false });
+}
+
+function edit(doc, change) {
+  const before = legacy.readContent(doc);
+  const next = structuredClone(before);
+  change(next.blocks);
+  const vector = Y.encodeStateVector(doc);
+  legacy.applyEditorContent(doc, before, next);
+  return Y.encodeStateAsUpdate(doc, vector);
+}
+
+function mergeLegacy(base, updates) {
+  const candidate = clone(base);
+  try {
+    for (const update of updates) Y.applyUpdate(candidate, update);
+    legacy.validateDocument(candidate, base);
+    return legacy.readContent(candidate);
+  } finally { candidate.destroy(); }
+}
+
+test("offline page edits can be merged before splitting into independent block checkpoints", () => {
+  const base = legacy.initializeDocument({ blocks: [
+    { type: "paragraph", text: "Alpha" }, { type: "paragraph", text: "Bravo" },
+  ] });
+  const first = clone(base), second = clone(base);
+  const one = edit(first, values => { values[0].text += " offline"; });
+  const two = edit(second, values => { values[1].text += " remote"; });
+  const merged = mergeLegacy(base, [one, two, one]);
+  assert.deepEqual(merged, mergeLegacy(base, [two, one]));
+  assert.deepEqual(merged.blocks.map(value => value.text), ["Alpha offline", "Bravo remote"]);
+  for (const value of merged.blocks) {
+    const state = blocks.createBlockState(value.text);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, state);
+    assert.equal(doc.getText("text").toString(), value.text);
+    doc.destroy();
+  }
+  base.destroy(); first.destroy(); second.destroy();
+});
+
+test("a missing legacy dependency is rejected before any projection", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "Start" }] });
+  const offline = clone(base);
+  const first = edit(offline, values => { values[0].text += " one"; });
+  const second = edit(offline, values => { values[0].text += " two"; });
+  const original = legacy.encodeDocument(base);
+  assert.throws(() => mergeLegacy(base, [second]), /dependencies/);
+  assert.equal(legacy.encodeDocument(base), original);
+  assert.equal(mergeLegacy(base, [second, first]).blocks[0].text, "Start one two");
+  base.destroy(); offline.destroy();
+});
+
+test("a new checkpoint cannot directly receive an old page update", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "Start" }] });
+  const offline = clone(base);
+  const update = edit(offline, values => { values[0].text += " offline"; });
+  const checkpoint = blocks.createBlockState("Start");
+  assert.throws(() => blocks.mergeBlockUpdate(checkpoint, update));
+  assert.equal(mergeLegacy(base, [update]).blocks[0].text, "Start offline");
+  base.destroy(); offline.destroy();
+});
+
+// A research-only text bridge. The shadow retains the checkpoint's causal
+// identity and advances only with legacy effects; the live block may also
+// receive new-editor updates. This intentionally handles append-only text.
+function translateAppend(shadow, before, after) {
+  assert.equal(shadow.getText("text").toString(), before);
+  assert.ok(after.startsWith(before));
+  const vector = Y.encodeStateVector(shadow);
+  shadow.getText("text").insert(before.length, after.slice(before.length));
+  return Y.encodeStateAsUpdate(shadow, vector);
+}
+
+test("a causally shared shadow carries sequential offline appends alongside new-editor edits", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "Start" }] });
+  const offline = clone(base);
+  const first = edit(offline, values => { values[0].text += " old1"; });
+  const second = edit(offline, values => { values[0].text += " old2"; });
+  const cutover = blocks.createBlockState("Start");
+  const shadow = new Y.Doc();
+  Y.applyUpdate(shadow, cutover);
+  const live = new Y.Doc();
+  Y.applyUpdate(live, cutover);
+  live.getText("text").insert(0, "new ");
+
+  const afterFirst = mergeLegacy(base, [first]).blocks[0].text;
+  const afterSecond = mergeLegacy(base, [first, second]).blocks[0].text;
+  const convertedFirst = translateAppend(shadow, "Start", afterFirst);
+  const convertedSecond = translateAppend(shadow, afterFirst, afterSecond);
+  // Delayed dependent conversion waits until its predecessor arrives.
+  Y.applyUpdate(live, convertedSecond);
+  assert.ok(live.store.pendingStructs);
+  Y.applyUpdate(live, convertedFirst);
+  Y.applyUpdate(live, convertedFirst);
+  assert.equal(live.store.pendingStructs, null);
+  assert.equal(live.getText("text").toString(), "new Start old1 old2");
+  base.destroy(); offline.destroy(); shadow.destroy(); live.destroy();
+});
+
+test("recreating a shadow with the same text does not preserve its causal identity", () => {
+  const checkpoint = blocks.createBlockState("Start");
+  const live = new Y.Doc();
+  Y.applyUpdate(live, checkpoint);
+  const unrelated = new Y.Doc();
+  Y.applyUpdate(unrelated, blocks.createBlockState("Start"));
+  const converted = translateAppend(unrelated, "Start", "Start old");
+  Y.applyUpdate(live, converted);
+  assert.ok(live.store.pendingStructs);
+  assert.equal(live.getText("text").toString(), "Start");
+  live.destroy(); unrelated.destroy();
+});
+
+// A deliberately simple contiguous replacement to expose its limitations.
+// Test inputs below are ASCII; this is not suitable for production text.
+function translateSingleSpan(shadow, before, after) {
+  const text = shadow.getText("text");
+  assert.equal(text.toString(), before);
+  let start = 0, suffix = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  while (suffix < before.length - start && suffix < after.length - start &&
+         before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix++;
+  const vector = Y.encodeStateVector(shadow);
+  shadow.transact(() => {
+    if (before.length - start - suffix) text.delete(start, before.length - start - suffix);
+    if (after.length - start - suffix) text.insert(start, after.slice(start, after.length - suffix));
+  });
+  return Y.encodeStateAsUpdate(shadow, vector);
+}
+
+test("two old clients can be projected sequentially when no new block edit intervenes", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "abcde" }] });
+  const a = clone(base), b = clone(base);
+  const updates = [edit(a, values => { values[0].text = "aBcde"; }),
+    edit(b, values => { values[0].text = "abcdE"; })];
+  for (const ordered of [updates, [...updates].reverse()]) {
+    const shadow = new Y.Doc(), live = new Y.Doc();
+    const checkpoint = blocks.createBlockState("abcde");
+    Y.applyUpdate(shadow, checkpoint); Y.applyUpdate(live, checkpoint);
+    let before = "abcde";
+    for (let i = 0; i < ordered.length; i++) {
+      const after = mergeLegacy(base, ordered.slice(0, i + 1)).blocks[0].text;
+      Y.applyUpdate(live, translateSingleSpan(shadow, before, after));
+      before = after;
+    }
+    assert.equal(live.getText("text").toString(), "aBcdE");
+    shadow.destroy(); live.destroy();
+  }
+  base.destroy(); a.destroy(); b.destroy();
+});
+
+test("one coarse replacement can displace a concurrent insertion inside its span", () => {
+  const base = legacy.initializeDocument({ blocks: [{ type: "paragraph", text: "abcde" }] });
+  const offline = clone(base);
+  const update = edit(offline, values => { values[0].text = "aBcdE"; });
+  const after = mergeLegacy(base, [update]).blocks[0].text;
+  const checkpoint = blocks.createBlockState("abcde"), shadow = new Y.Doc(), live = new Y.Doc();
+  Y.applyUpdate(shadow, checkpoint); Y.applyUpdate(live, checkpoint);
+  live.getText("text").insert(3, "X"); // The new editor intended ab cX d e.
+  Y.applyUpdate(live, translateSingleSpan(shadow, "abcde", after));
+  assert.equal(live.getText("text").toString(), "aXBcdE");
+  assert.notEqual(live.getText("text").toString(), "aBcXdE");
+  base.destroy(); offline.destroy(); shadow.destroy(); live.destroy();
+});

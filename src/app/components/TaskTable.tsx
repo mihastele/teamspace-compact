@@ -35,11 +35,11 @@ export default function TaskTable({ api, tasks, properties, members, onTask, fil
       <label>Due date<select value={deadline} onChange={event => setDeadline(event.target.value as DeadlineFilter)}>
         <option value="all">All tasks</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="undated">No due date</option>
       </select></label>
-      <BoardProperties api={api} columns={columns} hidden={hidden} onVisibilityChange={(id, shown) => {
+      <div className={s.tableActions}><BoardProperties api={api} columns={columns} hidden={hidden} align="end" onVisibilityChange={(id, shown) => {
         setHidden(previous => shown ? previous.filter(value => value !== id) : [...previous, id]);
         if (!shown && sort?.column === id) setSort(null);
       }} />
-      {(activeSort || status !== "all" || deadline !== "all" || hidden.length > 0) && <button onClick={() => { setSort(null); setStatus("all"); setDeadline("all"); setHidden([]); }}>Reset table</button>}
+      {(activeSort || status !== "all" || deadline !== "all" || hidden.length > 0) && <button onClick={() => { setSort(null); setStatus("all"); setDeadline("all"); setHidden([]); }}>Reset table</button>}</div>
     </div>
     <p className={s.hint} role="status">{rows.length} {rows.length === 1 ? "task" : "tasks"}{filtered || status !== "all" || deadline !== "all" ? " matching your filters" : ""} · {activeSort ? `Sorted by ${columns.find(column => column.id === activeSort.column)?.label}, ${activeSort.direction}` : "Board order"}</p>
     <div className={s.scroll} tabIndex={0} role="region" aria-label="Scrollable task table">

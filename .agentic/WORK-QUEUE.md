@@ -1,12 +1,12 @@
 # Specification work queue
 
-Updated 2026-10-18. PROJECT-STATE.md remains the append-only continuity record;
+Updated 2026-10-21. PROJECT-STATE.md remains the append-only continuity record;
 this queue identifies the next actionable tickets and keeps automated evidence
 separate from browser/deployed acceptance.
 
 | Ticket | Status | Next action / completion evidence |
 | --- | --- | --- |
-| R1 — Browse every local recovery archive | Implemented; browser acceptance open | Dated metadata pages, selected Markdown downloads, scope isolation, corruption recovery and unchanged active journals have real IndexedDB tests. Verify dialog focus/Escape, downloads, paging and linked-source recovery in browser. |
+| R1 — Browse every local recovery archive | Component browser acceptance passed; full-app acceptance open | Real browser IndexedDB/Strict Mode fixture verifies focus/Escape, paging across another tab's archive, refreshed/Unicode Markdown downloads, corrupt-record recovery, page/source/account/workspace isolation, unchanged active journal and 390px layout. Repeat with `npm run test:ui:recovery-archives`. Full-app authenticated linked-source placement and delayed-read close/navigation remain open; no automated DOM suite. |
 | R2 — Browser and two-user acceptance | Partially verified locally; authenticated acceptance open | [2026-10-17 browser evidence](BROWSER-ACCEPTANCE.md) covers table sorting/filter/columns/dialog focus, calendar keyboard/date-prefill/persistence and mobile navigation. Fixed mobile page overflow; current browser access works. Remaining: shared task moves, typing/IME, restore/recovery, conversations, fields, linked sources, exports and authenticated two-user/mobile flows. |
 | R3 — Update configured self-hosted installation | Administrator action pending | Apply each unapplied migration through 016 after backup/review, deploy matching client/API, then verify Auth/Storage and two-user flows. Confirm expiry/staging cleanup scheduling. Do not hand-edit the database or infer deployment authorization. |
 | R13 — Repeatable staging/production setup | Implemented; external/live acceptance open | `deploy:setup` generates private keys/env and isolated Compose/data roots; `deploy` validates/builds/backs up/migrates/publishes policy/starts web and hourly cleanup. Both images and isolation checks pass. Staging now runs with local Mailpit capture: full up, backup, migrations through 016, HTTP 200, confirmation-link delivery/verification and first scheduled cleanup pass. Production retains blank external credentials and placeholder URLs; production launch, external SMTP/HTTPS, restore and authenticated two-user acceptance remain open. Follow deploy/README.md for domains, SMTP, HTTPS, backup/restore and two-user acceptance. Legacy installation remains unchanged. |
@@ -30,6 +30,23 @@ architecture on October 18. First PostgreSQL implementation adds named collectio
 rich pages, typed properties, multi-entry relations and incoming links, safe saves,
 archives and JSON export. See DATABASES-PLAN.md and migration 016. Live migration,
 authenticated two-user/browser/mobile acceptance and a persisted React/browser suite
-remain open. Formulas/rollups, Task/Project relation targets and database-specific
-layouts/templates/comments/attachments are future increments. M4c is deferred while
+remain open. October 21 adds local typed column sorting over loaded rows, with
+nulls last and stable ID ties; header/reset/paging/refresh/mobile browser
+acceptance for sorting remains open. Searchable relation pickers now retain
+selected/unavailable links, allow explicit clearing and target-read retry, and
+enforce the existing cap/archive controls in the UI. Manual component checks
+pass via `npm run test:ui:database-relations`; full authenticated editor/save
+acceptance remains open. Task/project relation targets and automatic removal of links on task deletion are implemented with migration 018. Migration 019 adds separate task/project properties that select entries in a chosen data source, saved with the page; migration 020 adds task/project backlinks and direct entry navigation. Shared task/project relation definitions can be renamed with revision checks. Authenticated, two-user and deployed acceptance remain open. Formulas/rollups and database-specific saved layouts/templates/comments/attachments are future increments. M4c is deferred while
 this database work is prioritized.
+
+
+R14 — Named boards directly in notes: create/link named boards from a note,
+configure existing ticket-property/Project relation filters, and edit shared
+filter/presentation settings in embeds. User selected shared tickets and existing
+Project/property filtering on October 19. Implemented with existing saved-view
+APIs; no schema migration. See NOTE-BOARDS-PLAN.md. Cancellation/repeated Escape,
+focus and mobile checks now pass in a maintained manual component fixture
+(`npm run test:ui:named-boards`). Authenticated two-user/deployed acceptance and an
+automated DOM suite remain open.
+New relation targets, related-record property traversal, database layouts and
+rollups remain later increments.

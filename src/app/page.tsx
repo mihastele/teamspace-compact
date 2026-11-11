@@ -37,6 +37,7 @@ import TicketViews, { SavedViewLink } from "./components/TicketViews";
 import TaskTable from "./components/TaskTable";
 import Projects from "./components/Projects";
 import Databases from "./components/Databases";
+import EntityDatabaseRelations from "./components/EntityDatabaseRelations";
 import RecoveryArchives from "./components/RecoveryArchives";
 import WorkspaceAccess, { MemberAdder } from "./components/WorkspaceAccess";
 import { BoardProperties, TaskPropertyInputs, TaskPropertySummary } from "./components/BoardProperties";
@@ -246,7 +247,7 @@ function taskDraftFields(task: Partial<Task>) {
       title: task.title ?? "", description: task.description ?? "", content: taskContent({ description: task.description ?? "", content: task.content }),
       status: task.status ?? ("todo" as Status), assigneeId: task.assigneeId ?? "", dueDate: task.dueDate ?? "",
       projectId: task.projectId ?? "", priority: task.priority ?? ("none" as NonNullable<Task["priority"]>),
-      estimate: task.estimate ?? null, propertyValues: task.propertyValues ?? {},
+      estimate: task.estimate ?? null, propertyValues: task.propertyValues ?? {}, databaseRelations: task.databaseRelations ?? {},
     };
 }
 
@@ -255,10 +256,12 @@ function TaskDialog({
   initial,
   close,
   onProject,
+  onOpenEntry,
   onDuplicate,
 }: {
   api: Api;
   onProject: (id: string) => void;
+  onOpenEntry: (id: string) => void;
   onDuplicate: (task: Partial<Task>) => void;
   initial: Partial<Task>;
   close: () => void;
@@ -287,7 +290,7 @@ function TaskDialog({
   const [copyError, setCopyError] = useState("");
   const [commentRecoveryRisk, setCommentRecoveryRisk] = useState(false);
   const changed = JSON.stringify(templateDefaults({ ...draft, projectId: draft.projectId || undefined })) !==
-    JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined }));
+    JSON.stringify(templateDefaults({ ...taskDraftFields(baseline), projectId: baseline.projectId || undefined })) || JSON.stringify(draft.databaseRelations) !== JSON.stringify(baseline.databaseRelations ?? {});
   const onDraftAcquired = useCallback(async () => {
     try {
       const raw = localStorage.getItem(recoveryKey);
@@ -368,12 +371,14 @@ function TaskDialog({
         ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}),
       };
       const propertyValues = changedPropertyValues(baseline.propertyValues, draft.propertyValues);
+      const relationChanged = JSON.stringify(baseline.databaseRelations ?? {}) !== JSON.stringify(draft.databaseRelations);
       const contentChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
       const changes = initial.id ? {
         ...taskEditPatch(baseline, edited),
         ...(contentChanged ? { content: draft.content } : {}),
         ...(Object.keys(propertyValues).length ? { propertyValues } : {}),
-      } : { ...edited, content: draft.content, propertyValues: draft.propertyValues };
+        ...(relationChanged ? { databaseRelations: draft.databaseRelations } : {}),
+      } : { ...edited, content: draft.content, propertyValues: draft.propertyValues, ...(Object.keys(draft.databaseRelations).length ? {databaseRelations:draft.databaseRelations} : {}) };
       if (!packet && initial.id && !Object.keys(changes).length) { saved.current = true; localStorage.removeItem(recoveryKey); close(); return; }
       const next: TaskSavePacket = packet ?? { ...changes, ...(initial.id ? { id: initial.id, expectedRevision: baseline.revision ?? 0 } : {}), operationId: crypto.randomUUID() };
       if (recovered.error) throw new Error("Stored recovery needs review. Download it and explicitly discard it before saving a new draft.");
@@ -473,7 +478,8 @@ function TaskDialog({
           {review && <section aria-label="Review latest task"><h3>Latest saved task</h3><div className={s.taskReview}><h4>{review.title}</h4><p>Status: {columns.find(column => column.id === review.status)?.label} · Assignee: {api.members.find(member => member.id === review.assigneeId)?.displayName ?? "Unassigned"} · Due: {review.dueDate ?? "No date"}</p>{api.projectsEnabled && <p>Project: {api.projects.find(project => project.id === review.projectId)?.name ?? "None"} · Priority: {review.priority ?? "none"} · Estimate: {review.estimate ?? "Unset"}</p>}<TaskPropertySummary task={review} properties={api.boardProperties} members={api.members} projects={api.projects} /><MarkdownText text={exportNoteMarkdown(review.title, taskContent(review)).markdown} /></div><button type="button" disabled={busy} onClick={() => {
             const intent = taskEditPatch(baseline, { title: draft.title, description: taskDescription(draft.content), status: draft.status, assigneeId: draft.assigneeId || null, dueDate: draft.dueDate || null, ...(api.projectsEnabled ? { projectId: draft.projectId || null, priority: draft.priority, estimate: draft.estimate } : {}) });
             const bodyChanged = JSON.stringify(taskContent({ description: baseline.description ?? "", content: baseline.content })) !== JSON.stringify(draft.content);
-            setDraft(taskDraftFields({ ...review, ...intent, content: bodyChanged ? draft.content : taskContent(review), propertyValues: { ...review.propertyValues, ...changedPropertyValues(baseline.propertyValues, draft.propertyValues) } }));
+            const relationChanges = Object.fromEntries(Object.entries(draft.databaseRelations).filter(([id,value])=>JSON.stringify(value)!==JSON.stringify(baseline.databaseRelations?.[id]??[])));
+            setDraft(taskDraftFields({ ...review, ...intent, content: bodyChanged ? draft.content : taskContent(review), propertyValues: { ...review.propertyValues, ...changedPropertyValues(baseline.propertyValues, draft.propertyValues) }, databaseRelations: {...review.databaseRelations,...relationChanges} }));
             setBaseline(taskDraftBaseline(review)); setReview(null); setError("");
           }}>Keep my edits over this reviewed version</button></section>}
           <fieldset disabled={locked} className={s.taskFields}>
@@ -489,7 +495,7 @@ function TaskDialog({
             />
           </label>
           <div className={s.taskTools}>
-            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(taskDraftFields(defaults))} />
+            <TaskTemplates api={api} current={templateDefaults({ ...draft, ...(api.projectsEnabled ? {} : { projectId: undefined, priority: undefined, estimate: undefined }) })} disabled={locked} canApply={!initial.id} onApply={defaults => setDraft(previous=>({...taskDraftFields(defaults),databaseRelations:previous.databaseRelations}))} />
           </div>
           <div className={s.taskAttributes}>
           <div className={s.fieldRow}>
@@ -545,6 +551,7 @@ function TaskDialog({
           </>}
           <TaskPropertyInputs api={api} properties={api.boardProperties} values={draft.propertyValues} disabled={locked} members={api.members} projects={api.projects} projectId={draft.projectId}
             onChange={(id, value) => setDraft(previous => ({ ...previous, propertyValues: { ...previous.propertyValues, [id]: value } }))} />
+          {api.projectsEnabled && <EntityDatabaseRelations api={api} scope="task" values={draft.databaseRelations} disabled={locked} onChange={databaseRelations=>setDraft(previous=>({...previous,databaseRelations}))} navigationDisabled={locked||changed||composing||commentRecoveryRisk||Boolean(storageError||recovered.error)} onOpenEntry={id=>{close();onOpenEntry(id);}} />}
           </div>
           </fieldset>
           <section className={s.taskBody} aria-label="Task body">
@@ -698,8 +705,8 @@ function WorkspaceBoard({
             Clear due-date filter
           </button>
         )}
+        <div className={s.boardProperties}><BoardProperties api={api} align="end" /></div>
       </div>
-      <BoardProperties api={api} />
       <p className={s.moveAnnouncement} role="status">
         {announcement}
       </p>
@@ -1742,7 +1749,7 @@ function Notes({
             </button>
           </div>
         )}
-        {liveEnabled && selected && api.user && api.workspace && <RecoveryArchives key={`${api.user.uid}:${key}`}
+        {liveEnabled && selected && api.user && api.workspace && <RecoveryArchives key={`recovery-archives:${api.user.uid}:${key}`}
           scope={`${api.user.uid}:${api.workspace.id}:${selected}:archive-browser`} title={draft.title || "Untitled note"} />}
         {children.length > 0 && (
           <p className={s.hint} style={{ marginBottom: 14 }}>
@@ -1842,7 +1849,7 @@ function Notes({
           disabled={api.loading || draft.state === "Saving"}
           onChange={(e) => update({ title: e.target.value })}
         />
-        <SyncedContentScope key={`${api.user?.uid ?? "preview"}:${key}`} api={api} noteId={selected} content={displayedContent}
+        <SyncedContentScope key={`synced-content:${api.user?.uid ?? "preview"}:${key}`} api={api} noteId={selected} content={displayedContent}
           main={liveEnabled ? collaboration : null}
           onChangeMain={(content, base) => liveEnabled ? changeLiveContent(content, base) : update({ content })}
           onOpen={id => selectNote(id)} onRiskChange={reportLinkedRisk}>
@@ -1852,7 +1859,7 @@ function Notes({
           renderBoard={(block, onViewChange, disabled) => (
             <>
             <SavedViewLink api={api} view={block.boardView} disabled={disabled} onApply={onViewChange}/>
-            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId}/> : <>
+            {block.boardView?.savedViewId && api.projectsEnabled ? <TicketViews key={block.boardView.savedViewId} api={api} onTask={onTask} viewId={block.boardView.savedViewId} disabled={disabled} onLink={id=>onViewChange({...block.boardView!,savedViewId:id},block.boardView)}/> : <>
             <LinkedBoardSettings view={block.boardView} members={api.members} disabled={disabled} onApply={onViewChange} />
             <WorkspaceBoard
               key={`${api.workspace?.id}:${block.id ?? "board"}`}
@@ -2356,6 +2363,8 @@ export default function Home() {
     queueMicrotask(open);window.addEventListener("popstate",open);return()=>window.removeEventListener("popstate",open);
   },[]);
   const [projectSelection,setProjectSelection] = useState<{scope:string;id:string}|null>(null);
+  const [databaseEntrySelection,setDatabaseEntrySelection] = useState<{scope:string;id:string}|null>(null);
+  const clearDatabaseEntrySelection = useCallback(()=>setDatabaseEntrySelection(null),[]);
   const [search, setSearch] = useState("");
   const [taskSelection, setTaskSelection] = useState<{
     scope: string;
@@ -2363,9 +2372,19 @@ export default function Home() {
   } | null>(null);
   const taskScope = `${api.user?.uid || "preview"}:${api.workspace?.id || "none"}`;
   const task = taskSelection?.scope === taskScope ? taskSelection.value : null;
+  useEffect(()=>{
+    if(!databaseEntrySelection || (databaseEntrySelection.scope===taskScope && view==="databases"))return;
+    let live=true;
+    queueMicrotask(()=>{if(live)setDatabaseEntrySelection(current=>current===databaseEntrySelection?null:current);});
+    return ()=>{live=false;};
+  },[databaseEntrySelection,taskScope,view]);
   function setTask(value: Partial<Task> | null) {
     setTaskSelection(value ? { scope: taskScope, value } : null);
     const url=new URL(location.href);if(value?.id){url.searchParams.set("ticket",value.id);if(api.workspace)url.searchParams.set("workspace",api.workspace.id);}else url.searchParams.delete("ticket");history.replaceState(null,"",url);
+  }
+  function openDatabaseEntry(id:string) {
+    setDatabaseEntrySelection({scope:taskScope,id});setView("databases");
+    const url=new URL(location.href);url.searchParams.delete("ticket");url.searchParams.delete("project");url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);
   }
   const restoredWorkspace=useRef("");
   useEffect(()=>{
@@ -2682,8 +2701,8 @@ export default function Home() {
             <TaskTable key={taskScope} api={api} tasks={shown} properties={api.boardProperties} members={api.members} projects={api.projects} extended={api.projectsEnabled}
               filtered={Boolean(search || filter)} onTask={setTask} />
           </>}
-          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
-          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} />}
+          {view === "projects" && api.projectsEnabled && <Projects key={taskScope} api={api} onTask={setTask} onOpenEntry={openDatabaseEntry} search={search} onSelect={id=>{setProjectSelection({scope:taskScope,id});const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} initialSelection={projectSelection?.scope===taskScope?projectSelection.id:null} />}
+          {view === "databases" && api.projectsEnabled && <Databases key={taskScope} api={api} onTask={setTask} requestedEntry={databaseEntrySelection?.scope===taskScope?databaseEntrySelection.id:null} onEntryRequestHandled={clearDatabaseEntrySelection} onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);history.replaceState(null,"",url);}} />}
           {view === "views" && api.projectsEnabled && !api.loading && <TicketViews key={taskScope} api={api} onTask={setTask} />}
           {view === "members" && <Members key={api.workspace.id} api={api} />}
           <footer className={s.footer}>
@@ -2704,6 +2723,7 @@ export default function Home() {
           api={api}
           initial={task}
           onDuplicate={setTask}
+          onOpenEntry={openDatabaseEntry}
           onProject={id=>{setProjectSelection({scope:taskScope,id});setView("projects");const url=new URL(location.href);url.searchParams.set("project",id);url.searchParams.set("workspace",api.workspace!.id);url.searchParams.delete("ticketView");url.searchParams.delete("ticketQuery");history.replaceState(null,"",url);}}
           close={() => setTask(null)}
         />
