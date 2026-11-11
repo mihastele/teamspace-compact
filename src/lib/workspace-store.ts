@@ -286,6 +286,14 @@ export const workspaceStore = {
     const existing = currentState.blocks[id];
     if (!existing) return;
 
+    const mergedProperties = updates.properties
+      ? { ...(existing.properties || {}), ...updates.properties }
+      : existing.properties ? { ...existing.properties } : undefined;
+
+    if (updates.title !== undefined && mergedProperties && "prop-title" in mergedProperties) {
+      mergedProperties["prop-title"] = updates.title;
+    }
+
     currentState = {
       ...currentState,
       blocks: {
@@ -293,6 +301,7 @@ export const workspaceStore = {
         [id]: {
           ...existing,
           ...updates,
+          properties: mergedProperties,
           updatedAt: Date.now(),
           revision: existing.revision + 1,
         },
@@ -304,31 +313,94 @@ export const workspaceStore = {
   toggleFavorite(id: string) {
     const block = currentState.blocks[id];
     if (block) {
-      this.updateBlock(id, { isFavorite: !block.isFavorite });
+      workspaceStore.updateBlock(id, { isFavorite: !block.isFavorite });
     }
   },
 
   archiveBlock(id: string) {
     const block = currentState.blocks[id];
     if (block) {
-      this.updateBlock(id, { isArchived: true });
+      workspaceStore.updateBlock(id, { isArchived: true });
+      if (currentState.sidePeekBlockId === id) {
+        workspaceStore.setSidePeekBlock(null);
+      }
       if (currentState.activeBlockId === id) {
         // Find another root page to switch to
         const rootIds = currentState.childrenIndex["root"] || [];
         const nextId = rootIds.find((bid) => bid !== id && !currentState.blocks[bid]?.isArchived);
-        this.setActiveBlock(nextId || null);
+        workspaceStore.setActiveBlock(nextId || null);
       }
     }
   },
 
   restoreBlock(id: string) {
-    this.updateBlock(id, { isArchived: false });
+    workspaceStore.updateBlock(id, { isArchived: false });
+  },
+
+  duplicateBlock(id: string): Block | null {
+    const original = currentState.blocks[id];
+    if (!original) return null;
+
+    const now = Date.now();
+    const newId = `${original.type}-${now}-${Math.random().toString(36).slice(2, 7)}`;
+    const duplicate: Block = {
+      ...original,
+      id: newId,
+      title: `${original.title || "Untitled"} (Copy)`,
+      properties: original.properties ? { ...original.properties, "prop-title": `${original.title || "Untitled"} (Copy)` } : undefined,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+      isFavorite: false,
+    };
+
+    const parentKey = original.parentId || "root";
+    const existingChildren = currentState.childrenIndex[parentKey] || [];
+    const originalIndex = existingChildren.indexOf(id);
+    const nextChildren = [...existingChildren];
+    if (originalIndex >= 0) {
+      nextChildren.splice(originalIndex + 1, 0, newId);
+    } else {
+      nextChildren.push(newId);
+    }
+
+    currentState = {
+      ...currentState,
+      blocks: {
+        ...currentState.blocks,
+        [newId]: duplicate,
+      },
+      childrenIndex: {
+        ...currentState.childrenIndex,
+        [parentKey]: nextChildren,
+      },
+    };
+
+    emitChange();
+    return duplicate;
   },
 
   // Database Rows
-  createDatabaseRow(databaseId: string, title: string = "New entry"): Block {
+  createDatabaseRow(
+    databaseId: string,
+    title: string = "New entry",
+    initialProperties: Record<string, unknown> = {}
+  ): Block {
     const now = Date.now();
     const id = `row-${now}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // Resolve default status property if not provided in initialProperties
+    const dbProps = currentState.properties[databaseId] || [];
+    const statusProp = dbProps.find((p) => p.type === "status");
+    const mergedProperties: Record<string, unknown> = {
+      "prop-title": title,
+      ...initialProperties,
+    };
+
+    if (statusProp && !mergedProperties[statusProp.id] && statusProp.options?.[0]) {
+      mergedProperties[statusProp.id] = statusProp.options[0].id;
+    }
+
     const newRow: Block = {
       id,
       workspaceId: currentState.workspace.id,
@@ -337,9 +409,7 @@ export const workspaceStore = {
       title,
       icon: "📄",
       position: `z${now}`,
-      properties: {
-        "prop-title": title,
-      },
+      properties: mergedProperties,
       content: {
         type: "doc",
         content: [{ type: "paragraph" }],
@@ -384,7 +454,7 @@ export const workspaceStore = {
       updates.title = value;
     }
 
-    this.updateBlock(rowId, updates);
+    workspaceStore.updateBlock(rowId, updates);
   },
 
   setWorkspace(workspace: Workspace) {
@@ -433,9 +503,10 @@ export const workspaceStore = {
       if (
         !existing ||
         !hasChild ||
-        existing.title !== (note.title || "Untitled") ||
-        existing.parentId !== note.parentId ||
-        existing.revision !== (note.revision || 1)
+        (existing.revision <= (note.revision || 1) &&
+          (existing.title !== (note.title || "Untitled") ||
+            existing.parentId !== note.parentId ||
+            existing.revision !== (note.revision || 1)))
       ) {
         changed = true;
         const block: Block = {
@@ -489,11 +560,12 @@ export const workspaceStore = {
       if (
         !existing ||
         !hasChild ||
-        existing.title !== (task.title || "Untitled") ||
-        existing.properties?.["prop-status"] !== mappedStatus ||
-        existing.properties?.["prop-priority"] !== mappedPriority ||
-        existing.properties?.["prop-due"] !== mappedDue ||
-        existing.revision !== (task.revision || 1)
+        (existing.revision <= (task.revision || 1) &&
+          (existing.title !== (task.title || "Untitled") ||
+            existing.properties?.["prop-status"] !== mappedStatus ||
+            existing.properties?.["prop-priority"] !== mappedPriority ||
+            existing.properties?.["prop-due"] !== mappedDue ||
+            existing.revision !== (task.revision || 1)))
       ) {
         changed = true;
         const row: Block = {
@@ -571,6 +643,7 @@ export function useWorkspace() {
     toggleFavorite: workspaceStore.toggleFavorite,
     archiveBlock: workspaceStore.archiveBlock,
     restoreBlock: workspaceStore.restoreBlock,
+    duplicateBlock: workspaceStore.duplicateBlock,
     createDatabaseRow: workspaceStore.createDatabaseRow,
     updateRowProperty: workspaceStore.updateRowProperty,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,

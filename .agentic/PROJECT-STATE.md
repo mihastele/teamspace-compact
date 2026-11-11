@@ -1048,3 +1048,21 @@
   - Guarded editor content sync in `NotionEditor.tsx` with `!editor.isFocused` and `{ emitUpdate: false }`.
   - Updated `tests/note-component-identity.test.cjs` to verify component keys on the openNotion stage (`NotionEditor` and `DatabaseView`).
 - PASSED all 253 unit/model/controller/setup tests (`npm test`), full ESLint (`npm run lint`), standalone TypeScript typecheck (`tsc --noEmit`), and Next.js optimized Turbopack production build (`npm run build`).
+
+### 2026-11-11 - openNotion UI & UX Fixes: Board Properties, Slash Navigation, and Context Menus
+
+- Resolved issue where creating new entries in the Board view did not appear or property changes reverted back to original values:
+  - Bound all internal `this.` invocations in `src/lib/workspace-store.ts` to `workspaceStore.*` so destructured hooks from `useWorkspace()` maintain function context.
+  - Enhanced `createDatabaseRow` to accept `initialProperties` and auto-assign the status column option upon column creation.
+  - Added direct property editing controls on board cards with stopPropagation and inline title and due date editing in Table view.
+  - Guarded `syncFromApi` to prevent lower or equal remote revisions from reverting local client modifications.
+- Implemented full keyboard navigation for the `/` slash command menu in `src/app/components/NotionEditor.tsx`:
+  - `ArrowDown` and `ArrowUp` navigate through block options with active highlighting.
+  - `Enter` / `Tab` executes the highlighted command.
+  - `Escape` dismisses the menu.
+- Implemented click-outside (`mousedown`) and `Escape` handlers across all floating popups (Emoji Picker, Slash Menu, Workspace Switcher, Page Context Menu, Board Context Menu, and Trash modal).
+- Added right-click context menus (`onContextMenu`):
+  - On sidebar tree items (Add to Favorites, Rename, Add Subpage, Duplicate, and Delete).
+  - On board cards and table rows (Open in Side Peek, Open as Page, Move Status To, Duplicate, and Delete).
+- Added `duplicateBlock(id)` in `src/lib/workspace-store.ts`.
+- PASSED all 253 unit/model/controller/setup tests (`npm test`), full ESLint (`npm run lint`), standalone TypeScript typecheck (`npx tsc --noEmit`), and Next.js optimized Turbopack production build (`npm run build`).

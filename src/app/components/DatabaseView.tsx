@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
 import type { Block } from "@/lib/model";
 import {
@@ -11,6 +11,10 @@ import {
   Plus,
   Search,
   ExternalLink,
+  Copy,
+  Trash2,
+  Maximize2,
+  ArrowRight,
 } from "lucide-react";
 import styles from "./DatabaseView.module.css";
 
@@ -25,7 +29,10 @@ export default function DatabaseView({ block }: { block: Block }) {
     createDatabaseRow,
     updateRowProperty,
     setSidePeekBlock,
+    setActiveBlock,
     updateBlock,
+    duplicateBlock,
+    archiveBlock,
   } = useWorkspace();
 
   const dbProperties = properties[block.id] || [];
@@ -39,6 +46,35 @@ export default function DatabaseView({ block }: { block: Block }) {
   const rows = rowIds.map((id) => blocks[id]).filter(Boolean);
 
   const [searchFilter, setSearchFilter] = useState("");
+  const [contextMenu, setContextMenu] = useState<{
+    rowId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
+        setContextMenu(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   const filteredRows = rows.filter((row) =>
     (row.title || "").toLowerCase().includes(searchFilter.toLowerCase())
@@ -65,6 +101,16 @@ export default function DatabaseView({ block }: { block: Block }) {
         {opt.name}
       </span>
     );
+  };
+
+  const openContextMenu = (rowId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      rowId,
+      x: Math.min(e.clientX, window.innerWidth - 200),
+      y: Math.min(e.clientY, window.innerHeight - 240),
+    });
   };
 
   return (
@@ -138,13 +184,25 @@ export default function DatabaseView({ block }: { block: Block }) {
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
-                  <tr key={row.id} className={styles.tr}>
+                  <tr
+                    key={row.id}
+                    className={styles.tr}
+                    onContextMenu={(e) => openContextMenu(row.id, e)}
+                  >
                     <td
                       className={styles.tdMain}
                       onClick={() => setSidePeekBlock(row.id)}
                     >
                       <span className={styles.rowIcon}>{row.icon || "📄"}</span>
-                      <span className={styles.rowTitle}>{row.title || "Untitled"}</span>
+                      <input
+                        className={styles.inlineTitleInput}
+                        value={row.title || ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          updateRowProperty(row.id, "prop-title", e.target.value);
+                        }}
+                        placeholder="Untitled"
+                      />
                       <button
                         className={styles.openPeekBtn}
                         title="Open in Side Peek"
@@ -203,9 +261,14 @@ export default function DatabaseView({ block }: { block: Block }) {
                     )}
 
                     <td className={styles.td}>
-                      <span className={styles.cellDate}>
-                        {(row.properties?.["prop-due"] as string) || "-"}
-                      </span>
+                      <input
+                        type="date"
+                        className={styles.inlineDateInput}
+                        value={(row.properties?.["prop-due"] as string) || ""}
+                        onChange={(e) =>
+                          updateRowProperty(row.id, "prop-due", e.target.value)
+                        }
+                      />
                     </td>
                   </tr>
                 ))}
@@ -246,16 +309,43 @@ export default function DatabaseView({ block }: { block: Block }) {
                         key={card.id}
                         className={styles.boardCard}
                         onClick={() => setSidePeekBlock(card.id)}
+                        onContextMenu={(e) => openContextMenu(card.id, e)}
                       >
                         <div className={styles.cardTitleRow}>
                           <span className={styles.cardIcon}>{card.icon || "📄"}</span>
                           <span className={styles.cardTitle}>{card.title || "Untitled"}</span>
                         </div>
-                        {priorityProp && Boolean(card.properties?.[priorityProp.id]) && (
-                          <div className={styles.cardBadges}>
-                            {renderPriorityPill(card.properties?.[priorityProp.id])}
-                          </div>
-                        )}
+
+                        {/* Interactive Board Card Badges / Controls */}
+                        <div className={styles.cardBadges} onClick={(e) => e.stopPropagation()}>
+                          {priorityProp && (
+                            <div className={styles.badgeWrapper}>
+                              <select
+                                className={styles.cardSelect}
+                                value={(card.properties?.[priorityProp.id] as string) || ""}
+                                onChange={(e) =>
+                                  updateRowProperty(card.id, priorityProp.id, e.target.value)
+                                }
+                              >
+                                <option value="">No priority</option>
+                                {priorityProp.options?.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className={styles.pillDisplay}>
+                                {renderPriorityPill(card.properties?.[priorityProp.id])}
+                              </div>
+                            </div>
+                          )}
+
+                          {card.properties?.["prop-due"] ? (
+                            <span className={styles.cardDate}>
+                              {String(card.properties["prop-due"])}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -263,8 +353,12 @@ export default function DatabaseView({ block }: { block: Block }) {
                   <button
                     className={styles.addCardBtn}
                     onClick={() => {
-                      const newRow = createDatabaseRow(block.id, "New task");
-                      updateRowProperty(newRow.id, statusProp.id, column.id);
+                      const initialProps: Record<string, unknown> = {};
+                      if (statusProp) {
+                        initialProps[statusProp.id] = column.id;
+                      }
+                      const newRow = createDatabaseRow(block.id, "New task", initialProps);
+                      setSidePeekBlock(newRow.id);
                     }}
                   >
                     <Plus size={13} />
@@ -276,6 +370,80 @@ export default function DatabaseView({ block }: { block: Block }) {
           </div>
         )}
       </div>
+
+      {/* Floating Context Menu for Board Cards and Table Rows */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className={styles.floatingContextMenu}
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              setSidePeekBlock(contextMenu.rowId);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink size={13} />
+            <span>Open in Side Peek</span>
+          </button>
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              setActiveBlock(contextMenu.rowId);
+              setSidePeekBlock(null);
+              setContextMenu(null);
+            }}
+          >
+            <Maximize2 size={13} />
+            <span>Open as Page</span>
+          </button>
+
+          {statusProp && (
+            <div className={styles.contextSubSection}>
+              <div className={styles.contextSubHeader}>Move status to:</div>
+              {statusProp.options?.map((opt) => (
+                <button
+                  key={opt.id}
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    updateRowProperty(contextMenu.rowId, statusProp.id, opt.id);
+                    setContextMenu(null);
+                  }}
+                >
+                  <ArrowRight size={13} />
+                  <span>{opt.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className={styles.contextDivider} />
+
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              duplicateBlock(contextMenu.rowId);
+              setContextMenu(null);
+            }}
+          >
+            <Copy size={13} />
+            <span>Duplicate</span>
+          </button>
+          <button
+            className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
+            onClick={() => {
+              archiveBlock(contextMenu.rowId);
+              setContextMenu(null);
+            }}
+          >
+            <Trash2 size={13} />
+            <span>Delete</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

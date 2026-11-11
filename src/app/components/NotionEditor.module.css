@@ -136,7 +136,8 @@
   text-align: left;
 }
 
-.slashMenuItem:hover {
+.slashMenuItem:hover,
+.slashMenuItemActive {
   background-color: var(--bg-hover);
 }
 

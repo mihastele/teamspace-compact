@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -27,10 +27,23 @@ const emojiOptions = ["📄", "📝", "💡", "🎯", "🚀", "🔥", "📚", "�
 export default function NotionEditor({ block }: { block: Block }) {
   const { updateBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
+  const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
+  const [prevBlockId, setPrevBlockId] = useState(block.id);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [slashMenuPosition, setSlashMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
+
+  // Sync title during render when block changes externally without triggering an effect setState
+  if (block.id !== prevBlockId || block.title !== prevBlockTitle) {
+    setPrevBlockId(block.id);
+    setPrevBlockTitle(block.title);
+    setTitle(block.title);
+  }
 
   const editor = useEditor({
     extensions: [
@@ -51,18 +64,19 @@ export default function NotionEditor({ block }: { block: Block }) {
       type: "doc",
       content: [{ type: "paragraph" }],
     },
-    onUpdate: ({ editor }) => {
-      const json = editor.getJSON();
+    onUpdate: ({ editor: ed }) => {
+      const json = ed.getJSON();
       updateBlock(block.id, { content: json });
 
       // Check if user typed slash at cursor
-      const { from } = editor.state.selection;
-      const textBefore = editor.state.doc.textBetween(Math.max(0, from - 20), from);
+      const { from } = ed.state.selection;
+      const textBefore = ed.state.doc.textBetween(Math.max(0, from - 20), from);
       const match = textBefore.match(/\/([a-zA-Z0-9]*)$/);
 
       if (match) {
         setSlashFilter(match[1]);
-        const view = editor.view;
+        setSelectedSlashIndex(0);
+        const view = ed.view;
         const coords = view.coordsAtPos(from);
         setSlashMenuPosition({ x: coords.left, y: coords.bottom + 6 });
       } else {
@@ -71,14 +85,111 @@ export default function NotionEditor({ block }: { block: Block }) {
     },
     editorProps: {
       handleKeyDown: (view, event) => {
-        if (event.key === "Escape") {
-          setSlashMenuPosition(null);
-          return false;
+        const state = slashStateRef.current;
+        if (state.isOpen && state.commands.length > 0) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setSelectedSlashIndex((prev) => (prev + 1) % state.commands.length);
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setSelectedSlashIndex((prev) => (prev - 1 + state.commands.length) % state.commands.length);
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const cmd = state.commands[state.selectedIndex] || state.commands[0];
+            if (cmd) {
+              state.execute(cmd.action);
+            }
+            return true;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setSlashMenuPosition(null);
+            return true;
+          }
         }
         return false;
       },
     },
   });
+
+  const slashCommands = useMemo(() => [
+    {
+      title: "Heading 1",
+      icon: <Heading1 size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 1 }).run(),
+    },
+    {
+      title: "Heading 2",
+      icon: <Heading2 size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 2 }).run(),
+    },
+    {
+      title: "Heading 3",
+      icon: <Heading3 size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 3 }).run(),
+    },
+    {
+      title: "To-do List",
+      icon: <CheckSquare size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleTaskList().run(),
+    },
+    {
+      title: "Bullet List",
+      icon: <List size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBulletList().run(),
+    },
+    {
+      title: "Numbered List",
+      icon: <ListOrdered size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleOrderedList().run(),
+    },
+    {
+      title: "Quote",
+      icon: <Quote size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBlockquote().run(),
+    },
+    {
+      title: "Code Block",
+      icon: <Code size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleCodeBlock().run(),
+    },
+    {
+      title: "Divider",
+      icon: <Minus size={15} />,
+      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().setHorizontalRule().run(),
+    },
+  ].filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase())), [slashFilter]);
+
+  const executeSlashCommand = useCallback((action: (ed: ReturnType<typeof useEditor>) => void) => {
+    if (!editor) return;
+    const { from } = editor.state.selection;
+    const deleteCount = slashFilter.length + 1;
+    editor.commands.deleteRange({ from: from - deleteCount, to: from });
+    action(editor);
+    setSlashMenuPosition(null);
+    editor.commands.focus();
+  }, [editor, slashFilter]);
+
+  // Keep ref for current slash menu state so Tiptap handleKeyDown always has current state
+  const slashStateRef = useRef({
+    isOpen: false,
+    commands: slashCommands,
+    selectedIndex: 0,
+    execute: executeSlashCommand,
+  });
+
+  useEffect(() => {
+    slashStateRef.current = {
+      isOpen: slashMenuPosition !== null,
+      commands: slashCommands,
+      selectedIndex: selectedSlashIndex,
+      execute: executeSlashCommand,
+    };
+  }, [slashMenuPosition, slashCommands, selectedSlashIndex, executeSlashCommand]);
 
   // Re-sync editor content only when unfocused and content externally differs
   useEffect(() => {
@@ -89,6 +200,40 @@ export default function NotionEditor({ block }: { block: Block }) {
       }
     }
   }, [block.id, block.content, editor]);
+
+  // Click-outside listener to dismiss emoji picker and slash menu
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        showEmojiPicker &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+      if (
+        slashMenuPosition &&
+        slashMenuRef.current &&
+        !slashMenuRef.current.contains(e.target as Node)
+      ) {
+        setSlashMenuPosition(null);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowEmojiPicker(false);
+        setSlashMenuPosition(null);
+      }
+    };
+
+    window.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showEmojiPicker, slashMenuPosition]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextTitle = e.target.value;
@@ -102,65 +247,6 @@ export default function NotionEditor({ block }: { block: Block }) {
       editor?.commands.focus("start");
     }
   };
-
-  const executeSlashCommand = (action: () => void) => {
-    if (!editor) return;
-    // Remove the slash and filter text
-    const { from } = editor.state.selection;
-    const deleteCount = slashFilter.length + 1;
-    editor.commands.deleteRange({ from: from - deleteCount, to: from });
-    action();
-    setSlashMenuPosition(null);
-    editor.commands.focus();
-  };
-
-  const slashCommands = [
-    {
-      title: "Heading 1",
-      icon: <Heading1 size={15} />,
-      action: () => editor?.chain().focus().toggleHeading({ level: 1 }).run(),
-    },
-    {
-      title: "Heading 2",
-      icon: <Heading2 size={15} />,
-      action: () => editor?.chain().focus().toggleHeading({ level: 2 }).run(),
-    },
-    {
-      title: "Heading 3",
-      icon: <Heading3 size={15} />,
-      action: () => editor?.chain().focus().toggleHeading({ level: 3 }).run(),
-    },
-    {
-      title: "To-do List",
-      icon: <CheckSquare size={15} />,
-      action: () => editor?.chain().focus().toggleTaskList().run(),
-    },
-    {
-      title: "Bullet List",
-      icon: <List size={15} />,
-      action: () => editor?.chain().focus().toggleBulletList().run(),
-    },
-    {
-      title: "Numbered List",
-      icon: <ListOrdered size={15} />,
-      action: () => editor?.chain().focus().toggleOrderedList().run(),
-    },
-    {
-      title: "Quote",
-      icon: <Quote size={15} />,
-      action: () => editor?.chain().focus().toggleBlockquote().run(),
-    },
-    {
-      title: "Code Block",
-      icon: <Code size={15} />,
-      action: () => editor?.chain().focus().toggleCodeBlock().run(),
-    },
-    {
-      title: "Divider",
-      icon: <Minus size={15} />,
-      action: () => editor?.chain().focus().setHorizontalRule().run(),
-    },
-  ].filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase()));
 
   return (
     <div className={styles.canvasContainer}>
@@ -189,7 +275,7 @@ export default function NotionEditor({ block }: { block: Block }) {
         )}
 
         {showEmojiPicker && (
-          <div className={styles.emojiPicker}>
+          <div ref={emojiPickerRef} className={styles.emojiPicker}>
             {emojiOptions.map((emoji) => (
               <button
                 key={emoji}
@@ -224,6 +310,7 @@ export default function NotionEditor({ block }: { block: Block }) {
       {/* Floating Slash Command Menu */}
       {slashMenuPosition && slashCommands.length > 0 && (
         <div
+          ref={slashMenuRef}
           className={styles.slashMenu}
           style={{
             top: `${slashMenuPosition.y}px`,
@@ -231,10 +318,11 @@ export default function NotionEditor({ block }: { block: Block }) {
           }}
         >
           <div className={styles.slashMenuHeader}>Basic blocks</div>
-          {slashCommands.map((cmd) => (
+          {slashCommands.map((cmd, idx) => (
             <button
               key={cmd.title}
-              className={styles.slashMenuItem}
+              className={`${styles.slashMenuItem} ${idx === selectedSlashIndex ? styles.slashMenuItemActive : ""}`}
+              onMouseEnter={() => setSelectedSlashIndex(idx)}
               onClick={() => executeSlashCommand(cmd.action)}
             >
               <span className={styles.slashMenuIcon}>{cmd.icon}</span>
