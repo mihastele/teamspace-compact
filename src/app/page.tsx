@@ -2,19 +2,23 @@
 
 import React, { useState, useEffect } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
+import { useTeamspace } from "@/lib/client";
 import Sidebar from "./components/Sidebar";
 import NotionEditor from "./components/NotionEditor";
 import DatabaseView from "./components/DatabaseView";
 import SidePeek from "./components/SidePeek";
 import CommandPalette from "./components/CommandPalette";
+import AuthPanel from "./components/AuthPanel";
 import {
   Star,
   ChevronRight,
   Menu,
+  Sparkles,
 } from "lucide-react";
 import styles from "./page.module.css";
 
 export default function HomePage() {
+  const api = useTeamspace();
   const {
     blocks,
     activeBlockId,
@@ -23,9 +27,21 @@ export default function HomePage() {
     theme,
     sidebarCollapsed,
     setSidebarCollapsed,
+    syncFromApi,
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // Sync workspace and server items into workspace-store whenever api data updates
+  useEffect(() => {
+    if (api.workspace) {
+      syncFromApi(
+        api.workspace,
+        api.notes,
+        api.tasks
+      );
+    }
+  }, [api.workspace, api.notes, api.tasks, syncFromApi]);
 
   // Set document data-theme attribute for CSS variable switching
   useEffect(() => {
@@ -44,6 +60,40 @@ export default function HomePage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // 1. Loading State when connecting to remote workspace
+  if (api.loading && !api.workspace) {
+    return (
+      <div className={styles.loadingContainer}>
+        <div className={styles.loadingBox}>
+          <Sparkles className={styles.loadingIcon} size={24} />
+          <span>Opening your workspace…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: If connected backend is configured and requires login
+  if (
+    api.configured &&
+    (!api.user ||
+      api.needsEmailConfirmation ||
+      api.passwordRecovery ||
+      api.authConfigurationError)
+  ) {
+    return (
+      <div className={styles.authContainer}>
+        <div className={styles.authCard}>
+          <div className={styles.authHeader}>
+            <span className={styles.brandMark}>N</span>
+            <h1>Welcome to openNotion</h1>
+            <p>Sign in to collaborate on your team’s docs, tasks, and databases.</p>
+          </div>
+          <AuthPanel api={api} />
+        </div>
+      </div>
+    );
+  }
+
   const activeBlock = activeBlockId ? blocks[activeBlockId] : null;
 
   // Build breadcrumbs for nested pages
@@ -57,11 +107,11 @@ export default function HomePage() {
   return (
     <div className={styles.appShell} data-theme={theme}>
       {/* Collapsible Notion-like Sidebar */}
-      <Sidebar onOpenSearch={() => setSearchOpen(true)} />
+      <Sidebar api={api} onOpenSearch={() => setSearchOpen(true)} />
 
       {/* Main Workspace Stage */}
       <main className={styles.mainStage}>
-        {/* Slim Topbar (Breadcrumbs, Favorite, Share, More) */}
+        {/* Slim Topbar (Breadcrumbs, Favorite, Share, Search) */}
         <header className={styles.topbar}>
           <div className={styles.breadcrumbsArea}>
             {sidebarCollapsed && (

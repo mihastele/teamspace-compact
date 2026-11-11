@@ -43,6 +43,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
 }
 
 .workspaceInfo {
@@ -54,6 +55,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 5px;
+  flex: 1;
+}
+
+.workspaceInfo:hover {
+  background-color: var(--bg-hover);
+}
+
+.workspaceChevron {
+  color: var(--fg-subtle);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .workspaceIcon {
@@ -65,6 +80,73 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspaceDropdown {
+  position: absolute;
+  top: 48px;
+  left: 10px;
+  width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dropdownHeader {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  padding: 4px 8px;
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--fg-primary);
+  text-align: left;
+}
+
+.dropdownItem:hover {
+  background-color: var(--bg-hover);
+}
+
+.dropdownItemActive {
+  background-color: var(--bg-active);
+  font-weight: 600;
+}
+
+.dropdownItemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownAddBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--accent-blue);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+  text-align: left;
+}
+
+.dropdownAddBtn:hover {
+  background-color: var(--bg-hover);
 }
 
 .collapseBtn {
@@ -308,9 +390,77 @@
   color: var(--fg-primary);
 }
 
+.userSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.userName {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userStatus {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signOutBtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--fg-subtle);
+}
+
+.signOutBtn:hover {
+  background-color: var(--bg-hover);
+  color: #eb5757;
+}
+
 .trashModal {
   position: absolute;
-  bottom: 45px;
+  bottom: 85px;
   left: 10px;
   width: 220px;
   background: var(--bg-card);

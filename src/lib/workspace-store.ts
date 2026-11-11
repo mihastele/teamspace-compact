@@ -387,6 +387,159 @@ export const workspaceStore = {
     this.updateBlock(rowId, updates);
   },
 
+  setWorkspace(workspace: Workspace) {
+    currentState = {
+      ...currentState,
+      workspace,
+    };
+    emitChange();
+  },
+
+  syncFromApi(
+    currentWorkspace: Workspace | null,
+    notes: { id: string; parentId: string | null; title: string; content?: unknown; revision?: number }[] = [],
+    tasks: { id: string; title: string; status?: string; priority?: string; dueDate?: string | null; revision?: number }[] = []
+  ) {
+    if (!currentWorkspace) return;
+
+    let changed = false;
+
+    // Check if workspace metadata changed
+    const currentWs = currentState.workspace;
+    if (
+      currentWs.id !== currentWorkspace.id ||
+      currentWs.name !== currentWorkspace.name ||
+      currentWs.ownerId !== currentWorkspace.ownerId
+    ) {
+      changed = true;
+    }
+
+    const workspaceObj: Workspace = {
+      id: currentWorkspace.id,
+      name: currentWorkspace.name,
+      icon: "🚀",
+      ownerId: currentWorkspace.ownerId,
+    };
+
+    const nextBlocks = { ...currentState.blocks };
+    const nextChildren = { ...currentState.childrenIndex };
+
+    // Ingest notes as pages
+    for (const note of notes) {
+      const existing = nextBlocks[note.id];
+      const parentKey = note.parentId || "root";
+      const hasChild = nextChildren[parentKey]?.includes(note.id);
+
+      if (
+        !existing ||
+        !hasChild ||
+        existing.title !== (note.title || "Untitled") ||
+        existing.parentId !== note.parentId ||
+        existing.revision !== (note.revision || 1)
+      ) {
+        changed = true;
+        const block: Block = {
+          id: note.id,
+          workspaceId: currentWorkspace.id,
+          parentId: note.parentId,
+          type: "page",
+          title: note.title || "Untitled",
+          icon: existing?.icon || "📄",
+          position: existing?.position || `n_${note.id}`,
+          content: (note.content as { type?: string; content?: unknown[] }) || existing?.content || {
+            type: "doc",
+            content: [{ type: "paragraph" }],
+          },
+          revision: note.revision || 1,
+          createdAt: existing?.createdAt || Date.now(),
+          updatedAt: existing?.updatedAt || Date.now(),
+        };
+        nextBlocks[note.id] = block;
+
+        if (!nextChildren[parentKey]) nextChildren[parentKey] = [];
+        if (!nextChildren[parentKey].includes(note.id)) {
+          nextChildren[parentKey].push(note.id);
+        }
+      }
+    }
+
+    // Ingest tasks as database rows under database-tasks
+    const dbId = "database-tasks";
+    if (!nextChildren[dbId]) nextChildren[dbId] = [];
+
+    const statusMap: Record<string, string> = {
+      todo: "opt-todo",
+      doing: "opt-progress",
+      done: "opt-done",
+    };
+    const prioMap: Record<string, string> = {
+      urgent: "prio-urgent",
+      high: "prio-high",
+      medium: "prio-medium",
+      low: "prio-low",
+    };
+
+    for (const task of tasks) {
+      const existing = nextBlocks[task.id];
+      const hasChild = nextChildren[dbId]?.includes(task.id);
+      const mappedStatus = statusMap[task.status || "todo"] || "opt-todo";
+      const mappedPriority = prioMap[task.priority || "none"] || "prio-medium";
+      const mappedDue = task.dueDate || null;
+
+      if (
+        !existing ||
+        !hasChild ||
+        existing.title !== (task.title || "Untitled") ||
+        existing.properties?.["prop-status"] !== mappedStatus ||
+        existing.properties?.["prop-priority"] !== mappedPriority ||
+        existing.properties?.["prop-due"] !== mappedDue ||
+        existing.revision !== (task.revision || 1)
+      ) {
+        changed = true;
+        const row: Block = {
+          id: task.id,
+          workspaceId: currentWorkspace.id,
+          parentId: dbId,
+          type: "page",
+          title: task.title || "Untitled",
+          icon: existing?.icon || "📄",
+          position: existing?.position || `t_${task.id}`,
+          properties: {
+            "prop-title": task.title,
+            "prop-status": mappedStatus,
+            "prop-priority": mappedPriority,
+            "prop-due": mappedDue,
+          },
+          content: existing?.content || {
+            type: "doc",
+            content: [{ type: "paragraph" }],
+          },
+          revision: task.revision || 1,
+          createdAt: existing?.createdAt || Date.now(),
+          updatedAt: existing?.updatedAt || Date.now(),
+        };
+        nextBlocks[task.id] = row;
+
+        if (!nextChildren[dbId].includes(task.id)) {
+          nextChildren[dbId].push(task.id);
+        }
+      }
+    }
+
+    // If nothing changed, do not mutate state or trigger re-renders
+    if (!changed) {
+      return;
+    }
+
+    currentState = {
+      ...currentState,
+      workspace: workspaceObj,
+      blocks: nextBlocks,
+      childrenIndex: nextChildren,
+    };
+    emitChange();
+  },
+
   // Reset to default seed
   resetToDefaultSeed() {
     if (typeof window !== "undefined") {
@@ -421,5 +574,7 @@ export function useWorkspace() {
     createDatabaseRow: workspaceStore.createDatabaseRow,
     updateRowProperty: workspaceStore.updateRowProperty,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
+    setWorkspace: workspaceStore.setWorkspace,
+    syncFromApi: workspaceStore.syncFromApi,
   };
 }

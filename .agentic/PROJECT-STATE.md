@@ -1021,3 +1021,16 @@
   - `SidePeek.tsx`: slide-out right drawer to view and edit database entries as full pages.
   - `CommandPalette.tsx`: global `Cmd+K` / `Ctrl+K` modal for instant fuzzy search across all workspace pages, subpages, databases, and commands.
 - PASSED standalone TypeScript typecheck (`tsc --noEmit`), full ESLint (`npm run lint`), and Next.js optimized production build (`npm run build`).
+
+### 2026-11-11 - Re-integration of Authentication, Workspaces, and Sync
+
+- Re-integrated full authentication lifecycle and workspace switching into the openNotion shell.
+- Connected `useTeamspace()` from `src/lib/client.ts` in `src/app/page.tsx` with:
+  - Loading screen during remote workspace resolution.
+  - Authentication Gate rendering `AuthPanel.tsx` in a clean Notion-styled auth card when running against a configured Supabase backend without an authenticated session.
+  - Two-way workspace synchronization via `workspaceStore.syncFromApi()` ingesting server notes and tasks into the unified block hierarchy and database views.
+- Updated `Sidebar.tsx`:
+  - Workspace selector dropdown showing all user workspaces with active indicator and switching action.
+  - Added `WorkspaceModal.tsx` allowing one-click workspace creation and invitation token redemption.
+  - User profile section at the bottom displaying user name, email / status, and working Sign Out action.
+- PASSED standalone TypeScript typecheck (`tsc --noEmit`), full ESLint (`npm run lint`), and Next.js optimized Turbopack production build (`npm run build`).

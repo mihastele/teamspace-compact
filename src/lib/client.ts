@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   browserConfigured as configured,
   browserProvider,
@@ -557,10 +557,10 @@ export function useTeamspace() {
       persist({ ...preview.current, taskTemplates: [...(preview.current.taskTemplates ?? []).filter(item => item.id !== id), saved] });
       return saved;
     }),
-    tasks: tasks.toSorted((a, b) => a.position - b.position),
-    boardProperties: boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    tasks: useMemo(() => tasks.toSorted((a, b) => a.position - b.position), [tasks]),
+    boardProperties: useMemo(() => boardProperties.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)), [boardProperties]),
     projectsEnabled: configured && browserProvider === "supabase",
-    projects: projects.toSorted((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)),
+    projects: useMemo(() => projects.toSorted((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)), [projects]),
     saveProject: (value: { name: string; description: string; operationId: string; databaseRelations?: Record<string,string[]> } | { id: string; expectedRevision: number; name?: string; description?: string; archived?: boolean; databaseRelations?: Record<string,string[]> }) => action(async () => {
       if (!configured || browserProvider !== "supabase" || !user) return unavailable();
       const { id, ...body } = "id" in value ? value : { ...value, id: undefined };

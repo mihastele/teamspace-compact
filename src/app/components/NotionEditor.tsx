@@ -80,12 +80,12 @@ export default function NotionEditor({ block }: { block: Block }) {
     },
   });
 
-  // Re-sync editor content when switching pages
+  // Re-sync editor content only when unfocused and content externally differs
   useEffect(() => {
-    if (editor && block.content) {
+    if (editor && !editor.isFocused && block.content) {
       const currentJson = editor.getJSON();
       if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
-        editor.commands.setContent(block.content as JSONContent);
+        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
       }
     }
   }, [block.id, block.content, editor]);

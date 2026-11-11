@@ -145,3 +145,100 @@
 .emptyState p {
   font-size: 13.5px;
 }
+
+/* Loading Screen */
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--fg-primary);
+}
+
+.loadingBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--fg-secondary);
+}
+
+.loadingIcon {
+  color: var(--accent-blue);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+}
+
+/* Auth Gate Container */
+.authContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-sidebar);
+  padding: 20px;
+}
+
+.authCard {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.1);
+  padding: 32px 36px;
+}
+
+.authHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.brandMark {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background-color: var(--fg-primary);
+  color: var(--bg-primary);
+  font-weight: 800;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.authHeader h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: var(--fg-primary);
+}
+
+.authHeader p {
+  font-size: 13.5px;
+  color: var(--fg-secondary);
+  margin: 0;
+  line-height: 1.4;
+}

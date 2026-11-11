@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
+import type { useTeamspace } from "@/lib/client";
+import WorkspaceModal from "./WorkspaceModal";
 import {
   Search,
   ChevronRight,
@@ -16,10 +18,20 @@ import {
   ChevronsLeft,
   ChevronsRight,
   RotateCcw,
+  LogOut,
+  User,
 } from "lucide-react";
 import styles from "./Sidebar.module.css";
 
-export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
+type Api = ReturnType<typeof useTeamspace>;
+
+export default function Sidebar({
+  api,
+  onOpenSearch,
+}: {
+  api?: Api;
+  onOpenSearch: () => void;
+}) {
   const {
     workspace,
     blocks,
@@ -42,6 +54,8 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
     "database-tasks": false,
   });
   const [showTrash, setShowTrash] = useState(false);
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [menuOpenBlockId, setMenuOpenBlockId] = useState<string | null>(null);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
@@ -166,13 +180,22 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
     );
   }
 
+  const currentWorkspaceName = api?.workspace?.name || workspace.name;
+  const workspacesList = api?.workspaces || [{ id: workspace.id, name: workspace.name, ownerId: workspace.ownerId }];
+  const currentUser = api?.user;
+
   return (
     <aside className={styles.sidebar}>
-      {/* Workspace Header */}
+      {/* Workspace Header Switcher */}
       <div className={styles.header}>
-        <div className={styles.workspaceInfo}>
+        <div
+          className={styles.workspaceInfo}
+          onClick={() => setShowWorkspaceMenu(!showWorkspaceMenu)}
+          title="Switch workspace"
+        >
           <span className={styles.workspaceIcon}>{workspace.icon || "🚀"}</span>
-          <span className={styles.workspaceName}>{workspace.name}</span>
+          <span className={styles.workspaceName}>{currentWorkspaceName}</span>
+          <ChevronDown size={14} className={styles.workspaceChevron} />
         </div>
         <button
           className={styles.collapseBtn}
@@ -182,6 +205,41 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
           <ChevronsLeft size={16} />
         </button>
       </div>
+
+      {/* Workspace Switcher Dropdown */}
+      {showWorkspaceMenu && (
+        <div className={styles.workspaceDropdown}>
+          <div className={styles.dropdownHeader}>Workspaces</div>
+          {workspacesList.map((w) => (
+            <button
+              key={w.id}
+              className={`${styles.dropdownItem} ${w.id === (api?.workspace?.id || workspace.id) ? styles.dropdownItemActive : ""}`}
+              onClick={() => {
+                if (api && w.id !== api.workspace?.id) {
+                  api.selectWorkspace(w.id);
+                }
+                setShowWorkspaceMenu(false);
+              }}
+            >
+              <span>🚀</span>
+              <span className={styles.dropdownItemName}>{w.name}</span>
+            </button>
+          ))}
+
+          {api && (
+            <button
+              className={styles.dropdownAddBtn}
+              onClick={() => {
+                setShowWorkspaceMenu(false);
+                setShowWorkspaceModal(true);
+              }}
+            >
+              <Plus size={14} />
+              <span>Create or join workspace</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Quick Nav Tools */}
       <div className={styles.quickNav}>
@@ -230,7 +288,7 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
         </div>
       </div>
 
-      {/* Bottom Actions: New Database, Trash */}
+      {/* Bottom Actions: New Database, Trash, User Profile */}
       <div className={styles.bottomBar}>
         <button
           className={styles.bottomBtn}
@@ -246,6 +304,32 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
           <Trash2 size={15} />
           <span>Trash {archivedBlocks.length > 0 && `(${archivedBlocks.length})`}</span>
         </button>
+
+        {/* Account Info / Sign Out */}
+        <div className={styles.userSection}>
+          <div className={styles.userInfo}>
+            <div className={styles.avatar}>
+              {currentUser?.displayName?.[0]?.toUpperCase() || <User size={13} />}
+            </div>
+            <div className={styles.userMeta}>
+              <span className={styles.userName}>
+                {currentUser?.displayName || "Local explorer"}
+              </span>
+              <span className={styles.userStatus}>
+                {api?.configured ? (currentUser?.email || "Signed in") : "Preview mode"}
+              </span>
+            </div>
+          </div>
+          {api?.configured && currentUser && (
+            <button
+              className={styles.signOutBtn}
+              title="Sign out"
+              onClick={() => void api.signOut()}
+            >
+              <LogOut size={14} />
+            </button>
+          )}
+        </div>
 
         {showTrash && (
           <div className={styles.trashModal}>
@@ -279,6 +363,15 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) 
           </div>
         )}
       </div>
+
+      {/* Workspace Creation & Join Modal */}
+      {api && (
+        <WorkspaceModal
+          api={api}
+          isOpen={showWorkspaceModal}
+          onClose={() => setShowWorkspaceModal(false)}
+        />
+      )}
     </aside>
   );
 }
