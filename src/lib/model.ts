@@ -1,14 +1,180 @@
+// openNotion Unified Data Model (MIT License)
+
+export type BlockType =
+  | "page"
+  | "database"
+  | "linked_database"
+  | "paragraph"
+  | "heading_1"
+  | "heading_2"
+  | "heading_3"
+  | "bullet"
+  | "ordered"
+  | "todo"
+  | "toggle"
+  | "quote"
+  | "callout"
+  | "code"
+  | "divider"
+  | "synced_block";
+
+export type PropertyType =
+  | "title"
+  | "text"
+  | "number"
+  | "select"
+  | "multi_select"
+  | "status"
+  | "date"
+  | "person"
+  | "checkbox"
+  | "url"
+  | "email"
+  | "phone"
+  | "relation"
+  | "rollup"
+  | "created_time"
+  | "last_edited_time";
+
+export type SelectOption = {
+  id: string;
+  name: string;
+  color?: string; // "default" | "gray" | "brown" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | "red"
+  archived?: boolean;
+  group?: "todo" | "doing" | "done";
+};
+
+export type DatabaseProperty = {
+  id: string;
+  name: string;
+  type: PropertyType;
+  position: string;
+  options?: SelectOption[];
+  targetDatabaseId?: string;
+  rollup?: {
+    relationPropertyId: string;
+    targetPropertyId: string;
+    calculate: "count_all" | "count_values" | "count_unique" | "percent_empty" | "percent_not_empty" | "sum" | "average" | "min" | "max";
+  };
+};
+
+export type ViewLayout = "table" | "board" | "list" | "calendar";
+
+export type ViewFilterRule = {
+  propertyId: string;
+  operator: "equals" | "does_not_equal" | "contains" | "does_not_contain" | "is_empty" | "is_not_empty" | "greater_than" | "less_than";
+  value: unknown;
+};
+
+export type DatabaseView = {
+  id: string;
+  databaseId: string;
+  name: string;
+  layout: ViewLayout;
+  filter?: {
+    operator: "and" | "or";
+    rules: ViewFilterRule[];
+  };
+  sorts?: {
+    propertyId: string;
+    direction: "asc" | "desc";
+  }[];
+  groupBy?: string; // Property ID for Board/Kanban columns
+  visibleProperties?: string[]; // Array of property IDs in order
+  position: string;
+};
+
+export type Block = {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  type: BlockType;
+  title: string;
+  icon?: string | null;
+  coverUrl?: string | null;
+  properties?: Record<string, unknown>; // Database row property values: { [propId]: value }
+  content?: {
+    type?: string;
+    content?: unknown[];
+    [key: string]: unknown;
+  } | null; // ProseMirror/Tiptap document JSON
+  text?: string; // Plain text fallback or index string
+  position: string;
+  isFavorite?: boolean;
+  isFullWidth?: boolean;
+  fontStyle?: "sans" | "serif" | "mono";
+  isArchived?: boolean;
+  revision: number;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  icon?: string;
+  ownerId: string;
+};
+
+export type MemberRole = "owner" | "admin" | "member";
+
+export type Member = {
+  id: string;
+  displayName: string;
+  role: MemberRole;
+  email?: string;
+  photoUrl?: string | null;
+};
+
+export type BlockSource = { noteId: string; blockId: string };
+
+export type Comment = {
+  id: string;
+  blockId?: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: number;
+  deleted: boolean;
+};
+
+export type PageVersion = {
+  id: string;
+  blockId?: string;
+  sourceRevision: number;
+  title: string;
+  kind: "checkpoint" | "named" | "before_restore";
+  name: string | null;
+  capturedAt: number;
+  capturedBy: string;
+  capturedName: string;
+  expiresAt: number | null;
+  content: NoteContent;
+};
+
+export type Attachment = {
+  id: string;
+  parentId: string;
+  parentType: "page" | "task" | "note";
+  originalName: string;
+  bytes: number;
+  contentType: string;
+  status?: "pending" | "ready" | "deleting";
+};
+
+// Legacy compatibility aliases for smooth transition during refactoring
 export type Status = "todo" | "doing" | "done";
+export type PropertyValue = string | string[] | number | boolean | null;
 export type BoardProperty = {
   id: string;
   name: string;
-  type: "text" | "longText" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "person" | "relation" | "url" | "email" | "phone" | "status" | "createdTime";
+  type: string;
   projectId?: string | null;
-  options: { id: string; name: string; color?: string; archived?: boolean; group?: "todo" | "doing" | "done" }[];
+  options: SelectOption[];
   revision: number;
 };
-export type PropertyValue = string | string[] | number | boolean | null;
-export type Project = { id: string; name: string; description: string; archived: boolean; revision: number; databaseRelations?: Record<string, string[]> };
 export type BoardView = {
   savedViewId?: string;
   name: string;
@@ -18,7 +184,25 @@ export type BoardView = {
   deadline: "all" | "overdue" | "today" | "week" | "undated";
   sort: "position" | "title" | "dueDate";
 };
-export type BlockSource = { noteId: string; blockId: string };
+export type NoteBlock = {
+  id?: string;
+  type: string;
+  text: string;
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
+  checked?: boolean;
+  boardView?: BoardView;
+  source?: BlockSource;
+};
+export type NoteContent = { blocks: NoteBlock[] };
+export type Note = {
+  id: string;
+  parentId: string | null;
+  title: string;
+  content: NoteContent;
+  revision: number;
+  metadataRevision?: number;
+  collab?: { version: 1; generation: string; state: string; sequence: number };
+};
 export type Task = {
   id: string;
   revision?: number;
@@ -35,27 +219,14 @@ export type Task = {
   priority?: "none" | "low" | "medium" | "high" | "urgent";
   estimate?: number | null;
 };
-export type NoteBlock = {
-  id?: string;
-  type:
-    | "paragraph"
-    | "heading"
-    | "bullet"
-    | "ordered"
-    | "quote"
-    | "todo"
-    | "code"
-    | "divider"
-    | "markdown"
-    | "board"
-    | "synced";
-  text: string;
-  level?: 1 | 2 | 3 | 4 | 5 | 6;
-  checked?: boolean;
-  boardView?: BoardView;
-  source?: BlockSource;
+export type Project = {
+  id: string;
+  name: string;
+  description: string;
+  archived: boolean;
+  revision: number;
+  databaseRelations?: Record<string, string[]>;
 };
-export type NoteContent = { blocks: NoteBlock[] };
 export type TaskTemplate = {
   id: string;
   name: string;
@@ -63,32 +234,6 @@ export type TaskTemplate = {
   archived?: boolean;
   defaults: Pick<Task, "title" | "description" | "status" | "assigneeId" | "dueDate" | "propertyValues" | "projectId" | "priority" | "estimate"> & { content: NoteContent };
 };
-export type Note = {
-  id: string;
-  parentId: string | null;
-  title: string;
-  content: NoteContent;
-  revision: number;
-  metadataRevision?: number;
-  collab?: {
-    version: 1;
-    generation: string;
-    state: string;
-    sequence: number;
-  };
-};
-export type PageVersionSummary = {
-  id: string;
-  sourceRevision: number;
-  title: string;
-  kind: "checkpoint" | "named" | "before_restore";
-  name: string | null;
-  capturedAt: number;
-  capturedBy: string;
-  capturedName: string;
-  expiresAt: number | null;
-};
-export type PageVersion = PageVersionSummary & { content: NoteContent };
 export type ConversationComment = {
   id: string;
   body: string;
@@ -97,19 +242,6 @@ export type ConversationComment = {
   createdAt: number;
   deleted: boolean;
   mentions: { uid: string; displayName: string }[];
+  blockId?: string;
 };
-export type Member = {
-  id: string;
-  displayName: string;
-  role: "owner" | "admin" | "member";
-};
-export type Workspace = { id: string; name: string; ownerId: string };
-export type Attachment = {
-  id: string;
-  parentType: "task" | "note";
-  parentId: string;
-  originalName: string;
-  bytes: number;
-  contentType: string;
-  status?: "pending" | "ready" | "deleting";
-};
+export type PageVersionSummary = Omit<PageVersion, "content">;

@@ -15,7 +15,7 @@ import BlockEditor from "./BlockEditor";
 import DatabaseRelationPicker from "./DatabaseRelationPicker";
 import s from "./Databases.module.css";
 type Api = ReturnType<typeof useTeamspace>;
-const labels = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Relation", url:"URL", email:"Email", phone:"Phone", status:"Status", createdTime:"Created time" };
+const labels: Record<string, string> = { text:"Text", longText:"Long text", number:"Number", date:"Date", checkbox:"Checkbox", select:"Select", multiSelect:"Multi-select", person:"Person", relation:"Relation", url:"URL", email:"Email", phone:"Phone", status:"Status", createdTime:"Created time" };
 type Form = { name:string; description:string; fields:DatabaseField[]; title:string; content:NoteContent; propertyValues:Record<string,PropertyValue>; archived:boolean };
 type Packet = { id:string; kind:"databases"|"databaseEntries"; expectedRevision:number; form:Form; operationId:string|null; databaseId:string };
 function download(name:string, data:unknown) {

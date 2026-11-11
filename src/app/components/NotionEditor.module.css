@@ -1,0 +1,147 @@
+.canvasContainer {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 60px 100px;
+  position: relative;
+}
+
+.header {
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.pageMetadataActions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.pageMetadataActions:hover {
+  opacity: 1;
+}
+
+.metaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--fg-secondary);
+}
+
+.metaBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.pageIcon {
+  font-size: 54px;
+  line-height: 1;
+  margin-bottom: 16px;
+  cursor: pointer;
+  display: inline-block;
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+
+.pageIcon:hover {
+  transform: scale(1.05);
+}
+
+.emojiPicker {
+  position: absolute;
+  top: 90px;
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  z-index: 40;
+}
+
+.emojiOption {
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.emojiOption:hover {
+  background-color: var(--bg-hover);
+}
+
+.titleInput {
+  width: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 2.35rem;
+  font-weight: 750;
+  color: var(--fg-primary);
+  line-height: 1.25;
+  margin: 0;
+  padding: 0;
+}
+
+.titleInput::placeholder {
+  color: var(--fg-subtle);
+  opacity: 0.5;
+}
+
+.editorArea {
+  min-height: 300px;
+}
+
+.slashMenu {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 6px;
+  min-width: 200px;
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.slashMenuHeader {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  padding: 4px 8px;
+}
+
+.slashMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  font-size: 13px;
+  border-radius: 5px;
+  color: var(--fg-primary);
+  text-align: left;
+}
+
+.slashMenuItem:hover {
+  background-color: var(--bg-hover);
+}
+
+.slashMenuIcon {
+  color: var(--fg-secondary);
+  display: flex;
+  align-items: center;
+}

@@ -5,7 +5,7 @@ The product principles below are not aspirations; they are constraints on
 every piece of code written in this repo. Read `MISSION.md` (or equivalent)
 if you need the full reasoning behind them.
 
-Project name: `<TBD>`
+Project name: `openNotion`
 
 ## Session continuity
 
@@ -105,19 +105,11 @@ doing anything else. Do not try to "fix" git history on your own.
 
 # Product principles (hard constraints)
 
-These are the reasons the project exists. Replace this section with the
-actual principles for this project — 5-10 concrete, testable constraints,
-not vague values. Each one should be specific enough that a piece of code
-can obviously violate it. If a request conflicts with one of them, say so
-before implementing, and propose an alternative that fits.
-
-Example shape for a principle:
-
-## <N>. <Principle name>
-
-- <Concrete rule this implies for the code>
-- <Concrete rule this implies for the UI/UX>
-- <What to flag or refuse if a ticket asks for it anyway>
+1. **Unified Block & Database Model:** Every user document, subpage, and database entry is a `Block` (`type = 'page' | 'database' | ...`) within a single workspace containment hierarchy. Never introduce separate one-off entity tables for domain templates like Tasks or Projects; domain workflows are modeled as Databases with property schemas.
+2. **Zero-Latency Optimistic UX:** User interactions (typing, editing properties, moving blocks, switching views) must update client state synchronously (<16ms frame budget) and persist asynchronously in the background. Never block typing or user actions with modal "Save" locks or full-page spinners.
+3. **No Global Locks or Full-Workspace Polling:** Server mutations must use row-scoped concurrency, never deployment-wide or workspace-wide global locks. Client synchronization must fetch metadata trees lightly and load page/database payloads on demand with targeted delta invalidation.
+4. **Strict Server Authorization & RLS:** Every table storing workspace content enforces PostgreSQL Row-Level Security (RLS) and server-side workspace membership validation.
+5. **100% MIT Open-Source Compatibility:** All runtime dependencies must use permissive licenses (MIT, ISC, BSD, Apache-2.0). All proprietary or non-permissive code is forbidden.
 
 # Engineering rules
 

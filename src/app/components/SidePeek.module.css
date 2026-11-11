@@ -1,0 +1,125 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 15, 15, 0.4);
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.12s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.drawer {
+  width: 65%;
+  max-width: 850px;
+  min-width: 480px;
+  height: 100%;
+  background: var(--bg-primary);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: slideIn 0.15s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 10;
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  color: var(--fg-secondary);
+  border-radius: 4px;
+}
+
+.actionBtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--fg-subtle);
+}
+
+.closeBtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.propertiesSection {
+  padding: 24px 60px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.propertyRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.propertyLabel {
+  width: 100px;
+  color: var(--fg-secondary);
+  font-weight: 500;
+}
+
+.propertySelect,
+.propertyDate {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--fg-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.propertySelect:focus,
+.propertyDate:focus {
+  border-color: var(--accent-blue);
+}
+
+.editorContainer {
+  flex: 1;
+}

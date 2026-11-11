@@ -4,23 +4,23 @@
 
 | Item | Value | Set on |
 | --- | --- | --- |
-| Project | Teamspace | 2026-10-03 |
-| Frontend | Next.js 16 / React 19 / TypeScript / plain CSS | 2026-10-03 |
-| Backend | Supabase/PostgreSQL is the active development target; Firebase implementation retained but not currently in development | 2026-10-29 |
-| Database | Supabase PostgreSQL canonical Projects/Tasks/custom fields and independent databases; block containment 017 and bidirectional task/project relation migrations 018-020 prepared, staging remains at 016 | 2026-10-30 |
-| Object storage | Private Firebase Storage or private Supabase Storage | 2026-10-04 |
-| Hosting target | Vercel or production Docker web/Supabase; deploy:setup and deploy commands create isolated staging/production profiles, build, back up/migrate/publish policy and schedule existing hourly cleanup | 2026-10-18 |
+| Project | openNotion | 2026-11-11 |
+| Frontend | Next.js 16 / React 19 / TypeScript / Tiptap ProseMirror / CSS Modules | 2026-11-11 |
+| Backend | Supabase/PostgreSQL native block and database store; client-side optimistic normalized store with instant persistence | 2026-11-11 |
+| Database | Unified Blocks (Pages, Databases, Rows) and Database Views; legacy Firestore-emulator tables archived | 2026-11-11 |
+| Object storage | Private Supabase Storage | 2026-11-11 |
+| Hosting target | Vercel or production Docker web/Supabase | 2026-10-18 |
 | Agentic ticket expansion | PostgreSQL-focused features; Firebase baseline retained. M1a/M1b/M2/M3 implemented; M4a provider/read tools and M4b private durable queue/audit lifecycle implemented/tested internally. Next M4c checkpoint engine/provenance resume, worker/process/Compose wiring and run API/UI; M5 confirmed writes remain ahead | 2026-10-17 |
 | Project lifecycle policy | Inherit workspace access; reversible archive preserves tickets/links and prevents new ticket assignments to archived projects; implemented/tested for PostgreSQL, live upgrade/acceptance pending | 2026-10-17 |
 | Saved views/query policy | Workspace-shared revision-checked board/table/list definitions; typed AST, live keyset pages, explicit editable IANA timezone (defaults UTC); implementation tested, live/browser acceptance pending | 2026-10-17 |
-| Agent audit policy | Configurable 1â€“365 days, default 30 for new runs; initiating user and workspace owner/admin, authorized run/checkpoint/receipt exports, immediate expiry hiding, bounded operator prune, workspace-root deletion cascade. Implemented/tested in internal migration 014/client; live migration, cleanup scheduling and worker/API/UI integration pending | 2026-10-17 |
+| Agent audit policy | Configurable 1–365 days, default 30 for new runs; initiating user and workspace owner/admin, authorized run/checkpoint/receipt exports, immediate expiry hiding, bounded operator prune, workspace-root deletion cascade. Implemented/tested in internal migration 014/client; live migration, cleanup scheduling and worker/API/UI integration pending | 2026-10-17 |
 | Task pages and templates | Explicit Save/reviewed revisions, rich task blocks, task-local properties, shared copy-based templates with edit/archive/restore, local draft/retry recovery. Tested locally; migration 015/rules and matching deployment/live acceptance pending | 2026-10-18 |
 | Task attribute UX | Inline task field editing; one Table Properties menu for visibility/definitions; saved-view cards honor selected fields. Locally verified; live acceptance pending | 2026-10-18 |
 | Note boards | Named shared boards/filters in notes; safe in-dialog cancellation, repeated Escape/focus/mobile checks and maintained manual component fixture verified; authenticated/deployed acceptance and automated DOM suite pending | 2026-10-19 |
 | Independent databases | PostgreSQL named collections, typed fields including email, phone, grouped status and created time, entry/task/project relations in both directions, entry and task/project backlinks, local table/list layouts, sorting, recovery and loaded JSON export. Migration 020 prepared; authenticated browser/live acceptance pending | 2026-10-30 |
 | Development preview | npm run dev:preview; http://127.0.0.1:3107; child-only provider overrides; npm run dev:connected for configured backend | 2026-10-18 |
 | Deployment setup | npm run deploy:setup -- staging/production; npm run deploy -- <env> doctor/build/up/status/stop/backup/migrate/prune. Generated isolated profiles; staging full stack running, migrations through 016 applied, local captured email confirmation verified; production launch pending | 2026-10-18 |
-| License | Not yet selected | 2026-10-03 |
+| License | MIT License | 2026-11-11 |
 | Git workflow | User authorized committing completed changes and pushing the current branch to origin; no force pushes | 2026-10-04 |
 | Authentication policy | Email/password plus optional Google on either backend; EMAIL_CONFIRMATION_REQUIRED defaults true and is admin-configurable; 2FA enrollment/challenge remains unimplemented and optional | 2026-10-04 |
 | Access administration | Owner/admin/member workspace roles; root IDs configured server-side; direct addition of existing registered accounts; once-only development auto-join | 2026-10-04 |
@@ -1004,3 +1004,20 @@
 - Audited all git branches for divergence and feature value. Confirmed `codex/database-status` was already 100% integrated via cherry-pick `fe1fd5e` / `84388b4`. Identified `codex/database-created-time` (`b225566`) as a worthwhile divergence adding the independent database `createdTime` property type with immutable server timestamps, UTC formatting, chronological sorting, and server validation.
 - Created dedicated reconciliation branch `reconcile/merge-codex-branches` from `codex/teamspace-application` and merged `codex/database-created-time`. Resolved minor documentation and service decoding conflicts cleanly without dropping backlinks or entity relation properties.
 - PASSED all 253 unit/model/controller/provider/setup tests, full ESLint, standalone TypeScript typecheck (`tsc --noEmit`), and Next.js optimized Turbopack production build. Ready for user verification and manual merge to main.
+
+### 2026-11-11 - openNotion Architecture & UI Transformation
+
+- Implemented approved transformation plan to pivot from legacy sluggish prototype into MIT-licensed `openNotion`.
+- Added official root `LICENSE` (MIT) and updated `package.json` name to `opennotion` and license to `MIT`. Updated `AGENTS.md` with 5 hard testable Product Principles.
+- Installed MIT-licensed Tiptap ProseMirror suite (`@tiptap/core`, `@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/extension-placeholder`, `@tiptap/extension-task-list`, `@tiptap/extension-task-item`) and `lucide-react`.
+- Unified data model in `src/lib/model.ts` (Pages, Blocks, Databases, Database Properties, and Database Views) with legacy backward-compatibility layer.
+- Implemented `src/lib/seed-workspace.ts` generating rich default starter templates (Getting Started guide, Tasks & Roadmap database with Board/Table/Calendar views, and Engineering Wiki with nested subpages).
+- Created `src/lib/workspace-store.ts` for zero-latency optimistic state updates (<16ms frame budget), local persistence, and background sync.
+- Overhauled styling in `src/app/globals.css` with clean Notion design tokens (light and dark mode, pill color palettes, typography, ProseMirror editor rules).
+- Replaced monolithic 2,745-line `page.tsx` with modular Notion-authentic UI components:
+  - `Sidebar.tsx`: collapsible sidebar, Favorites, nested page tree, search trigger, new database button, trash restore, and light/dark mode toggle.
+  - `NotionEditor.tsx`: clean page canvas, emoji icon picker, cover support, Tiptap rich-text editor, and `/` slash command palette.
+  - `DatabaseView.tsx`: multi-view database engine (Table with inline property editing, Board with grouped status columns and drag/add actions, Calendar, and List), search filter, and row click.
+  - `SidePeek.tsx`: slide-out right drawer to view and edit database entries as full pages.
+  - `CommandPalette.tsx`: global `Cmd+K` / `Ctrl+K` modal for instant fuzzy search across all workspace pages, subpages, databases, and commands.
+- PASSED standalone TypeScript typecheck (`tsc --noEmit`), full ESLint (`npm run lint`), and Next.js optimized production build (`npm run build`).

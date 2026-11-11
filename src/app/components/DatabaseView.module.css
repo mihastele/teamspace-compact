@@ -1,0 +1,381 @@
+.databaseContainer {
+  padding: 30px 48px 80px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.icon {
+  font-size: 32px;
+}
+
+.titleInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 2rem;
+  font-weight: 750;
+  color: var(--fg-primary);
+  width: 100%;
+}
+
+.viewTabsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 2px;
+}
+
+.viewTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.viewTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  border-radius: 5px 5px 0 0;
+  position: relative;
+}
+
+.viewTab:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.viewTabActive {
+  color: var(--fg-primary);
+  font-weight: 600;
+}
+
+.viewTabActive::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--fg-primary);
+}
+
+.viewActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--fg-subtle);
+}
+
+.searchInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12.5px;
+  color: var(--fg-primary);
+  width: 110px;
+}
+
+.newBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.newBtn:hover {
+  background-color: var(--accent-blue-hover);
+}
+
+/* Table Layout */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.thMain {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  width: 45%;
+}
+
+.th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  min-width: 130px;
+}
+
+.tr {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.tdMain {
+  padding: 7px 10px;
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.rowIcon {
+  font-size: 14px;
+}
+
+.rowTitle {
+  font-weight: 550;
+  color: var(--fg-primary);
+  flex: 1;
+}
+
+.openPeekBtn {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--fg-secondary);
+}
+
+.tdMain:hover .openPeekBtn {
+  display: flex;
+}
+
+.td {
+  padding: 6px 10px;
+  border-right: 1px solid var(--border-subtle);
+  position: relative;
+}
+
+.cellSelect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.pillDisplay {
+  pointer-events: none;
+}
+
+.emptyCell {
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+.cellDate {
+  color: var(--fg-secondary);
+  font-size: 12.5px;
+}
+
+.addBottomRowBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  width: 100%;
+  color: var(--fg-subtle);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.addBottomRowBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Board Layout */
+.boardWrapper {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 16px;
+  align-items: flex-start;
+}
+
+.boardColumn {
+  width: 260px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.columnHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+}
+
+.columnCount {
+  font-size: 12px;
+  color: var(--fg-subtle);
+  font-weight: 500;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 50px;
+}
+
+.boardCard {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.boardCard:hover {
+  background-color: var(--bg-hover);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.cardTitleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cardIcon {
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-primary);
+  line-height: 1.4;
+}
+
+.cardBadges {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.addCardBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--fg-subtle);
+  font-size: 12.5px;
+  border-radius: 5px;
+}
+
+.addCardBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Pills */
+.pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pill_default {
+  background: var(--pill-default-bg);
+  color: var(--pill-default-fg);
+}
+.pill_gray {
+  background: var(--pill-gray-bg);
+  color: var(--pill-gray-fg);
+}
+.pill_brown {
+  background: var(--pill-brown-bg);
+  color: var(--pill-brown-fg);
+}
+.pill_orange {
+  background: var(--pill-orange-bg);
+  color: var(--pill-orange-fg);
+}
+.pill_yellow {
+  background: var(--pill-yellow-bg);
+  color: var(--pill-yellow-fg);
+}
+.pill_green {
+  background: var(--pill-green-bg);
+  color: var(--pill-green-fg);
+}
+.pill_blue {
+  background: var(--pill-blue-bg);
+  color: var(--pill-blue-fg);
+}
+.pill_purple {
+  background: var(--pill-purple-bg);
+  color: var(--pill-purple-fg);
+}
+.pill_pink {
+  background: var(--pill-pink-bg);
+  color: var(--pill-pink-fg);
+}
+.pill_red {
+  background: var(--pill-red-bg);
+  color: var(--pill-red-fg);
+}

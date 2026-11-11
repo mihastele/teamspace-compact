@@ -1,84 +1,224 @@
+:root {
+  --bg-primary: #ffffff;
+  --bg-sidebar: #f7f7f5;
+  --bg-hover: rgba(55, 53, 47, 0.06);
+  --bg-active: rgba(55, 53, 47, 0.1);
+  --bg-card: #ffffff;
+  --fg-primary: #37352f;
+  --fg-secondary: #787774;
+  --fg-subtle: #9b9a97;
+  --border-subtle: #e9e9e7;
+  --border-divider: #edece9;
+  --accent-blue: #2383e2;
+  --accent-blue-hover: #1a73e8;
+
+  /* Notion Select/Status Pill Colors */
+  --pill-default-bg: rgba(227, 226, 224, 0.5);
+  --pill-default-fg: #37352f;
+  --pill-gray-bg: rgba(227, 226, 224, 0.5);
+  --pill-gray-fg: #5a5a5a;
+  --pill-brown-bg: rgba(238, 224, 218, 0.6);
+  --pill-brown-fg: #64473a;
+  --pill-orange-bg: rgba(250, 222, 201, 0.6);
+  --pill-orange-fg: #894b15;
+  --pill-yellow-bg: rgba(253, 236, 200, 0.6);
+  --pill-yellow-fg: #89632a;
+  --pill-green-bg: rgba(219, 237, 219, 0.6);
+  --pill-green-fg: #284534;
+  --pill-blue-bg: rgba(211, 229, 239, 0.6);
+  --pill-blue-fg: #183347;
+  --pill-purple-bg: rgba(232, 222, 238, 0.6);
+  --pill-purple-fg: #412d4a;
+  --pill-pink-bg: rgba(245, 224, 233, 0.6);
+  --pill-pink-fg: #5a2638;
+  --pill-red-bg: rgba(255, 226, 221, 0.6);
+  --pill-red-fg: #5d1715;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #191919;
+  --bg-sidebar: #202020;
+  --bg-hover: rgba(255, 255, 255, 0.055);
+  --bg-active: rgba(255, 255, 255, 0.085);
+  --bg-card: #252525;
+  --fg-primary: rgba(255, 255, 255, 0.9);
+  --fg-secondary: #9b9a97;
+  --fg-subtle: #6e6d6a;
+  --border-subtle: #2f2f2f;
+  --border-divider: #282828;
+  --accent-blue: #0077d9;
+  --accent-blue-hover: #0066ba;
+
+  --pill-default-bg: rgba(255, 255, 255, 0.07);
+  --pill-default-fg: rgba(255, 255, 255, 0.85);
+  --pill-gray-bg: rgba(255, 255, 255, 0.08);
+  --pill-gray-fg: #b4b4b4;
+  --pill-brown-bg: rgba(147, 114, 100, 0.35);
+  --pill-brown-fg: #e0cec7;
+  --pill-orange-bg: rgba(204, 119, 34, 0.35);
+  --pill-orange-fg: #f4c28d;
+  --pill-yellow-bg: rgba(202, 142, 27, 0.35);
+  --pill-yellow-fg: #f8df99;
+  --pill-green-bg: rgba(46, 125, 50, 0.35);
+  --pill-green-fg: #b2dfdb;
+  --pill-blue-bg: rgba(33, 150, 243, 0.35);
+  --pill-blue-fg: #b3e5fc;
+  --pill-purple-bg: rgba(156, 39, 176, 0.35);
+  --pill-purple-fg: #e1bee7;
+  --pill-pink-bg: rgba(233, 30, 99, 0.35);
+  --pill-pink-fg: #f8bbd0;
+  --pill-red-bg: rgba(244, 67, 54, 0.35);
+  --pill-red-fg: #ffcdd2;
+}
+
 * {
   box-sizing: border-box;
 }
+
 html,
 body {
   margin: 0;
+  padding: 0;
   min-height: 100%;
-  background: #f7f8fb;
-  color: #202839;
-}
-body,
-input,
-button,
-select,
-textarea {
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
   font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+
 button,
 input,
 select,
 textarea {
-  font: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
 }
-button,
-a,
-input,
-select,
-textarea {
-  -webkit-tap-highlight-color: transparent;
-}
+
 button {
   cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
 }
-button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
+
 a {
-  color: #315ae8;
+  color: inherit;
+  text-decoration: none;
 }
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 3px solid #9bb7ff;
-  outline-offset: 3px;
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-button {
-  transition:
-    background 0.15s,
-    color 0.15s,
-    box-shadow 0.15s;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-::selection {
-  background: #dce5ff;
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
 }
-h1,
-h2,
-h3,
-p {
-  margin: 0;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-subtle);
 }
-button {
-  border: 0;
+
+/* Tiptap / ProseMirror Editor Styling */
+.ProseMirror {
+  outline: none;
+  min-height: 250px;
 }
-input,
-select,
-textarea {
-  min-width: 0;
+
+.ProseMirror p {
+  margin: 4px 0;
+  line-height: 1.6;
 }
-textarea {
-  resize: vertical;
+
+.ProseMirror h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.4rem;
+  line-height: 1.3;
 }
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
+
+.ProseMirror h2 {
+  font-size: 1.45rem;
+  font-weight: 650;
+  margin: 1.3rem 0 0.3rem;
+  line-height: 1.35;
+}
+
+.ProseMirror h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1.1rem 0 0.25rem;
+  line-height: 1.4;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.5rem;
+  margin: 0.35rem 0;
+}
+
+.ProseMirror li {
+  margin: 0.2rem 0;
+}
+
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  user-select: none;
+  margin-top: 3px;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+  width: 15px;
+  height: 15px;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid var(--fg-primary);
+  margin: 0.6rem 0;
+  padding-left: 0.9rem;
+  color: var(--fg-secondary);
+}
+
+.ProseMirror pre {
+  background: var(--bg-sidebar);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9rem;
+  overflow-x: auto;
+}
+
+.ProseMirror code {
+  background: var(--bg-hover);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--fg-subtle);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
 }
