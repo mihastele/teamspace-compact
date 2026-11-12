@@ -166,7 +166,7 @@ export function noteContent(value: unknown) {
   let length = 0;
   const ids = new Set<string>();
   const blocks = data.blocks.map((value) => {
-    const block = object(value, ["id", "type", "text", "level", "checked", "boardView", "source"]);
+    const block = object(value, ["id", "type", "text", "level", "checked", "boardView", "source", "media"]);
     if (
       ![
         "paragraph",
@@ -180,6 +180,9 @@ export function noteContent(value: unknown) {
         "markdown",
         "board",
         "synced",
+        "image",
+        "attachment",
+        "audio",
       ].includes(block.type as string)
     )
       throw new ApiError(400, "invalid_input", "Invalid block type.");
@@ -188,6 +191,7 @@ export function noteContent(value: unknown) {
     const result: NoteBlock = {
       type: block.type as NoteBlock["type"],
       text: content,
+      ...(block.media && typeof block.media === "object" ? { media: block.media as NoteBlock["media"] } : {}),
     };
     if (block.id !== undefined) {
       result.id = uuid(block.id);

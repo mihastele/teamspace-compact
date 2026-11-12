@@ -7,8 +7,17 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { useWorkspace } from "@/lib/workspace-store";
+import { useTeamspace } from "@/lib/client";
+import { usePageCollaboration } from "@/lib/use-page-collaboration";
+import { uploadMediaFile } from "@/lib/attachments";
+import { noteContentToTiptapDoc } from "@/lib/collaboration-model";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
+import {
+  ImageBlockExtension,
+  AttachmentBlockExtension,
+  AudioBlockExtension,
+} from "./MediaNodes";
 import {
   Heading1,
   Heading2,
@@ -21,6 +30,8 @@ import {
   Minus,
   Smile,
   Image as ImageIcon,
+  Paperclip,
+  Mic,
 } from "lucide-react";
 import styles from "./TeamspaceEditor.module.css";
 
@@ -37,7 +48,29 @@ const COVER_PRESETS = [
   "linear-gradient(135deg, #373b44 0%, #4286f4 100%)",
 ];
 
+type SlashCommand = {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+};
+
+const ALL_SLASH_COMMANDS: SlashCommand[] = [
+  { id: "h1", title: "Heading 1", icon: <Heading1 size={15} /> },
+  { id: "h2", title: "Heading 2", icon: <Heading2 size={15} /> },
+  { id: "h3", title: "Heading 3", icon: <Heading3 size={15} /> },
+  { id: "todo", title: "To-do List", icon: <CheckSquare size={15} /> },
+  { id: "bullet", title: "Bullet List", icon: <List size={15} /> },
+  { id: "numbered", title: "Numbered List", icon: <ListOrdered size={15} /> },
+  { id: "quote", title: "Quote", icon: <Quote size={15} /> },
+  { id: "code", title: "Code Block", icon: <Code size={15} /> },
+  { id: "divider", title: "Divider", icon: <Minus size={15} /> },
+  { id: "image", title: "Image", icon: <ImageIcon size={15} /> },
+  { id: "file", title: "File / Attachment", icon: <Paperclip size={15} /> },
+  { id: "audio", title: "Record Audio", icon: <Mic size={15} /> },
+];
+
 export default function TeamspaceEditor({ block }: { block: Block }) {
+  const api = useTeamspace();
   const { blocks, updateBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
@@ -47,11 +80,17 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
   const [slashMenuPosition, setSlashMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const coverPickerRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Real-time CRDT Page Collaboration hook
+  const { view: collabView, presenceUsers, applyTiptapChange } = usePageCollaboration(block);
 
   // Sync title during render when block changes externally without triggering an effect setState
   if (block.id !== prevBlockId || block.title !== prevBlockTitle) {
@@ -59,6 +98,8 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     setPrevBlockTitle(block.title);
     setTitle(block.title);
   }
+
+  const handleFileUploadRef = useRef<(file: File) => Promise<void>>(() => Promise.resolve());
 
   const editor = useEditor({
     extensions: [
@@ -68,12 +109,15 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
         },
       }),
       Placeholder.configure({
-        placeholder: "Type '/' for commands or start writing...",
+        placeholder: "Type '/' for commands, or drop images and files here…",
       }),
       TaskList,
       TaskItem.configure({
         nested: true,
       }),
+      ImageBlockExtension,
+      AttachmentBlockExtension,
+      AudioBlockExtension,
     ],
     content: (block.content as JSONContent) || {
       type: "doc",
@@ -82,6 +126,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     onUpdate: ({ editor: ed }) => {
       const json = ed.getJSON();
       updateBlock(block.id, { content: json });
+      applyTiptapChange(json);
 
       // Check if user typed slash at cursor
       const { from } = ed.state.selection;
@@ -99,6 +144,30 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
       }
     },
     editorProps: {
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files;
+        if (files && files.length > 0) {
+          event.preventDefault();
+          setIsDragOver(false);
+          for (let i = 0; i < files.length; i++) {
+            handleFileUploadRef.current(files[i]);
+          }
+          return true;
+        }
+        setIsDragOver(false);
+        return false;
+      },
+      handlePaste: (view, event) => {
+        const files = event.clipboardData?.files;
+        if (files && files.length > 0) {
+          event.preventDefault();
+          for (let i = 0; i < files.length; i++) {
+            handleFileUploadRef.current(files[i]);
+          }
+          return true;
+        }
+        return false;
+      },
       handleKeyDown: (view, event) => {
         const state = slashStateRef.current;
         if (state.isOpen && state.commands.length > 0) {
@@ -116,7 +185,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
             event.preventDefault();
             const cmd = state.commands[state.selectedIndex] || state.commands[0];
             if (cmd) {
-              state.execute(cmd.action);
+              state.execute(cmd.id);
             }
             return true;
           }
@@ -131,63 +200,159 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     },
   });
 
-  const slashCommands = useMemo(() => [
-    {
-      title: "Heading 1",
-      icon: <Heading1 size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 1 }).run(),
-    },
-    {
-      title: "Heading 2",
-      icon: <Heading2 size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 2 }).run(),
-    },
-    {
-      title: "Heading 3",
-      icon: <Heading3 size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 3 }).run(),
-    },
-    {
-      title: "To-do List",
-      icon: <CheckSquare size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleTaskList().run(),
-    },
-    {
-      title: "Bullet List",
-      icon: <List size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBulletList().run(),
-    },
-    {
-      title: "Numbered List",
-      icon: <ListOrdered size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleOrderedList().run(),
-    },
-    {
-      title: "Quote",
-      icon: <Quote size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBlockquote().run(),
-    },
-    {
-      title: "Code Block",
-      icon: <Code size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleCodeBlock().run(),
-    },
-    {
-      title: "Divider",
-      icon: <Minus size={15} />,
-      action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().setHorizontalRule().run(),
-    },
-  ].filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase())), [slashFilter]);
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      if (!editor) return;
+      const isImage = file.type.startsWith("image/");
+      const isAudio = file.type.startsWith("audio/");
+      const tempId = `temp-${Date.now()}`;
+      const tempUrl = URL.createObjectURL(file);
 
-  const executeSlashCommand = useCallback((action: (ed: ReturnType<typeof useEditor>) => void) => {
-    if (!editor) return;
-    const { from } = editor.state.selection;
-    const deleteCount = slashFilter.length + 1;
-    editor.commands.deleteRange({ from: from - deleteCount, to: from });
-    action(editor);
-    setSlashMenuPosition(null);
-    editor.commands.focus();
-  }, [editor, slashFilter]);
+      // 1. Insert optimistic node immediately (<16ms frame budget)
+      if (isImage) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "imageBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+            },
+          })
+          .run();
+      } else if (isAudio) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "audioBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+            },
+          })
+          .run();
+      } else {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "attachmentBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+            },
+          })
+          .run();
+      }
+
+      // 2. Upload file in background and update node attributes when complete
+      try {
+        const result = await uploadMediaFile(file, "page", block.id, api);
+        // Find and update node attrs in editor
+        const currentJson = editor.getJSON();
+        const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+          if (!nodes) return false;
+          for (const n of nodes) {
+            if (n.attrs?.blockId === tempId) {
+              n.attrs.attachmentId = result.attachmentId;
+              n.attrs.url = result.url;
+              return true;
+            }
+            if (n.content && updateNodeAttrs(n.content)) return true;
+          }
+          return false;
+        };
+
+        if (updateNodeAttrs(currentJson.content)) {
+          editor.commands.setContent(currentJson, { emitUpdate: true });
+        }
+      } catch (err) {
+        console.warn("Media upload background sync notice", err);
+      }
+    },
+    [editor, block.id, api]
+  );
+
+  useEffect(() => {
+    handleFileUploadRef.current = handleFileUpload;
+  }, [handleFileUpload]);
+
+  const slashCommands = useMemo(
+    () => ALL_SLASH_COMMANDS.filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase())),
+    [slashFilter]
+  );
+
+  const executeSlashCommand = useCallback(
+    (cmdId: string) => {
+      if (!editor) return;
+      const { from } = editor.state.selection;
+      const deleteCount = slashFilter.length + 1;
+      editor.commands.deleteRange({ from: from - deleteCount, to: from });
+      setSlashMenuPosition(null);
+      editor.commands.focus();
+
+      switch (cmdId) {
+        case "h1":
+          editor.chain().focus().toggleHeading({ level: 1 }).run();
+          break;
+        case "h2":
+          editor.chain().focus().toggleHeading({ level: 2 }).run();
+          break;
+        case "h3":
+          editor.chain().focus().toggleHeading({ level: 3 }).run();
+          break;
+        case "todo":
+          editor.chain().focus().toggleTaskList().run();
+          break;
+        case "bullet":
+          editor.chain().focus().toggleBulletList().run();
+          break;
+        case "numbered":
+          editor.chain().focus().toggleOrderedList().run();
+          break;
+        case "quote":
+          editor.chain().focus().toggleBlockquote().run();
+          break;
+        case "code":
+          editor.chain().focus().toggleCodeBlock().run();
+          break;
+        case "divider":
+          editor.chain().focus().setHorizontalRule().run();
+          break;
+        case "image":
+          imageInputRef.current?.click();
+          break;
+        case "file":
+          fileInputRef.current?.click();
+          break;
+        case "audio":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "audioBlock",
+              attrs: { blockId: `audio-${Date.now()}` },
+            })
+            .run();
+          break;
+      }
+    },
+    [editor, slashFilter]
+  );
 
   // Keep ref for current slash menu state so Tiptap handleKeyDown always has current state
   const slashStateRef = useRef({
@@ -206,15 +371,16 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     };
   }, [slashMenuPosition, slashCommands, selectedSlashIndex, executeSlashCommand]);
 
-  // Re-sync editor content only when unfocused and content externally differs
+  // Re-sync editor content only when unfocused and collaboration content externally differs
   useEffect(() => {
-    if (editor && !editor.isFocused && block.content) {
+    if (editor && !editor.isFocused && collabView.content) {
+      const tiptapDoc = noteContentToTiptapDoc(collabView.content);
       const currentJson = editor.getJSON();
-      if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
-        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
+      if (JSON.stringify(currentJson) !== JSON.stringify(tiptapDoc)) {
+        editor.commands.setContent(tiptapDoc as JSONContent, { emitUpdate: false });
       }
     }
-  }, [block.id, block.content, editor]);
+  }, [collabView.content, editor]);
 
   // Click-outside listener to dismiss emoji picker and slash menu
   useEffect(() => {
@@ -276,7 +442,64 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
   return (
     <div
       className={`${styles.canvasContainer} ${block.isFullWidth ? styles.canvasFullWidth : ""} ${styles[`font_${block.fontStyle || "sans"}`]}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={() => setIsDragOver(false)}
     >
+      {/* Hidden file pickers for slash commands */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Collaboration Sync & Live Presence Bar */}
+      <div className={styles.collaborationBar}>
+        <div className={styles.collabStatusBadge}>
+          <div
+            className={`${styles.collabStatusDot} ${
+              collabView.status === "Saving…"
+                ? styles.collabStatusDotSaving
+                : collabView.status === "Offline"
+                ? styles.collabStatusDotOffline
+                : ""
+            }`}
+          />
+          <span>{collabView.status}</span>
+        </div>
+
+        {presenceUsers.length > 0 && (
+          <div className={styles.presenceAvatars}>
+            {presenceUsers.map((user) => (
+              <div
+                key={user.id}
+                className={styles.presenceAvatar}
+                title={user.displayName || "Collaborator"}
+              >
+                {(user.displayName || "U")[0].toUpperCase()}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Cover Image Banner */}
       {block.coverUrl && (
         <div className={styles.coverContainer}>
@@ -385,7 +608,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
       {isDatabaseEntry && <DatabaseEntryProperties row={block} />}
 
       {/* Tiptap Block Editor Content */}
-      <div className={styles.editorArea}>
+      <div className={`${styles.editorArea} ${isDragOver ? styles.editorAreaDropActive : ""}`}>
         <EditorContent editor={editor} />
       </div>
 
@@ -405,7 +628,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
               key={cmd.title}
               className={`${styles.slashMenuItem} ${idx === selectedSlashIndex ? styles.slashMenuItemActive : ""}`}
               onMouseEnter={() => setSelectedSlashIndex(idx)}
-              onClick={() => executeSlashCommand(cmd.action)}
+              onClick={() => executeSlashCommand(cmd.id)}
             >
               <span className={styles.slashMenuIcon}>{cmd.icon}</span>
               <span>{cmd.title}</span>

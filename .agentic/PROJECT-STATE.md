@@ -1130,3 +1130,29 @@
 - Verification: `npm test` 255/255 (253 previous + 2 new), `npm run test:supabase` 77/77 including the previously failing migration-runner case that applies the whole chain to a fresh database (the friend's exact path), and warning-free `npm run lint`. No application or TypeScript source changed, so typecheck and the Next build were not rerun. No live database, deployment profile, backup or secret was modified on this host.
 - Deployment consequence: a fresh `up` now applies 007-020 once, records 12 ledger rows and starts web/cleanup; the temporary `docker compose ... up -d --wait web cleanup` workaround is no longer needed for the schema. The friend only needs `git pull` before rerunning `up`.
 - No new dependency, credential, exotic technology or history rewrite. Existing open gates (live/browser acceptance, production/restore, license, Node/dependency remediation, agent M4c/M5) are unchanged.
+
+
+### 2026-11-12 - Real-Time Collaboration Protocol, Drag-and-Drop Image & File Uploads, Audio Recording, and AI Audio Transcription & Summarization
+
+- **Collaboration Architecture & Protocol Strategy:**
+  - Implemented the Hybrid Page-Scoped Yjs CRDT + PostgreSQL Block Containment model. PostgreSQL (`teamspace_blocks`) remains authoritative for document containment hierarchy, sibling sort keys (`fractional-indexing`), and structured database properties. The page canvas utilizes Yjs (`CollaborationController`) for conflict-free, real-time typing, formatting, and media block synchronization.
+  - Added `src/lib/use-page-collaboration.ts` hook bridging Tiptap editor state with `CollaborationController`, local IndexedDB recovery (`indexedRecoveryStore`), and cross-tab `BroadcastChannel` in preview/offline mode, with live connection status pill and presence badges.
+- **Image & File Drag-and-Drop Uploads:**
+  - Implemented drag-and-drop and clipboard paste handlers in `TeamspaceEditor.tsx`. Dropping or pasting images or files immediately displays optimistic node previews (<16ms frame budget) with temporary object URLs and local IndexedDB caching.
+  - Implemented `stripExifAndCompressImage` in `src/lib/attachments.ts` stripping EXIF/GPS metadata via browser canvas re-encoding before network upload, adhering to strict AGENTS.md storage rules.
+  - Added `/image` and `/file` slash commands and native file picker triggers.
+- **Media Custom Nodes (`src/app/components/MediaNodes.tsx`):**
+  - **Image Block:** Responsive width controls (50%, 75%, 100%), interactive caption editing, direct download button, and deletion.
+  - **Attachment Block:** Type-aware icons (Spreadsheet, Archive, Code/Text, Generic File), formatted human-readable byte sizes, direct download button, and deletion.
+  - **Audio Block:** Web Audio API live waveform visualizer during recording, recording timer, play/pause scrubber with formatted time display (`mm:ss`), direct download, and collapsible AI Drawer.
+- **Audio Recording & AI Transcription / Summarization:**
+  - Built-in microphone recording via `MediaRecorder` (`audio/webm` or browser-supported fallback) directly within the audio node block.
+  - Created server AI media provider `src/lib/server/ai-media-provider.ts` and Next.js route `/api/ai/audio-transcribe` supporting OpenAI Whisper API transcription (`/audio/transcriptions`) and Chat Completions summarization (`/chat/completions`) with executive summary and actionable bullet points, with graceful fallback for unconfigured/preview environments.
+- **Storage Migration 021:**
+  - Created `migrations/021-storage-attachments-and-audio.sql` raising `teamspace_attachments` bucket file size limit from 10MB to 25 MiB and allowing audio MIME types (`audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/ogg`, `audio/wav`), documents, archives, and images. Documented in `migrations/021-storage-attachments-and-audio.md` and added to `scripts/migrate-supabase.mjs` (13 application migrations).
+- **Verification & Quality Assurance:**
+  - Unit & Integration Tests: `npm test` runs 258 tests across all suites with 258 passing and 0 failures (including `tests/media-attachments.test.cjs` and `tests/migration-chain.test.mjs`).
+  - TypeScript Compilation: `npx tsc --noEmit` passed with 0 errors.
+  - ESLint Linter: `npm run lint` passed with 0 errors and 0 warnings.
+  - Production Build: `npm run build` completed an optimized Turbopack build with static generation for all routes with 0 errors.
+- **Open Test Gap:** Live microphone device permissions and native OS file drag-and-drop are verified via automated unit and round-trip tests and preview route handlers; real hardware microphone capture in browser remains an interactive user acceptance check.

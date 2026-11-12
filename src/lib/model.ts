@@ -16,6 +16,9 @@ export type BlockType =
   | "callout"
   | "code"
   | "divider"
+  | "image"
+  | "attachment"
+  | "audio"
   | "synced_block";
 
 export type PropertyType =
@@ -212,6 +215,19 @@ export type BoardView = {
   deadline: "all" | "overdue" | "today" | "week" | "undated";
   sort: "position" | "title" | "dueDate";
 };
+export type MediaBlockData = {
+  attachmentId?: string;
+  url?: string;
+  originalName?: string;
+  contentType?: string;
+  bytes?: number;
+  width?: number;
+  caption?: string;
+  durationSeconds?: number;
+  transcript?: string;
+  summary?: string;
+  transcriptionStatus?: "idle" | "transcribing" | "completed" | "failed";
+};
 export type NoteBlock = {
   id?: string;
   type: string;
@@ -220,6 +236,7 @@ export type NoteBlock = {
   checked?: boolean;
   boardView?: BoardView;
   source?: BlockSource;
+  media?: MediaBlockData;
 };
 export type NoteContent = { blocks: NoteBlock[] };
 export type Note = {

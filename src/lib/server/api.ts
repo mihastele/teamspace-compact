@@ -48,7 +48,7 @@ import {
   uuid,
 } from "./validation";
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 25 * 1024 * 1024;
 const now = () => FieldValue.serverTimestamp();
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -1209,11 +1209,66 @@ function validMagic(bytes: Buffer, contentType: string) {
       bytes.toString("ascii", 0, 4) === "RIFF" &&
       bytes.toString("ascii", 8, 12) === "WEBP"
     );
-  return (
-    contentType === "application/pdf" &&
-    bytes.toString("ascii", 0, 5) === "%PDF-"
-  );
+  if (contentType === "image/gif")
+    return bytes.toString("ascii", 0, 4) === "GIF8";
+  if (contentType === "application/pdf")
+    return bytes.toString("ascii", 0, 5) === "%PDF-";
+  if (contentType === "audio/webm")
+    return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (contentType === "audio/ogg")
+    return bytes.toString("ascii", 0, 4) === "OggS";
+  if (contentType === "audio/wav")
+    return (
+      bytes.toString("ascii", 0, 4) === "RIFF" &&
+      bytes.toString("ascii", 8, 12) === "WAVE"
+    );
+  if (contentType === "audio/mpeg")
+    return (
+      (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) ||
+      bytes.toString("ascii", 0, 3) === "ID3"
+    );
+  if (contentType === "audio/mp4")
+    return bytes.toString("ascii", 4, 8) === "ftyp";
+  if (
+    contentType === "application/zip" ||
+    contentType.startsWith("application/vnd.openxmlformats-officedocument.")
+  )
+    return bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (
+    ["text/plain", "text/markdown", "text/csv", "application/json"].includes(
+      contentType
+    )
+  ) {
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
+
+const EXTENSION_MAP: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/csv": "csv",
+  "application/json": "json",
+  "application/zip": "zip",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+};
 
 async function attachmentOperation(
   db: Firestore,
@@ -1234,9 +1289,13 @@ async function attachmentOperation(
       "contentType",
       "bytes",
     ]);
-    if (data.parentType !== "task" && data.parentType !== "note")
+    if (
+      data.parentType !== "task" &&
+      data.parentType !== "note" &&
+      data.parentType !== "page"
+    )
       throw new ApiError(400, "invalid_input", "Invalid attachment parent.");
-    const parentType = data.parentType;
+    const parentType = data.parentType === "page" ? "note" : (data.parentType as "task" | "note");
     const parentId = identifier(data.parentId);
     const originalName = text(data.originalName, "Filename", 200).replace(
       /[\r\n]/g,
@@ -1244,25 +1303,19 @@ async function attachmentOperation(
     );
     const contentType = text(data.contentType, "Content type", 100);
     const bytes = integer(data.bytes, "File size", 1, MAX_BYTES);
-    const extension: Record<string, string> = {
-      "image/jpeg": "jpg",
-      "image/png": "png",
-      "image/webp": "webp",
-      "application/pdf": "pdf",
-    };
-    if (!Object.hasOwn(extension, contentType))
+    if (!Object.hasOwn(EXTENSION_MAP, contentType))
       throw new ApiError(
         400,
         "invalid_input",
-        "Only JPEG, PNG, WebP, and PDF files are supported.",
+        "File format is not supported.",
       );
     const ref = workspace.collection("attachments").doc();
     const stagingPath = `staging/${workspace.id}/${ref.id}`;
-    const storagePath = `workspaces/${workspace.id}/${parentType}/${parentId}/${ref.id}/file.${extension[contentType]}`;
+    const storagePath = `workspaces/${workspace.id}/${parentType}/${parentId}/${ref.id}/file.${EXTENSION_MAP[contentType]}`;
     const thumbnailPath =
-      contentType === "application/pdf"
-        ? null
-        : `${storagePath}.thumbnail.${contentType === "image/png" ? "png" : "webp"}`;
+      ["image/jpeg", "image/png", "image/webp"].includes(contentType)
+        ? `${storagePath}.thumbnail.${contentType === "image/png" ? "png" : "webp"}`
+        : null;
     await db.runTransaction(async (tx) => {
       await member(tx, workspace, user.uid);
       const [parent, attachments] = await Promise.all([
@@ -1331,22 +1384,26 @@ async function attachmentOperation(
   });
   if (
     request.method === "GET" &&
-    (action === "download" || action === "thumbnail")
+    (action === "download" || action === "thumbnail" || action === "inline")
   ) {
     if (value.status !== "ready")
       throw new ApiError(409, "not_ready", "This attachment is not available.");
     if (action === "thumbnail" && !value.thumbnailPath)
       throw new ApiError(404, "not_found", "This file has no thumbnail.");
+    const isInlineMedia =
+      action === "thumbnail" ||
+      (action === "inline" &&
+        (String(value.contentType).startsWith("image/") ||
+          String(value.contentType).startsWith("audio/")));
     const [url] = await files
       .file(action === "thumbnail" ? value.thumbnailPath : value.storagePath)
       .getSignedUrl({
         version: "v4",
         action: "read",
         expires: Date.now() + 60000,
-        responseDisposition:
-          action === "thumbnail"
-            ? "inline"
-            : `attachment; filename*=UTF-8''${encodeURIComponent(value.originalName)}`,
+        responseDisposition: isInlineMedia
+          ? "inline"
+          : `attachment; filename*=UTF-8''${encodeURIComponent(value.originalName)}`,
       });
     return json({ url });
   }
