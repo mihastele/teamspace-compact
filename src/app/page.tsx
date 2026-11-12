@@ -19,6 +19,9 @@ import {
   Copy,
   Download,
   Trash2,
+  Share2,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -36,11 +39,18 @@ export default function HomePage() {
     sidebarCollapsed,
     setSidebarCollapsed,
     syncFromApi,
+    shareLinks,
+    createOrGetShareLink,
+    updateShareLink,
+    revokeShareLink,
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
   const appearanceMenuRef = useRef<HTMLDivElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
 
   // Sync workspace and server items into workspace-store whenever api data updates
   useEffect(() => {
@@ -62,10 +72,17 @@ export default function HomePage() {
       ) {
         setShowAppearanceMenu(false);
       }
+      if (
+        shareMenuRef.current &&
+        !shareMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowShareMenu(false);
+      }
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowAppearanceMenu(false);
+        setShowShareMenu(false);
       }
     };
     window.addEventListener("mousedown", handleOutside);
@@ -177,6 +194,115 @@ export default function HomePage() {
           <div className={styles.topbarActions}>
             {activeBlock && (
               <>
+                <div style={{ position: "relative" }} ref={shareMenuRef}>
+                  <button
+                    className={styles.topbarBtn}
+                    title="Share page via link"
+                    onClick={() => setShowShareMenu((prev) => !prev)}
+                  >
+                    <Share2 size={14} />
+                    <span>Share</span>
+                  </button>
+
+                  {showShareMenu && (() => {
+                    const activeShare = Object.values(shareLinks || {}).find(
+                      (s) => s.blockId === activeBlock.id
+                    );
+                    const sharePath = activeShare ? `/share/${activeShare.token}` : "";
+                    const shareUrl =
+                      typeof window !== "undefined" && sharePath
+                        ? `${window.location.origin}${sharePath}`
+                        : sharePath;
+
+                    return (
+                      <div className={styles.appearancePopover} style={{ width: 280, padding: 12 }}>
+                        <div className={styles.appearanceSectionHeader}>Share via link</div>
+                        {!activeShare || !activeShare.enabled ? (
+                          <button
+                            className={styles.appearanceActionItem}
+                            style={{
+                              background: "var(--accent-blue)",
+                              color: "#fff",
+                              justifyContent: "center",
+                              marginTop: 4,
+                            }}
+                            onClick={() => createOrGetShareLink(activeBlock.id, "read")}
+                          >
+                            <Share2 size={13} />
+                            <span>Create public share link</span>
+                          </button>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                className={`${styles.fontOptionBtn} ${activeShare.permission === "read" ? styles.fontOptionBtnActive : ""}`}
+                                onClick={() => updateShareLink(activeShare.token, { permission: "read" })}
+                              >
+                                Read-only
+                              </button>
+                              <button
+                                className={`${styles.fontOptionBtn} ${activeShare.permission === "edit" ? styles.fontOptionBtnActive : ""}`}
+                                onClick={() => updateShareLink(activeShare.token, { permission: "edit" })}
+                              >
+                                Can edit
+                              </button>
+                            </div>
+
+                            <input
+                              readOnly
+                              value={shareUrl}
+                              onClick={(e) => (e.target as HTMLInputElement).select()}
+                              style={{
+                                fontSize: 12,
+                                padding: "5px 8px",
+                                borderRadius: 5,
+                                border: "1px solid var(--border-subtle)",
+                                background: "var(--bg-main)",
+                                color: "var(--text-primary)",
+                              }}
+                            />
+
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                className={styles.appearanceActionItem}
+                                style={{ flex: 1, justifyContent: "center", border: "1px solid var(--border-subtle)" }}
+                                onClick={() => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                    void navigator.clipboard.writeText(shareUrl);
+                                    setCopiedShare(true);
+                                    setTimeout(() => setCopiedShare(false), 1500);
+                                  }
+                                }}
+                              >
+                                {copiedShare ? <Check size={13} /> : <Copy size={13} />}
+                                <span>{copiedShare ? "Copied!" : "Copy link"}</span>
+                              </button>
+                              <a
+                                href={sharePath}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={styles.appearanceActionItem}
+                                style={{ border: "1px solid var(--border-subtle)", textDecoration: "none" }}
+                                title="Open shared link"
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                            </div>
+
+                            <button
+                              className={`${styles.appearanceActionItem} ${styles.appearanceActionDanger}`}
+                              onClick={() => revokeShareLink(activeShare.token)}
+                            >
+                              <Trash2 size={13} />
+                              <span>Disable &amp; revoke link</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 <button
                   className={`${styles.topbarBtn} ${activeBlock.isFavorite ? styles.favorited : ""}`}
                   title={activeBlock.isFavorite ? "Remove from Favorites" : "Add to Favorites"}

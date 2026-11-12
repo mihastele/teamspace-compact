@@ -33,18 +33,39 @@ import {
   RotateCcw,
   Edit2,
   ArrowLeft,
+  LayoutTemplate,
 } from "lucide-react";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { DragProvider, DragItem, DropZone } from "./DragItem";
 import { contextMenuProps, type ContextMenuItem } from "./ContextMenu";
+import DatabaseTemplatesModal from "./DatabaseTemplatesModal";
 import styles from "./DatabaseView.module.css";
 
-export default function DatabaseView({ block }: { block: Block }) {
+export type DatabaseViewProps = {
+  block: Block;
+  embedded?: boolean;
+  readOnly?: boolean;
+  initialViewId?: string;
+  overrideFilters?: ViewFilterRule[];
+  currentPageId?: string;
+  onOverrideFiltersChange?: (rules: ViewFilterRule[]) => void;
+};
+
+export default function DatabaseView({
+  block,
+  embedded = false,
+  readOnly = false,
+  initialViewId,
+  overrideFilters,
+  currentPageId,
+  onOverrideFiltersChange,
+}: DatabaseViewProps) {
   const {
     blocks,
     childrenIndex,
     properties,
     views,
+    templates,
     activeViewIdByDatabase,
     setActiveView,
     createDatabaseRow,
@@ -68,8 +89,16 @@ export default function DatabaseView({ block }: { block: Block }) {
   const rawProperties = properties[block.id];
   const dbProperties = useMemo(() => rawProperties || [], [rawProperties]);
   const dbViews = views[block.id] || [];
-  const activeViewId = activeViewIdByDatabase[block.id] || dbViews[0]?.id;
+  const dbTemplates = templates?.[block.id] || [];
+  const [localViewId, setLocalViewId] = useState<string | undefined>(initialViewId);
+  const activeViewId = embedded
+    ? localViewId || dbViews[0]?.id
+    : activeViewIdByDatabase[block.id] || dbViews[0]?.id;
   const currentView = dbViews.find((v) => v.id === activeViewId) || dbViews[0];
+  const allDatabases = useMemo(
+    () => Object.values(blocks).filter((b) => b.type === "database" && !b.isArchived),
+    [blocks]
+  );
 
   const rowIds = (childrenIndex[block.id] || []).filter(
     (id) => !blocks[id]?.isArchived
@@ -80,6 +109,7 @@ export default function DatabaseView({ block }: { block: Block }) {
   const [showFilterBar, setShowFilterBar] = useState(false);
   const [showSortPopover, setShowSortPopover] = useState(false);
   const [showPropsPopover, setShowPropsPopover] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [renamingViewId, setRenamingViewId] = useState<string | null>(null);
   const [renameViewValue, setRenameViewValue] = useState("");
 
@@ -88,6 +118,7 @@ export default function DatabaseView({ block }: { block: Block }) {
   const [showAddPropMenu, setShowAddPropMenu] = useState(false);
   const [newPropName, setNewPropName] = useState("");
   const [newPropType, setNewPropType] = useState<PropertyType>("text");
+  const [newPropTargetDb, setNewPropTargetDb] = useState<string>("__any__");
   const [newGroupOptionName, setNewGroupOptionName] = useState("");
   const [showAddGroupPopover, setShowAddGroupPopover] = useState(false);
 
@@ -139,6 +170,32 @@ export default function DatabaseView({ block }: { block: Block }) {
   const statusProp = dbProperties.find((p) => p.type === "status" || p.id === "prop-status");
   const priorityProp = dbProperties.find((p) => p.id === "prop-priority");
 
+  const selectView = (viewId: string) => {
+    if (embedded) {
+      setLocalViewId(viewId);
+    } else {
+      setActiveView(block.id, viewId);
+    }
+  };
+
+  const activeFilterRules = useMemo(
+    () => (overrideFilters !== undefined ? overrideFilters : currentView?.filter?.rules || []),
+    [overrideFilters, currentView]
+  );
+
+  const updateActiveFilterRules = (nextRules: ViewFilterRule[], nextOp?: "and" | "or") => {
+    if (onOverrideFiltersChange) {
+      onOverrideFiltersChange(nextRules);
+    } else if (currentView) {
+      updateDatabaseView(block.id, currentView.id, {
+        filter: {
+          operator: nextOp || currentView.filter?.operator || "and",
+          rules: nextRules,
+        },
+      });
+    }
+  };
+
   // Filter & Sort Engine
   const processedRows = useMemo(() => {
     // 1. Filter by Quick Search
@@ -146,14 +203,26 @@ export default function DatabaseView({ block }: { block: Block }) {
       (row.title || "").toLowerCase().includes(searchFilter.toLowerCase())
     );
 
-    // 2. Filter by View Filter Rules
-    if (currentView?.filter?.rules && currentView.filter.rules.length > 0) {
-      const { operator, rules } = currentView.filter;
+    // 2. Filter by View / Override Filter Rules
+    if (activeFilterRules.length > 0) {
+      const operator = currentView?.filter?.operator || "and";
+      const todayStr = new Date().toISOString().slice(0, 10);
       result = result.filter((row) => {
-        const matches = rules.map((rule) => {
+        const matches = activeFilterRules.map((rule) => {
           const propDef = dbProperties.find((p) => p.id === rule.propertyId);
           // If property is a deleted core property, its effective value is null
-          const rawVal = propDef?.isDeleted ? null : row.properties?.[rule.propertyId];
+          const rawVal = propDef?.isDeleted
+            ? null
+            : rule.propertyId === "prop-title"
+              ? row.title
+              : row.properties?.[rule.propertyId];
+
+          const resolvedRuleVal =
+            rule.value === "$this"
+              ? (currentPageId || "")
+              : rule.value === "$today"
+                ? todayStr
+                : rule.value;
 
           switch (rule.operator) {
             case "is_empty":
@@ -161,28 +230,37 @@ export default function DatabaseView({ block }: { block: Block }) {
             case "is_not_empty":
               return rawVal !== undefined && rawVal !== null && rawVal !== "" && !(Array.isArray(rawVal) && rawVal.length === 0);
             case "equals":
-              return String(rawVal ?? "") === String(rule.value ?? "");
+              if (Array.isArray(rawVal)) {
+                return rawVal.map(String).includes(String(resolvedRuleVal ?? ""));
+              }
+              return String(rawVal ?? "") === String(resolvedRuleVal ?? "");
             case "does_not_equal":
-              return String(rawVal ?? "") !== String(rule.value ?? "");
+              if (Array.isArray(rawVal)) {
+                return !rawVal.map(String).includes(String(resolvedRuleVal ?? ""));
+              }
+              return String(rawVal ?? "") !== String(resolvedRuleVal ?? "");
             case "contains":
-              return String(rawVal ?? "").toLowerCase().includes(String(rule.value ?? "").toLowerCase());
+              if (Array.isArray(rawVal)) {
+                return rawVal.map(String).includes(String(resolvedRuleVal ?? ""));
+              }
+              return String(rawVal ?? "").toLowerCase().includes(String(resolvedRuleVal ?? "").toLowerCase());
             case "does_not_contain":
-              return !String(rawVal ?? "").toLowerCase().includes(String(rule.value ?? "").toLowerCase());
+              if (Array.isArray(rawVal)) {
+                return !rawVal.map(String).includes(String(resolvedRuleVal ?? ""));
+              }
+              return !String(rawVal ?? "").toLowerCase().includes(String(resolvedRuleVal ?? "").toLowerCase());
             case "greater_than":
-              return Number(rawVal) > Number(rule.value);
+              return Number(rawVal) > Number(resolvedRuleVal);
             case "less_than":
-              return Number(rawVal) < Number(rule.value);
+              return Number(rawVal) < Number(resolvedRuleVal);
             case "is_today": {
-              const todayStr = new Date().toISOString().slice(0, 10);
               return rawVal === todayStr;
             }
             case "is_overdue": {
-              const todayStr = new Date().toISOString().slice(0, 10);
               return typeof rawVal === "string" && rawVal !== "" && rawVal < todayStr;
             }
             case "next_7_days": {
               const today = new Date();
-              const todayStr = today.toISOString().slice(0, 10);
               const nextWeek = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
               return typeof rawVal === "string" && rawVal >= todayStr && rawVal <= nextWeek;
             }
@@ -231,7 +309,7 @@ export default function DatabaseView({ block }: { block: Block }) {
     }
 
     return result;
-  }, [rows, searchFilter, currentView, dbProperties]);
+  }, [rows, searchFilter, activeFilterRules, currentView, dbProperties, currentPageId]);
 
   const renderStatusPill = (statusId: unknown) => {
     const opt = statusProp?.options?.find((o) => o.id === statusId);
@@ -562,7 +640,13 @@ export default function DatabaseView({ block }: { block: Block }) {
 
   const handleAddProperty = () => {
     if (!newPropName.trim()) return;
-    createDatabaseProperty(block.id, newPropName.trim(), newPropType);
+    createDatabaseProperty(
+      block.id,
+      newPropName.trim(),
+      newPropType,
+      undefined,
+      newPropType === "relation" ? newPropTargetDb : undefined
+    );
     setNewPropName("");
     setNewPropType("text");
     setShowAddPropMenu(false);
@@ -570,18 +654,23 @@ export default function DatabaseView({ block }: { block: Block }) {
 
   return (
     <DragProvider onEnd={handleDragEnd}>
-    <div className={styles.databaseContainer}>
+    <div className={styles.databaseContainer} style={embedded ? { padding: "8px 12px" } : undefined}>
       {/* Database Title & Header */}
       <div className={styles.header}>
-        <div className={styles.titleRow}>
-          <span className={styles.icon}>{block.icon || "🗂️"}</span>
-          <input
-            className={styles.titleInput}
-            value={block.title}
-            onChange={(e) => updateBlock(block.id, { title: e.target.value })}
-            placeholder="Untitled Database"
-          />
-        </div>
+        {!embedded && (
+          <div className={styles.titleRow}>
+            <span className={styles.icon}>{block.icon || "🗂️"}</span>
+            <input
+              className={styles.titleInput}
+              value={block.title}
+              readOnly={readOnly}
+              onChange={(e) => {
+                if (!readOnly) updateBlock(block.id, { title: e.target.value });
+              }}
+              placeholder="Untitled Database"
+            />
+          </div>
+        )}
 
         {/* View Tabs Bar */}
         <div className={styles.viewTabsBar}>
@@ -597,15 +686,16 @@ export default function DatabaseView({ block }: { block: Block }) {
                 className={`${styles.viewTab} ${view.id === activeViewId ? styles.viewTabActive : ""}`}
                 draggingClassName={styles.dragging}
                 overClassName={styles.dropTarget}
-                onClick={() => setActiveView(block.id, view.id)}
+                onClick={() => selectView(view.id)}
                 onDoubleClick={() => {
+                  if (readOnly) return;
                   setRenamingViewId(view.id);
                   setRenameViewValue(view.name);
                 }}
                 onKeyDown={(e) => {
                   if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
                     e.preventDefault();
-                    setActiveView(block.id, view.id);
+                    selectView(view.id);
                   }
                 }}
                 {...contextMenuProps(() => viewMenu(view.id))}
@@ -697,14 +787,14 @@ export default function DatabaseView({ block }: { block: Block }) {
 
             {/* Filter Toggle Button */}
             <button
-              className={`${styles.toolbarActionBtn} ${showFilterBar || (currentView?.filter?.rules?.length ?? 0) > 0 ? styles.toolbarActionBtnActive : ""}`}
+              className={`${styles.toolbarActionBtn} ${showFilterBar || activeFilterRules.length > 0 ? styles.toolbarActionBtnActive : ""}`}
               onClick={() => setShowFilterBar((prev) => !prev)}
               title="Filter entries"
             >
               <Filter size={13} />
               <span>
                 Filter
-                {Boolean(currentView?.filter?.rules?.length) && ` (${currentView?.filter?.rules?.length})`}
+                {activeFilterRules.length > 0 && ` (${activeFilterRules.length})`}
               </span>
             </button>
 
@@ -862,16 +952,32 @@ export default function DatabaseView({ block }: { block: Block }) {
               )}
             </div>
 
-            <button
-              className={styles.newBtn}
-              onClick={() => {
-                const newRow = createDatabaseRow(block.id, "New entry");
-                setSidePeekBlock(newRow.id);
-              }}
-            >
-              <Plus size={14} />
-              <span>New</span>
-            </button>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  className={styles.toolbarActionBtn}
+                  onClick={() => setShowTemplatesModal(true)}
+                  title="Page templates"
+                >
+                  <LayoutTemplate size={13} />
+                  <span>
+                    Templates{dbTemplates.length > 0 ? ` (${dbTemplates.length})` : ""}
+                  </span>
+                </button>
+
+                <button
+                  className={styles.newBtn}
+                  onClick={() => {
+                    const newRow = createDatabaseRow(block.id);
+                    setSidePeekBlock(newRow.id);
+                  }}
+                >
+                  <Plus size={14} />
+                  <span>New</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -880,19 +986,14 @@ export default function DatabaseView({ block }: { block: Block }) {
           <div className={styles.filterBarContainer}>
             <div className={styles.filterHeaderRow}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-secondary)" }}>
-                Filter rules ({currentView.filter?.rules?.length || 0})
+                Filter rules ({activeFilterRules.length})
               </span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   className={styles.filterTextBtn}
                   onClick={() => {
                     const nextOp = currentView.filter?.operator === "or" ? "and" : "or";
-                    updateDatabaseView(block.id, currentView.id, {
-                      filter: {
-                        operator: nextOp,
-                        rules: currentView.filter?.rules || [],
-                      },
-                    });
+                    updateActiveFilterRules(activeFilterRules, nextOp);
                   }}
                 >
                   Conjunction: {currentView.filter?.operator?.toUpperCase() || "AND"}
@@ -900,11 +1001,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                 <button
                   className={styles.filterTextBtn}
                   style={{ color: "#eb5757" }}
-                  onClick={() => {
-                    updateDatabaseView(block.id, currentView.id, {
-                      filter: { operator: "and", rules: [] },
-                    });
-                  }}
+                  onClick={() => updateActiveFilterRules([], "and")}
                 >
                   Clear all
                 </button>
@@ -912,19 +1009,28 @@ export default function DatabaseView({ block }: { block: Block }) {
             </div>
 
             <div className={styles.filterRuleList}>
-              {currentView.filter?.rules?.map((rule, idx) => (
+              {activeFilterRules.map((rule, idx) => {
+                const ruleProp = dbProperties.find((p) => p.id === rule.propertyId);
+                const isRelationProp = ruleProp?.type === "relation";
+                const relationTargets = isRelationProp
+                  ? ruleProp.targetDatabaseId === "__any__"
+                    ? Object.values(blocks).filter((b) => !b.isArchived && (b.type === "page" || b.type === "database"))
+                    : (childrenIndex[ruleProp.targetDatabaseId || block.id] || [])
+                        .map((id) => blocks[id])
+                        .filter((b) => Boolean(b) && !b.isArchived)
+                  : [];
+
+                return (
                 <div key={idx} className={styles.filterRuleRow}>
                   {/* Property Selector */}
                   <select
                     className={styles.filterSelect}
                     value={rule.propertyId}
                     onChange={(e) => {
-                      const nextRules = currentView.filter!.rules.map((r, i) =>
+                      const nextRules = activeFilterRules.map((r, i) =>
                         i === idx ? { ...r, propertyId: e.target.value } : r
                       );
-                      updateDatabaseView(block.id, currentView.id, {
-                        filter: { operator: currentView.filter?.operator || "and", rules: nextRules },
-                      });
+                      updateActiveFilterRules(nextRules);
                     }}
                   >
                     {dbProperties.map((p) => (
@@ -939,12 +1045,10 @@ export default function DatabaseView({ block }: { block: Block }) {
                     className={styles.filterSelect}
                     value={rule.operator}
                     onChange={(e) => {
-                      const nextRules = currentView.filter!.rules.map((r, i) =>
+                      const nextRules = activeFilterRules.map((r, i) =>
                         i === idx ? { ...r, operator: e.target.value as ViewFilterRule["operator"] } : r
                       );
-                      updateDatabaseView(block.id, currentView.id, {
-                        filter: { operator: currentView.filter?.operator || "and", rules: nextRules },
-                      });
+                      updateActiveFilterRules(nextRules);
                     }}
                   >
                     <option value="equals">equals</option>
@@ -962,34 +1066,54 @@ export default function DatabaseView({ block }: { block: Block }) {
 
                   {/* Value Input (unless unary empty/today/overdue) */}
                   {!["is_empty", "is_not_empty", "is_today", "is_overdue", "next_7_days"].includes(rule.operator) && (
-                    <input
-                      className={styles.filterInput}
-                      placeholder="Value..."
-                      value={String(rule.value ?? "")}
-                      onChange={(e) => {
-                        const nextRules = currentView.filter!.rules.map((r, i) =>
-                          i === idx ? { ...r, value: e.target.value } : r
-                        );
-                        updateDatabaseView(block.id, currentView.id, {
-                          filter: { operator: currentView.filter?.operator || "and", rules: nextRules },
-                        });
-                      }}
-                    />
+                    isRelationProp ? (
+                      <select
+                        className={styles.filterSelect}
+                        value={String(rule.value ?? "")}
+                        onChange={(e) => {
+                          const nextRules = activeFilterRules.map((r, i) =>
+                            i === idx ? { ...r, value: e.target.value } : r
+                          );
+                          updateActiveFilterRules(nextRules);
+                        }}
+                      >
+                        <option value="">Select page...</option>
+                        {currentPageId && (
+                          <option value="$this">This page ($this)</option>
+                        )}
+                        {relationTargets.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.icon || "📄"} {t.title || "Untitled"}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        className={styles.filterInput}
+                        placeholder="Value (or $today / $this)..."
+                        value={String(rule.value ?? "")}
+                        onChange={(e) => {
+                          const nextRules = activeFilterRules.map((r, i) =>
+                            i === idx ? { ...r, value: e.target.value } : r
+                          );
+                          updateActiveFilterRules(nextRules);
+                        }}
+                      />
+                    )
                   )}
 
                   <button
                     className={styles.filterRemoveBtn}
                     onClick={() => {
-                      const nextRules = currentView.filter!.rules.filter((_, i) => i !== idx);
-                      updateDatabaseView(block.id, currentView.id, {
-                        filter: { operator: currentView.filter?.operator || "and", rules: nextRules },
-                      });
+                      const nextRules = activeFilterRules.filter((_, i) => i !== idx);
+                      updateActiveFilterRules(nextRules);
                     }}
                   >
                     <X size={13} />
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className={styles.filterBottomActions}>
@@ -997,10 +1121,8 @@ export default function DatabaseView({ block }: { block: Block }) {
                 className={styles.filterTextBtn}
                 onClick={() => {
                   const firstProp = dbProperties[0]?.id || "prop-title";
-                  const nextRules = [...(currentView.filter?.rules || []), { propertyId: firstProp, operator: "contains" as const, value: "" }];
-                  updateDatabaseView(block.id, currentView.id, {
-                    filter: { operator: currentView.filter?.operator || "and", rules: nextRules },
-                  });
+                  const nextRules = [...activeFilterRules, { propertyId: firstProp, operator: "contains" as const, value: "" }];
+                  updateActiveFilterRules(nextRules);
                 }}
               >
                 <Plus size={13} />
@@ -1121,6 +1243,20 @@ export default function DatabaseView({ block }: { block: Block }) {
                           <option value="email">Email</option>
                           <option value="url">URL</option>
                         </select>
+                        {newPropType === "relation" && (
+                          <select
+                            className={styles.propSelect}
+                            value={newPropTargetDb}
+                            onChange={(e) => setNewPropTargetDb(e.target.value)}
+                          >
+                            <option value="__any__">Target: Any page in workspace</option>
+                            {allDatabases.map((db) => (
+                              <option key={db.id} value={db.id}>
+                                Target: {db.title || "Untitled Database"}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         <button className={styles.createPropBtn} onClick={handleAddProperty}>
                           Create Property
                         </button>
@@ -1768,6 +1904,18 @@ onClick={() => setSidePeekBlock(row.id)}
         )}
       </div>
     </div>
+
+    {showTemplatesModal && (
+      <DatabaseTemplatesModal
+        database={block}
+        properties={dbProperties}
+        onClose={() => setShowTemplatesModal(false)}
+        onCreateFromTemplate={(templateId) => {
+          const newRow = createDatabaseRow(block.id, undefined, {}, templateId);
+          setSidePeekBlock(newRow.id);
+        }}
+      />
+    )}
     </DragProvider>
   );
 }

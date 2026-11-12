@@ -16,7 +16,13 @@ export type BlockType =
   | "callout"
   | "code"
   | "divider"
-  | "synced_block";
+  | "synced_block"
+  | "columns"
+  | "column"
+  | "image"
+  | "file"
+  | "video"
+  | "page_mention";
 
 export type PropertyType =
   | "title"
@@ -110,6 +116,34 @@ export type DatabaseView = {
   visibleProperties?: string[]; // Array of property IDs in order
   calculations?: Record<string, CalculationType>;
   position: string;
+};
+
+export type DatabaseTemplate = {
+  id: string;
+  databaseId: string;
+  name: string;
+  icon?: string | null;
+  defaultProperties: Record<string, unknown>; // Supports "$today" and "$this" dynamic tokens
+  content?: {
+    type?: string;
+    content?: unknown[];
+    [key: string]: unknown;
+  } | null;
+  isDefault?: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type SharePermission = "read" | "edit";
+
+export type ShareLink = {
+  token: string;
+  blockId: string;
+  workspaceId: string;
+  permission: SharePermission;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type Block = {

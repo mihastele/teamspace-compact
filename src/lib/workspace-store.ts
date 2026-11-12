@@ -1,5 +1,13 @@
 import { useSyncExternalStore } from "react";
-import type { Block, DatabaseProperty, DatabaseView, Workspace } from "./model";
+import type {
+  Block,
+  DatabaseProperty,
+  DatabaseTemplate,
+  DatabaseView,
+  ShareLink,
+  SharePermission,
+  Workspace,
+} from "./model";
 import { createDefaultWorkspace, generateSeedData } from "./seed-workspace";
 
 export type WorkspaceState = {
@@ -8,6 +16,8 @@ export type WorkspaceState = {
   childrenIndex: Record<string, string[]>; // parentId (or 'root') -> blockIds in order
   properties: Record<string, DatabaseProperty[]>; // databaseId -> properties
   views: Record<string, DatabaseView[]>; // databaseId -> views
+  templates: Record<string, DatabaseTemplate[]>; // databaseId -> page templates
+  shareLinks: Record<string, ShareLink>; // token -> share link
   activeBlockId: string | null;
   sidePeekBlockId: string | null;
   activeViewIdByDatabase: Record<string, string>; // databaseId -> viewId
@@ -78,7 +88,12 @@ function buildInitialState(): WorkspaceState {
           // Keep the legacy key if the migration cannot be persisted.
         }
       }
-      return parsed as WorkspaceState;
+      const ws = parsed as Partial<WorkspaceState>;
+      return {
+        ...(ws as WorkspaceState),
+        templates: ws.templates || {},
+        shareLinks: ws.shareLinks || {},
+      };
     }
   }
 
@@ -120,6 +135,8 @@ function buildInitialState(): WorkspaceState {
     childrenIndex,
     properties,
     views,
+    templates: {},
+    shareLinks: {},
     activeBlockId: "page-getting-started",
     sidePeekBlockId: null,
     activeViewIdByDatabase,
@@ -432,37 +449,80 @@ export const workspaceStore = {
   // Database Rows
   createDatabaseRow(
     databaseId: string,
-    title: string = "New entry",
-    initialProperties: Record<string, unknown> = {}
+    title?: string,
+    initialProperties: Record<string, unknown> = {},
+    templateId?: string | null
   ): Block {
     const now = Date.now();
     const id = `row-${now}-${Math.random().toString(36).slice(2, 7)}`;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const dbTemplates = currentState.templates?.[databaseId] || [];
+    const selectedTemplate =
+      templateId === null
+        ? undefined
+        : templateId
+          ? dbTemplates.find((t) => t.id === templateId)
+          : dbTemplates.find((t) => t.isDefault);
+
+    const resolveDynamicValue = (val: unknown): unknown => {
+      if (val === "$today") return todayStr;
+      if (val === "$this") return id;
+      if (Array.isArray(val)) return val.map(resolveDynamicValue);
+      if (val && typeof val === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+          out[k] = resolveDynamicValue(v);
+        }
+        return out;
+      }
+      return val;
+    };
+
+    const resolvedTemplateProps: Record<string, unknown> = {};
+    if (selectedTemplate?.defaultProperties) {
+      for (const [k, v] of Object.entries(selectedTemplate.defaultProperties)) {
+        resolvedTemplateProps[k] = resolveDynamicValue(v);
+      }
+    }
+
+    const finalTitle =
+      title !== undefined
+        ? title
+        : selectedTemplate?.name
+          ? selectedTemplate.name
+          : "New entry";
 
     // Resolve default status property if not provided in initialProperties
     const dbProps = currentState.properties[databaseId] || [];
     const statusProp = dbProps.find((p) => p.type === "status");
     const mergedProperties: Record<string, unknown> = {
-      "prop-title": title,
+      ...resolvedTemplateProps,
       ...initialProperties,
+      "prop-title": finalTitle,
     };
 
     if (statusProp && !mergedProperties[statusProp.id] && statusProp.options?.[0]) {
       mergedProperties[statusProp.id] = statusProp.options[0].id;
     }
 
+    const resolvedContent = selectedTemplate?.content
+      ? (resolveDynamicValue(selectedTemplate.content) as Block["content"])
+      : {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        };
+
     const newRow: Block = {
       id,
       workspaceId: currentState.workspace.id,
       parentId: databaseId,
       type: "page",
-      title,
-      icon: "📄",
+      title: finalTitle,
+      icon: selectedTemplate?.icon || "📄",
       position: `z${now}`,
       properties: mergedProperties,
-      content: {
-        type: "doc",
-        content: [{ type: "paragraph" }],
-      },
+      content: resolvedContent,
       revision: 1,
       createdAt: now,
       updatedAt: now,
@@ -732,6 +792,162 @@ export const workspaceStore = {
     emitChange();
   },
 
+  // Database Templates
+  createDatabaseTemplate(
+    databaseId: string,
+    data: {
+      name: string;
+      icon?: string | null;
+      defaultProperties?: Record<string, unknown>;
+      content?: DatabaseTemplate["content"];
+      isDefault?: boolean;
+    }
+  ): DatabaseTemplate {
+    const now = Date.now();
+    const id = `tpl-${now}-${Math.random().toString(36).slice(2, 7)}`;
+    const existing = currentState.templates?.[databaseId] || [];
+    const shouldBeDefault = data.isDefault ?? existing.length === 0;
+    const newTemplate: DatabaseTemplate = {
+      id,
+      databaseId,
+      name: data.name || "Untitled template",
+      icon: data.icon || "📄",
+      defaultProperties: data.defaultProperties || {},
+      content: data.content || { type: "doc", content: [{ type: "paragraph" }] },
+      isDefault: shouldBeDefault,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextList: DatabaseTemplate[] = shouldBeDefault
+      ? [...existing.map((t) => ({ ...t, isDefault: false })), newTemplate]
+      : [...existing, newTemplate];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: nextList,
+      },
+    };
+    emitChange();
+    return newTemplate;
+  },
+
+  updateDatabaseTemplate(
+    databaseId: string,
+    templateId: string,
+    updates: Partial<DatabaseTemplate>
+  ) {
+    const existing = currentState.templates?.[databaseId] || [];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: existing.map((t) => {
+          if (t.id === templateId) {
+            return { ...t, ...updates, updatedAt: Date.now() };
+          }
+          if (updates.isDefault) {
+            return { ...t, isDefault: false };
+          }
+          return t;
+        }),
+      },
+    };
+    emitChange();
+  },
+
+  deleteDatabaseTemplate(databaseId: string, templateId: string) {
+    const existing = currentState.templates?.[databaseId] || [];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: existing.filter((t) => t.id !== templateId),
+      },
+    };
+    emitChange();
+  },
+
+  // Share Links
+  createOrGetShareLink(
+    blockId: string,
+    permission: SharePermission = "read"
+  ): ShareLink {
+    const existingMap = currentState.shareLinks || {};
+    const existing = Object.values(existingMap).find(
+      (link) => link.blockId === blockId
+    );
+    if (existing) {
+      if (!existing.enabled) {
+        const updated: ShareLink = {
+          ...existing,
+          enabled: true,
+          updatedAt: Date.now(),
+        };
+        currentState = {
+          ...currentState,
+          shareLinks: { ...existingMap, [existing.token]: updated },
+        };
+        emitChange();
+        return updated;
+      }
+      return existing;
+    }
+
+    const token =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+        : `sh${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const link: ShareLink = {
+      token,
+      blockId,
+      workspaceId: currentState.workspace.id,
+      permission,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    currentState = {
+      ...currentState,
+      shareLinks: {
+        ...existingMap,
+        [token]: link,
+      },
+    };
+    emitChange();
+    return link;
+  },
+
+  updateShareLink(token: string, updates: Partial<Pick<ShareLink, "permission" | "enabled">>) {
+    const existingMap = currentState.shareLinks || {};
+    const existing = existingMap[token];
+    if (!existing) return;
+    currentState = {
+      ...currentState,
+      shareLinks: {
+        ...existingMap,
+        [token]: {
+          ...existing,
+          ...updates,
+          updatedAt: Date.now(),
+        },
+      },
+    };
+    emitChange();
+  },
+
+  revokeShareLink(token: string) {
+    const existingMap = { ...(currentState.shareLinks || {}) };
+    if (!(token in existingMap)) return;
+    delete existingMap[token];
+    currentState = {
+      ...currentState,
+      shareLinks: existingMap,
+    };
+    emitChange();
+  },
+
   setWorkspace(workspace: Workspace) {
     currentState = {
       ...currentState,
@@ -931,6 +1147,12 @@ export function useWorkspace() {
     updateDatabaseProperty: workspaceStore.updateDatabaseProperty,
     deleteDatabaseProperty: workspaceStore.deleteDatabaseProperty,
     restoreDatabaseProperty: workspaceStore.restoreDatabaseProperty,
+    createDatabaseTemplate: workspaceStore.createDatabaseTemplate,
+    updateDatabaseTemplate: workspaceStore.updateDatabaseTemplate,
+    deleteDatabaseTemplate: workspaceStore.deleteDatabaseTemplate,
+    createOrGetShareLink: workspaceStore.createOrGetShareLink,
+    updateShareLink: workspaceStore.updateShareLink,
+    revokeShareLink: workspaceStore.revokeShareLink,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,

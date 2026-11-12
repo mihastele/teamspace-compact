@@ -28,7 +28,6 @@
   width: 100%;
   height: 180px;
   position: relative;
-  overflow: hidden;
   border-radius: 6px;
   margin-bottom: 24px;
 }
@@ -36,6 +35,8 @@
 .coverImage {
   width: 100%;
   height: 100%;
+  border-radius: 6px;
+  overflow: hidden;
   background-size: cover;
   background-position: center;
 }
@@ -73,18 +74,75 @@
 
 .coverGalleryPopover {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 6px);
   right: 0;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   padding: 10px;
-  z-index: 50;
-  width: 260px;
+  z-index: 60;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coverPresetGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 6px;
+}
+
+.coverTabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 6px;
+}
+
+.coverTab {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.coverTabActive {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.coverUploadArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.coverUploadBtn {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: 6px;
+  background: var(--accent-blue);
+  color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+}
+
+.coverUrlInput {
+  width: 100%;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-main);
+  color: var(--text-primary);
 }
 
 .coverPreset {
