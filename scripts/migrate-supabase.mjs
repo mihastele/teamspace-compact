@@ -6,10 +6,13 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const literal = value => "'" + value.replace(/'/g, "''") + "'";
+// Ordered application migrations. `021-teamspace-unified-schema` was retired
+// unapplied because it re-created `public.teamspace_blocks`; see the ledger doc.
+export const applicationMigrations = ['007-supabase-backend.sql', '008-workspace-administration.sql', '009-board-properties.sql', '012-canonical-projects-fields.sql', '013-ticket-queries-views.sql', '014-agent-queue.sql', '015-task-pages-templates.sql', '016-independent-databases.sql', '017-block-containment.sql', '018-database-entity-relations.sql', '019-entity-database-relations.sql', '020-entity-relation-backlinks.sql'];
 export function migrationSQL() {
   let sql = "\\set ON_ERROR_STOP on\nselect pg_advisory_lock(71649328);\n";
   sql += readFileSync(resolve(root, 'migrations/000-supabase-migration-ledger.sql'), 'utf8') + '\n';
-  for (const name of ['007-supabase-backend.sql', '008-workspace-administration.sql', '009-board-properties.sql', '012-canonical-projects-fields.sql', '013-ticket-queries-views.sql', '014-agent-queue.sql', '015-task-pages-templates.sql', '016-independent-databases.sql', '017-block-containment.sql', '018-database-entity-relations.sql', '019-entity-database-relations.sql', '020-entity-relation-backlinks.sql', '021-teamspace-unified-schema.sql']) {
+  for (const name of applicationMigrations) {
     const source = readFileSync(resolve(root, 'migrations', name), 'utf8').replace(/\r\n/g, '\n');
     const checksum = createHash('sha256').update(source).digest('hex');
     if (!/commit;\s*$/i.test(source)) throw new Error('Migration must end with COMMIT.');

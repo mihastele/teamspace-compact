@@ -20,6 +20,18 @@ must remain unchanged; future schema changes need a new migration and an entry
 in the runner's ordered list. Checksums detect edits, not malicious administrator
 changes. Database administrators remain trusted.
 
+## Retired migrations
+
+`021-teamspace-unified-schema` was authored but never applied to any installation
+and has been retired unapplied: its unconditional `create table
+public.teamspace_blocks` conflicted with `017-block-containment`, which remains
+the authoritative block table (workspace-scoped identity, containment trigger and
+workspace foreign key). The migration is absent from the runner's ordered list and
+its files are removed, so a fresh installation applies 007 through 020 only. The
+sketch of the native properties/views/relations tables is recoverable from Git
+history (commit `c7ff564`) if that work is revisited; it must return as a new
+migration that extends the current block table instead of re-creating it.
+
 ## Existing installations
 
 The runner refuses to infer a baseline when `teamspace_documents` already exists
