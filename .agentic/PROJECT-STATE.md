@@ -1156,3 +1156,16 @@
   - ESLint Linter: `npm run lint` passed with 0 errors and 0 warnings.
   - Production Build: `npm run build` completed an optimized Turbopack build with static generation for all routes with 0 errors.
 - **Open Test Gap:** Live microphone device permissions and native OS file drag-and-drop are verified via automated unit and round-trip tests and preview route handlers; real hardware microphone capture in browser remains an interactive user acceptance check.
+
+
+### 2026-11-12 - Fixed unhandled workspace presence exception during initial mount
+
+- **Defect:** `Uncaught Error: Choose a workspace first.` at `subscribePresence` / `path()` during initial mount.
+- **Root Cause:** When `api.configured && api.user` evaluated truthy but `api.workspace` was not yet loaded or when the app was in local preview before a workspace was selected, `usePageCollaboration` and `client.ts` called `api.subscribePresence`, which invoked `path()` that unconditionally threw `Error: Choose a workspace first.`.
+- **Fix:**
+  - In `src/lib/use-page-collaboration.ts`, guarded server collaboration and presence with `isServerCollab = Boolean(api.configured && api.user && api.workspace)` and added `api.workspace?.id` to the effect dependency array.
+  - In `src/lib/client.ts`, updated `subscribeCollaboration`, `subscribePresence`, `heartbeatPresence`, and `leavePresence` to return cleanly / return a no-op unsubscription `() => {}` if `!workspace` instead of throwing an unhandled runtime error.
+- **Verification:**
+  - `npm test`: 258/258 pass.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm run build`: Next.js Turbopack production build succeeds with 0 errors.

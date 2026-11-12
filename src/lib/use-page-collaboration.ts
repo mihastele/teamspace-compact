@@ -82,10 +82,11 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
     };
     initialDoc.destroy();
 
-    // Configure Transport: backend API if configured & signed-in, else cross-tab BroadcastChannel
+    // Configure Transport: backend API if configured, signed-in & workspace selected, else cross-tab BroadcastChannel
     let transport: CollaborationTransport;
+    const isServerCollab = Boolean(api.configured && api.user && api.workspace);
 
-    if (api.configured && api.user) {
+    if (isServerCollab) {
       transport = {
         subscribe(next, fail) {
           return api.subscribeCollaboration(block.id, next, fail);
@@ -151,7 +152,7 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
     const sessionId = crypto.randomUUID();
     let presenceCleanup: (() => void) | undefined;
 
-    if (api.configured && api.user) {
+    if (isServerCollab) {
       api.heartbeatPresence(block.id, sessionId).catch(() => {});
       const interval = setInterval(() => {
         api.heartbeatPresence(block.id, sessionId).catch(() => {});
@@ -207,7 +208,7 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
       cleanupTransport?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [block.id, block.workspaceId, api.user?.uid, api.configured]);
+  }, [block.id, block.workspaceId, api.user?.uid, api.workspace?.id, api.configured]);
 
   // Subscribe to controller view state
   const emptyView: CollaborationView = useMemo(
