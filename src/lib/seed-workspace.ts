@@ -105,12 +105,14 @@ export function generateSeedData(workspaceId: string = DEFAULT_WORKSPACE_ID): {
       name: "Task",
       type: "title",
       position: "a0",
+      isCore: true,
     },
     {
       id: "prop-status",
       name: "Status",
       type: "status",
       position: "a1",
+      isCore: true,
       options: [
         { id: "opt-todo", name: "To Do", color: "gray", group: "todo" },
         { id: "opt-progress", name: "In Progress", color: "blue", group: "doing" },
@@ -122,6 +124,7 @@ export function generateSeedData(workspaceId: string = DEFAULT_WORKSPACE_ID): {
       name: "Priority",
       type: "select",
       position: "a2",
+      isCore: true,
       options: [
         { id: "prio-urgent", name: "Urgent", color: "red" },
         { id: "prio-high", name: "High", color: "orange" },
@@ -134,6 +137,14 @@ export function generateSeedData(workspaceId: string = DEFAULT_WORKSPACE_ID): {
       name: "Due Date",
       type: "date",
       position: "a3",
+      isCore: true,
+    },
+    {
+      id: "prop-relations",
+      name: "Related Tasks",
+      type: "relation",
+      position: "a4",
+      targetDatabaseId: tasksDatabaseId,
     },
   ];
 

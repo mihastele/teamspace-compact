@@ -16,6 +16,38 @@ export type WorkspaceState = {
   sidebarCollapsed: boolean;
 };
 
+export const CORE_PROPERTY_DEFINITIONS: Record<string, Omit<DatabaseProperty, "position">> = {
+  "prop-status": {
+    id: "prop-status",
+    name: "Status",
+    type: "status",
+    isCore: true,
+    options: [
+      { id: "opt-todo", name: "To Do", color: "gray", group: "todo" },
+      { id: "opt-progress", name: "In Progress", color: "blue", group: "doing" },
+      { id: "opt-done", name: "Done", color: "green", group: "done" },
+    ],
+  },
+  "prop-priority": {
+    id: "prop-priority",
+    name: "Priority",
+    type: "select",
+    isCore: true,
+    options: [
+      { id: "prio-urgent", name: "Urgent", color: "red" },
+      { id: "prio-high", name: "High", color: "orange" },
+      { id: "prio-medium", name: "Medium", color: "yellow" },
+      { id: "prio-low", name: "Low", color: "default" },
+    ],
+  },
+  "prop-due": {
+    id: "prop-due",
+    name: "Due Date",
+    type: "date",
+    isCore: true,
+  },
+};
+
 const STORAGE_KEY = "opennotion_workspace_state_v1";
 
 function buildInitialState(): WorkspaceState {
@@ -513,20 +545,53 @@ export const workspaceStore = {
     emitChange();
   },
 
+  updateDatabaseView(
+    databaseId: string,
+    viewId: string,
+    updates: Partial<DatabaseView>
+  ) {
+    const existingViews = currentState.views[databaseId] || [];
+    currentState = {
+      ...currentState,
+      views: {
+        ...currentState.views,
+        [databaseId]: existingViews.map((v) => (v.id === viewId ? { ...v, ...updates } : v)),
+      },
+    };
+    emitChange();
+  },
+
   createDatabaseProperty(
     databaseId: string,
     name: string,
     type: DatabaseProperty["type"],
-    options?: DatabaseProperty["options"]
+    options?: DatabaseProperty["options"],
+    targetDatabaseId?: string
   ): DatabaseProperty {
     const now = Date.now();
     const id = `prop-${now}`;
+
+    let defaultOptions = options;
+    if (!defaultOptions && (type === "select" || type === "multi_select")) {
+      defaultOptions = [
+        { id: `opt-${now}-1`, name: "Option 1", color: "blue" },
+        { id: `opt-${now}-2`, name: "Option 2", color: "green" },
+      ];
+    } else if (!defaultOptions && type === "status") {
+      defaultOptions = [
+        { id: `opt-${now}-todo`, name: "Not started", color: "default", group: "todo" },
+        { id: `opt-${now}-prog`, name: "In progress", color: "blue", group: "doing" },
+        { id: `opt-${now}-done`, name: "Done", color: "green", group: "done" },
+      ];
+    }
+
     const newProp: DatabaseProperty = {
       id,
       name: name || "New property",
       type,
       position: `p${now}`,
-      options,
+      options: defaultOptions,
+      targetDatabaseId: type === "relation" ? (targetDatabaseId || databaseId) : undefined,
     };
     const existingProps = currentState.properties[databaseId] || [];
     currentState = {
@@ -540,15 +605,82 @@ export const workspaceStore = {
     return newProp;
   },
 
-  deleteDatabaseProperty(databaseId: string, propertyId: string) {
+  updateDatabaseProperty(
+    databaseId: string,
+    propertyId: string,
+    updates: Partial<DatabaseProperty>
+  ) {
     const existingProps = currentState.properties[databaseId] || [];
     currentState = {
       ...currentState,
       properties: {
         ...currentState.properties,
-        [databaseId]: existingProps.filter((p) => p.id !== propertyId),
+        [databaseId]: existingProps.map((p) =>
+          p.id === propertyId ? { ...p, ...updates } : p
+        ),
       },
     };
+    emitChange();
+  },
+
+  deleteDatabaseProperty(databaseId: string, propertyId: string) {
+    const existingProps = currentState.properties[databaseId] || [];
+    const targetProp = existingProps.find((p) => p.id === propertyId);
+    
+    // Core property deletion rule: if property is core or one of standard core IDs, mark isDeleted: true
+    if (targetProp && (targetProp.isCore || CORE_PROPERTY_DEFINITIONS[propertyId])) {
+      currentState = {
+        ...currentState,
+        properties: {
+          ...currentState.properties,
+          [databaseId]: existingProps.map((p) =>
+            p.id === propertyId ? { ...p, isDeleted: true } : p
+          ),
+        },
+      };
+    } else {
+      // Normal custom property: fully remove
+      currentState = {
+        ...currentState,
+        properties: {
+          ...currentState.properties,
+          [databaseId]: existingProps.filter((p) => p.id !== propertyId),
+        },
+      };
+    }
+    emitChange();
+  },
+
+  restoreDatabaseProperty(databaseId: string, propertyId: string) {
+    const existingProps = currentState.properties[databaseId] || [];
+    const targetProp = existingProps.find((p) => p.id === propertyId);
+
+    if (targetProp) {
+      currentState = {
+        ...currentState,
+        properties: {
+          ...currentState.properties,
+          [databaseId]: existingProps.map((p) =>
+            p.id === propertyId ? { ...p, isDeleted: false } : p
+          ),
+        },
+      };
+    } else if (CORE_PROPERTY_DEFINITIONS[propertyId]) {
+      // Re-create from core definition if missing completely
+      const coreDef = CORE_PROPERTY_DEFINITIONS[propertyId];
+      const restoredProp: DatabaseProperty = {
+        ...coreDef,
+        position: `p${Date.now()}`,
+        isDeleted: false,
+      };
+      currentState = {
+        ...currentState,
+        properties: {
+          ...currentState.properties,
+          [databaseId]: [...existingProps, restoredProp],
+        },
+      };
+    }
     emitChange();
   },
 
@@ -742,9 +874,12 @@ export function useWorkspace() {
     createDatabaseRow: workspaceStore.createDatabaseRow,
     updateRowProperty: workspaceStore.updateRowProperty,
     createDatabaseView: workspaceStore.createDatabaseView,
+    updateDatabaseView: workspaceStore.updateDatabaseView,
     deleteDatabaseView: workspaceStore.deleteDatabaseView,
     createDatabaseProperty: workspaceStore.createDatabaseProperty,
+    updateDatabaseProperty: workspaceStore.updateDatabaseProperty,
     deleteDatabaseProperty: workspaceStore.deleteDatabaseProperty,
+    restoreDatabaseProperty: workspaceStore.restoreDatabaseProperty,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import Sidebar from "./components/Sidebar";
@@ -14,6 +14,10 @@ import {
   ChevronRight,
   Menu,
   Sparkles,
+  MoreHorizontal,
+  Copy,
+  Download,
+  Trash2,
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -24,6 +28,9 @@ export default function HomePage() {
     activeBlockId,
     setActiveBlock,
     toggleFavorite,
+    updateBlock,
+    duplicateBlock,
+    archiveBlock,
     theme,
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -31,6 +38,8 @@ export default function HomePage() {
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
+  const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+  const appearanceMenuRef = useRef<HTMLDivElement>(null);
 
   // Sync workspace and server items into workspace-store whenever api data updates
   useEffect(() => {
@@ -43,7 +52,28 @@ export default function HomePage() {
     }
   }, [api.workspace, api.notes, api.tasks, syncFromApi]);
 
-  // Set document data-theme attribute for CSS variable switching
+  // Click outside and Escape listener for appearance menu
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (
+        appearanceMenuRef.current &&
+        !appearanceMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowAppearanceMenu(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowAppearanceMenu(false);
+      }
+    };
+    window.addEventListener("mousedown", handleOutside);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, []);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
@@ -164,6 +194,99 @@ export default function HomePage() {
               <span>Search</span>
               <kbd className={styles.topbarKbd}>⌘K</kbd>
             </button>
+
+            {/* Notion-style Page & View Appearance Menu (•••) */}
+            {activeBlock && (
+              <div style={{ position: "relative" }} ref={appearanceMenuRef}>
+                <button
+                  className={styles.topbarBtn}
+                  title="Page settings"
+                  onClick={() => setShowAppearanceMenu((prev) => !prev)}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+
+                {showAppearanceMenu && (
+                  <div className={styles.appearancePopover}>
+                    <div className={styles.appearanceSectionHeader}>Style</div>
+                    <div className={styles.fontOptionGroup}>
+                      {(["sans", "serif", "mono"] as const).map((font) => (
+                        <button
+                          key={font}
+                          className={`${styles.fontOptionBtn} ${activeBlock.fontStyle === font || (!activeBlock.fontStyle && font === "sans") ? styles.fontOptionBtnActive : ""}`}
+                          onClick={() => {
+                            updateBlock(activeBlock.id, { fontStyle: font });
+                          }}
+                        >
+                          <span style={{ fontSize: 13, textTransform: "capitalize" }}>{font}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className={styles.appearanceDivider} />
+
+                    <div
+                      className={styles.appearanceRow}
+                      onClick={() => {
+                        updateBlock(activeBlock.id, { isFullWidth: !activeBlock.isFullWidth });
+                      }}
+                    >
+                      <span>Full width</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(activeBlock.isFullWidth)}
+                        readOnly
+                        style={{ cursor: "pointer", accentColor: "var(--accent-blue)" }}
+                      />
+                    </div>
+
+                    <div className={styles.appearanceDivider} />
+
+                    <button
+                      className={styles.appearanceActionItem}
+                      onClick={() => {
+                        duplicateBlock(activeBlock.id);
+                        setShowAppearanceMenu(false);
+                      }}
+                    >
+                      <Copy size={13} />
+                      <span>Duplicate</span>
+                    </button>
+
+                    <button
+                      className={styles.appearanceActionItem}
+                      onClick={() => {
+                        const md = `# ${activeBlock.title || "Untitled"}\n\nExported from openNotion`;
+                        const blob = new Blob([md], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${activeBlock.title || "page"}.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        setShowAppearanceMenu(false);
+                      }}
+                    >
+                      <Download size={13} />
+                      <span>Export as Markdown</span>
+                    </button>
+
+                    <div className={styles.appearanceDivider} />
+
+                    <button
+                      className={`${styles.appearanceActionItem} ${styles.appearanceActionDanger}`}
+                      onClick={() => {
+                        archiveBlock(activeBlock.id);
+                        setShowAppearanceMenu(false);
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </header>
 

@@ -6,7 +6,7 @@
 }
 
 .header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .titleRow {
@@ -79,7 +79,7 @@
 .viewActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .searchBox {
@@ -101,6 +101,23 @@
   width: 110px;
 }
 
+.toolbarActionBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.toolbarActionBtn:hover,
+.toolbarActionBtnActive {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 .newBtn {
   display: flex;
   align-items: center;
@@ -115,6 +132,83 @@
 
 .newBtn:hover {
   background-color: var(--accent-blue-hover);
+}
+
+/* Filter Builder Bar */
+.filterBarContainer {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filterHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filterRuleList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filterRuleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterSelect,
+.filterInput {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-card);
+  padding: 4px 8px;
+  font-size: 12.5px;
+  color: var(--fg-primary);
+  outline: none;
+}
+
+.filterRemoveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--fg-subtle);
+}
+
+.filterRemoveBtn:hover {
+  background: var(--bg-active);
+  color: #eb5757;
+}
+
+.filterBottomActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.filterTextBtn {
+  color: var(--accent-blue);
+  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filterTextBtn:hover {
+  text-decoration: underline;
 }
 
 /* Table Layout */
@@ -135,7 +229,8 @@
   padding: 8px 10px;
   border-bottom: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
-  width: 45%;
+  width: 35%;
+  position: relative;
 }
 
 .th {
@@ -146,6 +241,56 @@
   border-bottom: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   min-width: 130px;
+  position: relative;
+}
+
+.thContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.thTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sortToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--fg-subtle);
+  font-size: 11.5px;
+}
+
+.sortToggleBtn:hover,
+.sortToggleBtnActive {
+  background-color: var(--bg-hover);
+  color: var(--accent-blue);
+}
+
+.thMenuBtn {
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--fg-subtle);
+}
+
+.th:hover .thMenuBtn,
+.thMain:hover .thMenuBtn {
+  opacity: 1;
+}
+
+.thMenuBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 .tr {
@@ -167,12 +312,6 @@
 
 .rowIcon {
   font-size: 14px;
-}
-
-.rowTitle {
-  font-weight: 550;
-  color: var(--fg-primary);
-  flex: 1;
 }
 
 .openPeekBtn {
@@ -218,6 +357,16 @@
   font-size: 12px;
 }
 
+.nullBadge {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  background: var(--bg-hover);
+  color: var(--fg-subtle);
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px dashed var(--border-subtle);
+}
+
 .inlineTitleInput {
   border: none;
   background: transparent;
@@ -251,11 +400,6 @@
   background: var(--bg-hover);
 }
 
-.cellDate {
-  color: var(--fg-secondary);
-  font-size: 12.5px;
-}
-
 .addBottomRowBtn {
   display: flex;
   align-items: center;
@@ -272,13 +416,39 @@
   color: var(--fg-primary);
 }
 
+/* Footer Calculation Row */
+.tfoot {
+  border-top: 2px solid var(--border-subtle);
+  font-size: 12px;
+}
+
+.tdCalc {
+  padding: 6px 10px;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--fg-subtle);
+  text-align: right;
+  position: relative;
+}
+
+.calcTrigger {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.calcTrigger:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 /* Board Layout */
 .boardWrapper {
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  padding-bottom: 16px;
+  padding-bottom: 24px;
   align-items: flex-start;
+  min-height: 400px;
 }
 
 .boardColumn {
@@ -287,6 +457,14 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-radius: 6px;
+  padding: 4px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.boardColumnDropActive {
+  background-color: rgba(35, 131, 226, 0.08);
+  border: 1px dashed var(--accent-blue);
 }
 
 .columnHeader {
@@ -306,7 +484,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 50px;
+  min-height: 60px;
 }
 
 .boardCard {
@@ -315,8 +493,18 @@
   border-radius: 6px;
   padding: 10px 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  cursor: pointer;
+  cursor: grab;
   transition: transform 0.08s ease, box-shadow 0.08s ease;
+  user-select: none;
+}
+
+.boardCard:active {
+  cursor: grabbing;
+}
+
+.boardCardDragging {
+  opacity: 0.4;
+  border: 1px dashed var(--accent-blue);
 }
 
 .boardCard:hover {
@@ -450,6 +638,27 @@
   color: var(--fg-primary);
 }
 
+/* Add Group Column Button on Board */
+.addGroupColumnBtn {
+  width: 180px;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--fg-subtle);
+  font-size: 13px;
+  border: 1px dashed var(--border-subtle);
+  height: fit-content;
+}
+
+.addGroupColumnBtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+  border-color: var(--fg-secondary);
+}
+
 /* Pills */
 .pill {
   display: inline-block;
@@ -500,7 +709,7 @@
   color: var(--pill-red-fg);
 }
 
-/* View Creation & Tabs Popover */
+/* Popovers */
 .addViewBtn {
   display: flex;
   align-items: center;
@@ -612,7 +821,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
   padding: 10px;
   z-index: 110;
-  min-width: 200px;
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -886,4 +1095,3 @@
   background: var(--bg-hover);
   border-color: var(--fg-secondary);
 }
-

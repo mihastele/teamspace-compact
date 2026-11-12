@@ -36,6 +36,18 @@ export type PropertyType =
   | "created_time"
   | "last_edited_time";
 
+export type CalculationType =
+  | "none"
+  | "count_all"
+  | "count_values"
+  | "count_empty"
+  | "percent_empty"
+  | "percent_not_empty"
+  | "sum"
+  | "average"
+  | "min"
+  | "max";
+
 export type SelectOption = {
   id: string;
   name: string;
@@ -49,12 +61,14 @@ export type DatabaseProperty = {
   name: string;
   type: PropertyType;
   position: string;
+  isCore?: boolean;
+  isDeleted?: boolean;
   options?: SelectOption[];
   targetDatabaseId?: string;
   rollup?: {
     relationPropertyId: string;
     targetPropertyId: string;
-    calculate: "count_all" | "count_values" | "count_unique" | "percent_empty" | "percent_not_empty" | "sum" | "average" | "min" | "max";
+    calculate: CalculationType;
   };
 };
 
@@ -62,7 +76,20 @@ export type ViewLayout = "table" | "board" | "list" | "calendar";
 
 export type ViewFilterRule = {
   propertyId: string;
-  operator: "equals" | "does_not_equal" | "contains" | "does_not_contain" | "is_empty" | "is_not_empty" | "greater_than" | "less_than";
+  operator:
+    | "equals"
+    | "does_not_equal"
+    | "contains"
+    | "does_not_contain"
+    | "is_empty"
+    | "is_not_empty"
+    | "greater_than"
+    | "less_than"
+    | "before"
+    | "after"
+    | "is_today"
+    | "is_overdue"
+    | "next_7_days";
   value: unknown;
 };
 
@@ -81,6 +108,7 @@ export type DatabaseView = {
   }[];
   groupBy?: string; // Property ID for Board/Kanban columns
   visibleProperties?: string[]; // Array of property IDs in order
+  calculations?: Record<string, CalculationType>;
   position: string;
 };
 

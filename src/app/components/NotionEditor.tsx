@@ -8,6 +8,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { useWorkspace } from "@/lib/workspace-store";
 import type { Block } from "@/lib/model";
+import DatabaseEntryProperties from "./DatabaseEntryProperties";
 import {
   Heading1,
   Heading2,
@@ -19,23 +20,37 @@ import {
   Quote,
   Minus,
   Smile,
+  Image as ImageIcon,
 } from "lucide-react";
 import styles from "./NotionEditor.module.css";
 
 const emojiOptions = ["📄", "📝", "💡", "🎯", "🚀", "🔥", "📚", "🎨", "⚡", "🌟", "📌", "🛠️", "💬", "✅"];
 
+const COVER_PRESETS = [
+  "linear-gradient(135deg, #f6d365 0%, #fda085 100%)",
+  "linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)",
+  "linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)",
+  "linear-gradient(135deg, #a6c0fe 0%, #f68084 100%)",
+  "linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)",
+  "linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)",
+  "linear-gradient(135deg, #2b5876 0%, #4e4376 100%)",
+  "linear-gradient(135deg, #373b44 0%, #4286f4 100%)",
+];
+
 export default function NotionEditor({ block }: { block: Block }) {
-  const { updateBlock } = useWorkspace();
+  const { blocks, updateBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
   const [prevBlockId, setPrevBlockId] = useState(block.id);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [slashMenuPosition, setSlashMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const coverPickerRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
 
   // Sync title during render when block changes externally without triggering an effect setState
@@ -205,6 +220,13 @@ export default function NotionEditor({ block }: { block: Block }) {
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (
+        showCoverPicker &&
+        coverPickerRef.current &&
+        !coverPickerRef.current.contains(e.target as Node)
+      ) {
+        setShowCoverPicker(false);
+      }
+      if (
         showEmojiPicker &&
         emojiPickerRef.current &&
         !emojiPickerRef.current.contains(e.target as Node)
@@ -223,6 +245,7 @@ export default function NotionEditor({ block }: { block: Block }) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowEmojiPicker(false);
+        setShowCoverPicker(false);
         setSlashMenuPosition(null);
       }
     };
@@ -233,7 +256,7 @@ export default function NotionEditor({ block }: { block: Block }) {
       window.removeEventListener("mousedown", handleOutsideClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [showEmojiPicker, slashMenuPosition]);
+  }, [showEmojiPicker, showCoverPicker, slashMenuPosition]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextTitle = e.target.value;
@@ -248,8 +271,55 @@ export default function NotionEditor({ block }: { block: Block }) {
     }
   };
 
+  const isDatabaseEntry = block.parentId && blocks[block.parentId]?.type === "database";
+
   return (
-    <div className={styles.canvasContainer}>
+    <div
+      className={`${styles.canvasContainer} ${block.isFullWidth ? styles.canvasFullWidth : ""} ${styles[`font_${block.fontStyle || "sans"}`]}`}
+    >
+      {/* Cover Image Banner */}
+      {block.coverUrl && (
+        <div className={styles.coverContainer}>
+          <div
+            className={styles.coverImage}
+            style={{
+              background: block.coverUrl.startsWith("linear-gradient")
+                ? block.coverUrl
+                : `url(${block.coverUrl}) center/cover no-repeat`,
+            }}
+          />
+          <div className={styles.coverActions}>
+            <button
+              className={styles.coverBtn}
+              onClick={() => setShowCoverPicker(!showCoverPicker)}
+            >
+              Change cover
+            </button>
+            <button
+              className={styles.coverBtn}
+              onClick={() => updateBlock(block.id, { coverUrl: null })}
+            >
+              Remove
+            </button>
+          </div>
+          {showCoverPicker && (
+            <div ref={coverPickerRef} className={styles.coverGalleryPopover}>
+              {COVER_PRESETS.map((preset, idx) => (
+                <div
+                  key={idx}
+                  className={styles.coverPreset}
+                  style={{ background: preset }}
+                  onClick={() => {
+                    updateBlock(block.id, { coverUrl: preset });
+                    setShowCoverPicker(false);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Page Header */}
       <div className={styles.header}>
         {/* Hover trigger to add icon or cover if none exists */}
@@ -261,6 +331,15 @@ export default function NotionEditor({ block }: { block: Block }) {
             <Smile size={14} />
             <span>{block.icon ? "Change icon" : "Add icon"}</span>
           </button>
+          {!block.coverUrl && (
+            <button
+              className={styles.metaBtn}
+              onClick={() => updateBlock(block.id, { coverUrl: COVER_PRESETS[0] })}
+            >
+              <ImageIcon size={14} />
+              <span>Add cover</span>
+            </button>
+          )}
         </div>
 
         {/* Page Icon Display */}
@@ -301,6 +380,9 @@ export default function NotionEditor({ block }: { block: Block }) {
           onKeyDown={handleTitleKeyDown}
         />
       </div>
+
+      {/* If this page is a database entry, show rich properties section */}
+      {isDatabaseEntry && <DatabaseEntryProperties row={block} />}
 
       {/* Tiptap Block Editor Content */}
       <div className={styles.editorArea}>

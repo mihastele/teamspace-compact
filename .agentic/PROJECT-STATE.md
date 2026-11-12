@@ -1080,3 +1080,15 @@
   - Dynamically rendered table cells for all database properties with inline editing (checkboxes, number inputs, text inputs, date pickers, select/status pills).
 - PASSED standalone TypeScript typecheck (`npx tsc --noEmit`), full ESLint (`npm run lint`), all 253 unit/model/controller/setup tests (`npm test`), and Next.js optimized Turbopack production build (`npm run build`).
 
+### 2026-11-11 - Advanced Notion Look & Feel: Board DnD, Relations, View Filtering, Table Sorting, and Core Property Null/Restore Lifecycle
+
+- Implemented comprehensive Notion features across Table, Board, List, Calendar, Side Peek, and Page views:
+  - **Board Drag-and-Drop Across Statuses & Groups:** Native HTML5 card drag-and-drop (`draggable`, drag ghosting, column drop highlight) with instant optimistic status mutation. Supports unassigned/null status column, custom status groups, and inline group addition (`+ Add group`).
+  - **Rich Custom Properties & Bidirectional Relations:** Added support for `relation` and `multi_select` in `src/lib/model.ts`, `src/lib/workspace-store.ts`, and database views. Extracted shared `DatabaseEntryProperties.tsx` rendering searchable relation pickers, clickable linked ticket pills with direct SidePeek navigation, tag creators, and inline property creation.
+  - **Per-View Property Filtering (Table, Board, List, Calendar):** Added collapsible Filter Builder toolbar supporting type-aware filter operators (`equals`, `does_not_equal`, `contains`, `does_not_contain`, `is_empty`, `is_not_empty`, `greater_than`, `less_than`, `is_today`, `is_overdue`, `next_7_days`), `AND`/`OR` conjunction switching, and rule clear.
+  - **Table Column Sort Buttons & View Sort Manager:** Integrated interactive sort toggles directly on every Table column header cycling ascending (`ArrowUp`), descending (`ArrowDown`), and none, plus a multi-column sort popover in the view toolbar. Empty/null values sort last in both directions.
+  - **Core Property Deletion, Null Display & 1-Click Restoration:** Deleting built-in core properties (`Status`, `Priority`, `Due Date`) soft-deletes them with `isDeleted: true`, rendering distinct `null` placeholder badges in Table and List cells and a fallback `Status: null (Deleted)` board column, with one-click restoration (`RotateCcw`) from column headers, property manager, and ticket property grids. Custom user properties are permanently removable and customizable.
+  - **Table Footer Summary Calculations:** Added calculation row at the bottom of the table supporting metrics (`Count all`, `Count values`, `Count empty`, `Percent empty`, `Percent not empty`, `Sum`, `Average`, `Min`, `Max`).
+  - **Page Covers, Full-Width Toggle & Typography:** Added curated Notion cover gradient banners, full-width mode toggle, and font styling (`Sans`, `Serif`, `Mono`) in `NotionEditor.tsx` and the top-right `•••` page menu in `page.tsx`.
+- PASSED standalone TypeScript typecheck (`npx tsc --noEmit`), full ESLint (`npm run lint`), all 253 unit/model/controller/setup tests (`npm test`), and Next.js optimized production build (`npm run build`).
+

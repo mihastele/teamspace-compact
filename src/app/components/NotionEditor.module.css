@@ -6,6 +6,98 @@
   position: relative;
 }
 
+.canvasFullWidth {
+  max-width: 96% !important;
+  padding-left: 36px;
+  padding-right: 36px;
+}
+
+.font_sans {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.font_serif {
+  font-family: Lyon-Text, Georgia, YuMincho, "Yu Mincho", "Hiragino Mincho ProN", serif;
+}
+
+.font_mono {
+  font-family: iawriter-mono, Nitti, Menlo, Courier, monospace;
+}
+
+.coverContainer {
+  width: 100%;
+  height: 180px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  margin-bottom: 24px;
+}
+
+.coverImage {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+}
+
+.coverActions {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.coverContainer:hover .coverActions {
+  opacity: 1;
+}
+
+.coverBtn {
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+}
+
+.coverBtn:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.coverGalleryPopover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  padding: 10px;
+  z-index: 50;
+  width: 260px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.coverPreset {
+  height: 52px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.coverPreset:hover {
+  transform: scale(1.02);
+}
+
 .header {
   margin-bottom: 24px;
   position: relative;
