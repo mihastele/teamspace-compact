@@ -4,6 +4,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
 import type { useTeamspace } from "@/lib/client";
 import WorkspaceModal from "./WorkspaceModal";
+import { DragProvider, DragItem } from "./DragItem";
+import { contextMenuProps, openContextMenuFromElement, type ContextMenuItem } from "./ContextMenu";
+import type { DragEndEvent } from "@dnd-kit/core";
 import {
   Search,
   ChevronRight,
@@ -47,6 +50,7 @@ export default function Sidebar({
     toggleFavorite,
     duplicateBlock,
     updateBlock,
+    moveBlockWithinParent,
     theme,
     toggleTheme,
     sidebarCollapsed,
@@ -60,11 +64,6 @@ export default function Sidebar({
   const [showTrash, setShowTrash] = useState(false);
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{
-    blockId: string;
-    x: number;
-    y: number;
-  } | null>(null);
   const [renamingBlockId, setRenamingBlockId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -72,7 +71,6 @@ export default function Sidebar({
   const workspaceTriggerRef = useRef<HTMLDivElement>(null);
   const trashModalRef = useRef<HTMLDivElement>(null);
   const trashTriggerRef = useRef<HTMLButtonElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Click-outside and Escape handlers for all floating popovers
   useEffect(() => {
@@ -95,21 +93,12 @@ export default function Sidebar({
       ) {
         setShowTrash(false);
       }
-
-      if (
-        contextMenu &&
-        contextMenuRef.current &&
-        !contextMenuRef.current.contains(target)
-      ) {
-        setContextMenu(null);
-      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowWorkspaceMenu(false);
         setShowTrash(false);
-        setContextMenu(null);
         setRenamingBlockId(null);
       }
     };
@@ -120,7 +109,7 @@ export default function Sidebar({
       window.removeEventListener("mousedown", handleOutsideClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [showWorkspaceMenu, showTrash, contextMenu]);
+  }, [showWorkspaceMenu, showTrash]);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -135,21 +124,47 @@ export default function Sidebar({
   );
   const archivedBlocks = Object.values(blocks).filter((b) => b.isArchived);
 
-  const openContextMenu = (
-    blockId: string,
-    x: number,
-    y: number,
-    e: React.MouseEvent
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      blockId,
-      x: Math.min(x, window.innerWidth - 180),
-      y: Math.min(y, window.innerHeight - 200),
-    });
+  const pageMenu = (blockId: string): ContextMenuItem[] => {
+    const b = blocks[blockId];
+    if (!b) return [];
+    return [
+      {
+        id: "fav",
+        label: b.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+        icon: <Star size={13} />,
+        onSelect: () => toggleFavorite(blockId),
+      },
+      { id: "rename", label: "Rename", icon: <Edit2 size={13} />, onSelect: () => handleStartRename(blockId) },
+      {
+        id: "sub",
+        label: "Add subpage",
+        icon: <Plus size={13} />,
+        onSelect: () => {
+          const newPage = createPage(blockId, "Untitled Subpage");
+          setExpandedNodes((prev) => ({ ...prev, [blockId]: true }));
+          setActiveBlock(newPage.id);
+        },
+      },
+      { id: "dup", label: "Duplicate", icon: <Copy size={13} />, onSelect: () => duplicateBlock(blockId) },
+      { type: "separator", id: "s" },
+      { id: "del", label: "Delete", icon: <Trash2 size={13} />, danger: true, onSelect: () => archiveBlock(blockId) },
+    ];
   };
 
+  const trashItemMenu = (blockId: string): ContextMenuItem[] => [
+    { id: "restore", label: "Restore", icon: <RotateCcw size={13} />, onSelect: () => restoreBlock(blockId) },
+  ];
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over) return;
+    const a = String(active.id);
+    const o = String(over.id);
+    if (!a.startsWith("page:") || !o.startsWith("page:")) return;
+    const from = blocks[a.slice(5)];
+    const to = blocks[o.slice(5)];
+    if (!from || !to || (from.parentId ?? null) !== (to.parentId ?? null)) return;
+    moveBlockWithinParent(from.parentId ?? "root", from.id, to.id);
+  };
   const handleStartRename = (blockId: string) => {
     const b = blocks[blockId];
     if (b) {
@@ -165,7 +180,7 @@ export default function Sidebar({
     }
   };
 
-  const renderTreeItem = (blockId: string, level: number = 0) => {
+  const renderTreeItem = (blockId: string, level: number = 0, sortable: boolean = true) => {
     const block = blocks[blockId];
     if (!block || block.isArchived) return null;
 
@@ -179,15 +194,19 @@ export default function Sidebar({
 
     return (
       <div key={block.id} className={styles.treeNode}>
-        <div
+        <DragItem
+          id={`${sortable ? "page" : "fav"}:${block.id}`}
+          disableDrag={!sortable || isRenaming}
           className={`${styles.treeRow} ${isActive ? styles.treeRowActive : ""}`}
+          draggingClassName={styles.dragging}
+          overClassName={styles.dropTarget}
           style={{ paddingLeft: `${12 + level * 14}px` }}
           onClick={() => {
             if (!isRenaming) {
               setActiveBlock(block.id);
             }
           }}
-          onContextMenu={(e) => openContextMenu(block.id, e.clientX, e.clientY, e)}
+          {...contextMenuProps(() => pageMenu(block.id))}
         >
           <button
             className={`${styles.chevronBtn} ${!hasChildren ? styles.chevronHidden : ""}`}
@@ -238,18 +257,18 @@ export default function Sidebar({
               className={styles.actionBtn}
               title="Options"
               onClick={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                openContextMenu(block.id, rect.right + 4, rect.top, e);
+                e.stopPropagation();
+                openContextMenuFromElement(e.currentTarget as HTMLElement, () => pageMenu(block.id));
               }}
             >
               <MoreHorizontal size={14} />
             </button>
           </div>
-        </div>
+        </DragItem>
 
         {hasChildren && isExpanded && (
           <div className={styles.treeChildren}>
-            {childIds.map((cid) => renderTreeItem(cid, level + 1))}
+            {childIds.map((cid) => renderTreeItem(cid, level + 1, sortable))}
           </div>
         )}
       </div>
@@ -275,6 +294,7 @@ export default function Sidebar({
   const currentUser = api?.user;
 
   return (
+    <DragProvider onEnd={handleDragEnd}>
     <aside className={styles.sidebar}>
       {/* Workspace Header Switcher */}
       <div className={styles.header}>
@@ -352,7 +372,7 @@ export default function Sidebar({
             <div className={styles.sectionHeader}>
               <span>Favorites</span>
             </div>
-            {favoriteBlockIds.map((id) => renderTreeItem(id, 0))}
+            {favoriteBlockIds.map((id) => renderTreeItem(id, 0, false))}
           </div>
         )}
 
@@ -439,7 +459,7 @@ export default function Sidebar({
                 <div className={styles.trashEmpty}>Trash is empty</div>
               ) : (
                 archivedBlocks.map((b) => (
-                  <div key={b.id} className={styles.trashRow}>
+                  <div key={b.id} className={styles.trashRow} {...contextMenuProps(() => trashItemMenu(b.id))}>
                     <span>{b.title || "Untitled"}</span>
                     <button
                       className={styles.restoreBtn}
@@ -456,78 +476,6 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Floating Context Menu for Pages / Items */}
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className={styles.floatingContextMenu}
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {blocks[contextMenu.blockId] && (
-            <>
-              <button
-                className={styles.menuItem}
-                onClick={() => {
-                  toggleFavorite(contextMenu.blockId);
-                  setContextMenu(null);
-                }}
-              >
-                <Star size={13} />
-                <span>
-                  {blocks[contextMenu.blockId].isFavorite
-                    ? "Remove from Favorites"
-                    : "Add to Favorites"}
-                </span>
-              </button>
-              <button
-                className={styles.menuItem}
-                onClick={() => {
-                  handleStartRename(contextMenu.blockId);
-                  setContextMenu(null);
-                }}
-              >
-                <Edit2 size={13} />
-                <span>Rename</span>
-              </button>
-              <button
-                className={styles.menuItem}
-                onClick={() => {
-                  const newPage = createPage(contextMenu.blockId, "Untitled Subpage");
-                  setExpandedNodes((prev) => ({ ...prev, [contextMenu.blockId]: true }));
-                  setActiveBlock(newPage.id);
-                  setContextMenu(null);
-                }}
-              >
-                <Plus size={13} />
-                <span>Add subpage</span>
-              </button>
-              <button
-                className={styles.menuItem}
-                onClick={() => {
-                  duplicateBlock(contextMenu.blockId);
-                  setContextMenu(null);
-                }}
-              >
-                <Copy size={13} />
-                <span>Duplicate</span>
-              </button>
-              <div className={styles.menuDivider} />
-              <button
-                className={`${styles.menuItem} ${styles.menuItemDanger}`}
-                onClick={() => {
-                  archiveBlock(contextMenu.blockId);
-                  setContextMenu(null);
-                }}
-              >
-                <Trash2 size={13} />
-                <span>Delete</span>
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {/* Workspace Creation & Join Modal */}
       {api && (
         <WorkspaceModal
@@ -537,5 +485,6 @@ export default function Sidebar({
         />
       )}
     </aside>
+    </DragProvider>
   );
 }

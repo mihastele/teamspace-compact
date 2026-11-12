@@ -4,7 +4,7 @@
 
 | Item | Value | Set on |
 | --- | --- | --- |
-| Project | openNotion | 2026-11-11 |
+| Project | Teamspace | 2026-11-12 |
 | Frontend | Next.js 16 / React 19 / TypeScript / Tiptap ProseMirror / CSS Modules | 2026-11-11 |
 | Backend | Supabase/PostgreSQL native block and database store; client-side optimistic normalized store with instant persistence | 2026-11-11 |
 | Database | Unified Blocks (Pages, Databases, Rows) and Database Views; legacy Firestore-emulator tables archived | 2026-11-11 |
@@ -1092,3 +1092,22 @@
   - **Page Covers, Full-Width Toggle & Typography:** Added curated Notion cover gradient banners, full-width mode toggle, and font styling (`Sans`, `Serif`, `Mono`) in `NotionEditor.tsx` and the top-right `•••` page menu in `page.tsx`.
 - PASSED standalone TypeScript typecheck (`npx tsc --noEmit`), full ESLint (`npm run lint`), all 253 unit/model/controller/setup tests (`npm test`), and Next.js optimized production build (`npm run build`).
 
+
+### 2026-11-12 - Draggable tabs/rows, click-safe DnD, shared context-menu interface, aligned sorting
+
+- Added `src/app/components/DragItem.tsx` (`DragProvider`/`DragItem`/`DropZone`) on **@dnd-kit/core 6.3.1** (MIT; pinned). Replaced native HTML5 `draggable`. Drag starts only after 6px mouse move / 250ms touch press, never on right-click and never from inputs/selects/buttons/links; the click right after a drag is swallowed. Deviation note: last npm publish is 2024-12 (older than the ~12 month bar) but it is MIT, widely used and has no runtime deps beyond React; chosen over writing custom pointer-drag code and over @dnd-kit/sortable (multi-container board needs custom logic anyway).
+- Draggable/reorderable: view tabs (All Tasks, Table, Board, Calendar, List...), table rows, list rows, board cards (cross-column sets status; drop on card reorders), calendar events (drop on a day sets due date), sidebar pages (siblings only). Store: `moveDatabaseView`, `moveBlockWithinParent` (manual order = childrenIndex order). Manually reordering rows in table/list clears active sorts so the custom order is visible.
+- Click fix: root cause was an invisible full-size `<select>` over the priority/status pills in board cards and list rows (any click changed priority) plus draggable cards. Pills in board/list are now display-only (click opens the task); status/priority are set from the context menu, side peek, or table cells.
+- Sorting: table header cycles asc -> desc -> none (unchanged); toolbar Sort popover now shares the same `view.sorts` state and lets you pick the property per sort, toggle direction, remove one sort, or remove all.
+- Context menus: new `ContextMenu.tsx` interface (`ContextMenuSource`/`contextMenuProps`/`ContextMenuHost`, mounted in page.tsx). Native menu is replaced only where an element declares items. Implemented for rows/cards/events, view tabs (rename, move, remove sort, delete), column headers (sort asc/desc/none, delete/restore), board columns and calendar days (new entry), sidebar pages and trash items. DatabaseView/Sidebar bespoke menus removed.
+- PASSED tsc, eslint, 253 tests. OPEN GAP: no automated/browser test of drag behaviour or context menus; drag order persists in client store only like other store state.
+
+### 2026-11-12 - Rebrand openNotion back to Teamspace
+
+- User requested a full rebrand from openNotion to Teamspace, including internal identifiers (chosen explicitly over a branding-only rename). The project was originally Teamspace; README, SPEC, git remote and most infrastructure already use that name.
+- User-visible branding: `layout.tsx` metadata title/description, `page.tsx` welcome heading, breadcrumb and Markdown export footer, seed workspace title/body, `package.json` name `teamspace`, `package-lock.json` root name, root `LICENSE` copyright holder and `AGENTS.md` project name.
+- Internal identifiers: renamed `NotionEditor.tsx`/`NotionEditor.module.css` to `TeamspaceEditor.tsx`/`TeamspaceEditor.module.css` and updated imports in `page.tsx`/`SidePeek.tsx`; updated `tests/note-component-identity.test.cjs` to expect `TeamspaceEditor`.
+- Local persistence: `workspace-store.ts` now writes `teamspace_workspace_state_v1`. It reads the legacy `opennotion_workspace_state_v1` key once and migrates it to the new key so existing local drafts are not lost; reset clears both. This is the only remaining legacy-name string in source code.
+- Database: renamed migration `021-opennotion-unified-schema.sql/.md` to `021-teamspace-unified-schema.sql/.md` and renamed tables/indexes/policies `opennotion_*` to `teamspace_*`; updated `scripts/migrate-supabase.mjs`. Migration 021 was prepared but never applied to staging (staging is through 016), so this rename does not require a data migration.
+- Historical `PROJECT-STATE.md` entries and `.agentic` design documents keep their original openNotion/Notion wording by policy (log history is not rewritten). Local `deployments/{staging,production}/compose.yaml` build-context paths still point at the on-disk folder `D:/development/opensource/openNotion`; the directory itself was not renamed, so changing those paths would break builds.
+- Verification: `npx tsc --noEmit`, `npm run lint`, `npm test` (253 cases) and `npm run build` all pass after the rename. No browser acceptance run for this documentation-only/name-change increment.

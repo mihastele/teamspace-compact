@@ -4,11 +4,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import Sidebar from "./components/Sidebar";
-import NotionEditor from "./components/NotionEditor";
+import TeamspaceEditor from "./components/TeamspaceEditor";
 import DatabaseView from "./components/DatabaseView";
 import SidePeek from "./components/SidePeek";
 import CommandPalette from "./components/CommandPalette";
 import AuthPanel from "./components/AuthPanel";
+import { ContextMenuHost } from "./components/ContextMenu";
 import {
   Star,
   ChevronRight,
@@ -115,7 +116,7 @@ export default function HomePage() {
         <div className={styles.authCard}>
           <div className={styles.authHeader}>
             <span className={styles.brandMark}>N</span>
-            <h1>Welcome to openNotion</h1>
+            <h1>Welcome to Teamspace</h1>
             <p>Sign in to collaborate on your team’s docs, tasks, and databases.</p>
           </div>
           <AuthPanel api={api} />
@@ -137,6 +138,7 @@ export default function HomePage() {
   return (
     <div className={styles.appShell} data-theme={theme}>
       {/* Collapsible Notion-like Sidebar */}
+      <ContextMenuHost />
       <Sidebar api={api} onOpenSearch={() => setSearchOpen(true)} />
 
       {/* Main Workspace Stage */}
@@ -168,7 +170,7 @@ export default function HomePage() {
                 </React.Fragment>
               ))
             ) : (
-              <span className={styles.crumbBtn}>openNotion</span>
+              <span className={styles.crumbBtn}>Teamspace</span>
             )}
           </div>
 
@@ -256,7 +258,7 @@ export default function HomePage() {
                     <button
                       className={styles.appearanceActionItem}
                       onClick={() => {
-                        const md = `# ${activeBlock.title || "Untitled"}\n\nExported from openNotion`;
+                        const md = `# ${activeBlock.title || "Untitled"}\n\nExported from Teamspace`;
                         const blob = new Blob([md], { type: "text/markdown" });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
@@ -300,7 +302,7 @@ export default function HomePage() {
           ) : activeBlock.type === "database" ? (
             <DatabaseView key={activeBlock.id} block={activeBlock} />
           ) : (
-            <NotionEditor key={activeBlock.id} block={activeBlock} />
+            <TeamspaceEditor key={activeBlock.id} block={activeBlock} />
           )}
         </div>
       </main>

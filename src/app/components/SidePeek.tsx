@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
-import NotionEditor from "./NotionEditor";
+import TeamspaceEditor from "./TeamspaceEditor";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
 import { X, Maximize2 } from "lucide-react";
 import styles from "./SidePeek.module.css";
@@ -64,7 +64,7 @@ export default function SidePeek() {
 
         {/* Full Block Editor for the row */}
         <div className={styles.editorContainer}>
-          <NotionEditor key={row.id} block={row} />
+          <TeamspaceEditor key={row.id} block={row} />
         </div>
       </div>
     </div>

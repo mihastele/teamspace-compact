@@ -31,7 +31,12 @@ import {
   ArrowDown,
   SlidersHorizontal,
   RotateCcw,
+  Edit2,
+  ArrowLeft,
 } from "lucide-react";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { DragProvider, DragItem, DropZone } from "./DragItem";
+import { contextMenuProps, type ContextMenuItem } from "./ContextMenu";
 import styles from "./DatabaseView.module.css";
 
 export default function DatabaseView({ block }: { block: Block }) {
@@ -47,6 +52,8 @@ export default function DatabaseView({ block }: { block: Block }) {
     createDatabaseView,
     updateDatabaseView,
     deleteDatabaseView,
+    moveDatabaseView,
+    moveBlockWithinParent,
     createDatabaseProperty,
     updateDatabaseProperty,
     deleteDatabaseProperty,
@@ -73,11 +80,8 @@ export default function DatabaseView({ block }: { block: Block }) {
   const [showFilterBar, setShowFilterBar] = useState(false);
   const [showSortPopover, setShowSortPopover] = useState(false);
   const [showPropsPopover, setShowPropsPopover] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{
-    rowId: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [renamingViewId, setRenamingViewId] = useState<string | null>(null);
+  const [renameViewValue, setRenameViewValue] = useState("");
 
   // Popover states
   const [showAddViewMenu, setShowAddViewMenu] = useState(false);
@@ -90,11 +94,6 @@ export default function DatabaseView({ block }: { block: Block }) {
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(() => new Date());
 
-  // Drag and drop state for Board view
-  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
-  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
-
-  const contextMenuRef = useRef<HTMLDivElement>(null);
   const addViewRef = useRef<HTMLDivElement>(null);
   const addPropRef = useRef<HTMLTableCellElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
@@ -104,9 +103,6 @@ export default function DatabaseView({ block }: { block: Block }) {
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (contextMenuRef.current && !contextMenuRef.current.contains(target)) {
-        setContextMenu(null);
-      }
       if (addViewRef.current && !addViewRef.current.contains(target)) {
         setShowAddViewMenu(false);
       }
@@ -125,7 +121,6 @@ export default function DatabaseView({ block }: { block: Block }) {
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setContextMenu(null);
         setShowAddViewMenu(false);
         setShowAddPropMenu(false);
         setShowSortPopover(false);
@@ -268,41 +263,194 @@ export default function DatabaseView({ block }: { block: Block }) {
     );
   };
 
-  const openContextMenu = (rowId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      rowId,
-      x: Math.min(e.clientX, window.innerWidth - 200),
-      y: Math.min(e.clientY, window.innerHeight - 240),
+  // ---------- Context menu definitions (each element type owns its menu) ----------
+  const setColumnSort = (propertyId: string, direction: "asc" | "desc" | null) => {
+    if (!currentView) return;
+    const rest = (currentView.sorts || []).filter((s) => s.propertyId !== propertyId);
+    updateDatabaseView(block.id, currentView.id, {
+      sorts: direction ? [{ propertyId, direction }, ...rest] : rest,
     });
   };
 
-  // Drag and Drop handlers for Board cards
-  const handleDragStart = (e: React.DragEvent, cardId: string) => {
-    setDraggedCardId(cardId);
-    e.dataTransfer.setData("text/plain", cardId);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e: React.DragEvent, colId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dragOverColumnId !== colId) {
-      setDragOverColumnId(colId);
+  const rowMenu = (rowId: string): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      { id: "peek", label: "Open in Side Peek", icon: <ExternalLink size={13} />, onSelect: () => setSidePeekBlock(rowId) },
+      {
+        id: "page",
+        label: "Open as Page",
+        icon: <Maximize2 size={13} />,
+        onSelect: () => {
+          setActiveBlock(rowId);
+          setSidePeekBlock(null);
+        },
+      },
+    ];
+    if (statusProp && !statusProp.isDeleted && statusProp.options?.length) {
+      items.push({ type: "separator", id: "s-status" }, { type: "header", id: "h-status", label: "Move status to" });
+      statusProp.options.forEach((opt) =>
+        items.push({
+          id: `status-${opt.id}`,
+          label: opt.name,
+          icon: <ArrowRight size={13} />,
+          onSelect: () => updateRowProperty(rowId, statusProp.id, opt.id),
+        })
+      );
     }
+    if (priorityProp && !priorityProp.isDeleted && priorityProp.options?.length) {
+      items.push({ type: "separator", id: "s-prio" }, { type: "header", id: "h-prio", label: "Set priority" });
+      [...priorityProp.options, { id: "", name: "No priority" }].forEach((opt) =>
+        items.push({
+          id: `prio-${opt.id || "none"}`,
+          label: opt.name,
+          icon: <ArrowRight size={13} />,
+          onSelect: () => updateRowProperty(rowId, priorityProp.id, opt.id || null),
+        })
+      );
+    }
+    items.push(
+      { type: "separator", id: "s-end" },
+      { id: "dup", label: "Duplicate", icon: <Copy size={13} />, onSelect: () => duplicateBlock(rowId) },
+      { id: "del", label: "Delete", icon: <Trash2 size={13} />, danger: true, onSelect: () => archiveBlock(rowId) }
+    );
+    return items;
   };
 
-  const handleDrop = (e: React.DragEvent, targetColId: string) => {
-    e.preventDefault();
-    setDragOverColumnId(null);
-    const cardId = draggedCardId || e.dataTransfer.getData("text/plain");
-    if (!cardId) return;
+  const viewMenu = (viewId: string): ContextMenuItem[] => {
+    const idx = dbViews.findIndex((v) => v.id === viewId);
+    const view = dbViews[idx];
+    if (!view) return [];
+    return [
+      {
+        id: "rename",
+        label: "Rename view",
+        icon: <Edit2 size={13} />,
+        onSelect: () => {
+          setRenamingViewId(viewId);
+          setRenameViewValue(view.name);
+        },
+      },
+      {
+        id: "left",
+        label: "Move left",
+        icon: <ArrowLeft size={13} />,
+        disabled: idx <= 0,
+        onSelect: () => moveDatabaseView(block.id, viewId, dbViews[idx - 1].id),
+      },
+      {
+        id: "right",
+        label: "Move right",
+        icon: <ArrowRight size={13} />,
+        disabled: idx >= dbViews.length - 1,
+        onSelect: () => moveDatabaseView(block.id, viewId, dbViews[idx + 1].id),
+      },
+      { type: "separator", id: "s1" },
+      {
+        id: "clear-sort",
+        label: "Remove sort",
+        icon: <ArrowUpDown size={13} />,
+        disabled: !view.sorts?.length,
+        onSelect: () => updateDatabaseView(block.id, viewId, { sorts: [] }),
+      },
+      {
+        id: "delete",
+        label: "Delete view",
+        icon: <Trash2 size={13} />,
+        danger: true,
+        disabled: dbViews.length <= 1,
+        onSelect: () => deleteDatabaseView(block.id, viewId),
+      },
+    ];
+  };
 
-    const groupPropId = currentView?.groupBy || statusProp?.id || "prop-status";
-    const nextVal = targetColId === "__null__" ? null : targetColId;
-    updateRowProperty(cardId, groupPropId, nextVal);
-    setDraggedCardId(null);
+  const columnMenu = (propertyId: string): ContextMenuItem[] => {
+    const prop = dbProperties.find((p) => p.id === propertyId);
+    const sorted = currentView?.sorts?.find((s) => s.propertyId === propertyId);
+    const items: ContextMenuItem[] = [
+      {
+        id: "asc",
+        label: "Sort ascending",
+        icon: <ArrowUp size={13} />,
+        disabled: sorted?.direction === "asc",
+        onSelect: () => setColumnSort(propertyId, "asc"),
+      },
+      {
+        id: "desc",
+        label: "Sort descending",
+        icon: <ArrowDown size={13} />,
+        disabled: sorted?.direction === "desc",
+        onSelect: () => setColumnSort(propertyId, "desc"),
+      },
+      {
+        id: "nosort",
+        label: "Remove sort",
+        icon: <X size={13} />,
+        disabled: !sorted,
+        onSelect: () => setColumnSort(propertyId, null),
+      },
+    ];
+    if (prop && propertyId !== "prop-title") {
+      items.push({ type: "separator", id: "s1" });
+      items.push(
+        prop.isDeleted
+          ? { id: "restore", label: "Restore property", icon: <RotateCcw size={13} />, onSelect: () => restoreDatabaseProperty(block.id, propertyId) }
+          : { id: "delprop", label: "Delete property", icon: <Trash2 size={13} />, danger: true, onSelect: () => deleteDatabaseProperty(block.id, propertyId) }
+      );
+    }
+    return items;
+  };
+
+  const newEntryMenu = (label: string, initial: Record<string, unknown>): ContextMenuItem[] => [
+    {
+      id: "new",
+      label,
+      icon: <Plus size={13} />,
+      onSelect: () => {
+        const row = createDatabaseRow(block.id, "New entry", initial);
+        setSidePeekBlock(row.id);
+      },
+    },
+  ];
+
+  // ---------- Drag & drop (views, rows, board columns, calendar days) ----------
+  const groupPropId = statusProp?.id || "prop-status";
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over) return;
+    const a = String(active.id);
+    const o = String(over.id);
+    if (a === o) return;
+
+    if (a.startsWith("view:") && o.startsWith("view:")) {
+      moveDatabaseView(block.id, a.slice(5), o.slice(5));
+      return;
+    }
+    if (!a.startsWith("row:")) return;
+    const rowId = a.slice(4);
+
+    if (o.startsWith("row:")) {
+      const targetId = o.slice(4);
+      if (currentView?.layout === "board") {
+        const targetVal = blocks[targetId]?.properties?.[groupPropId] ?? null;
+        const curVal = blocks[rowId]?.properties?.[groupPropId] ?? null;
+        if (targetVal !== curVal) updateRowProperty(rowId, groupPropId, targetVal);
+      }
+      if (currentView?.layout === "calendar") {
+        const targetDue = blocks[targetId]?.properties?.["prop-due"] ?? null;
+        if (targetDue !== (blocks[rowId]?.properties?.["prop-due"] ?? null)) {
+          updateRowProperty(rowId, "prop-due", targetDue);
+        }
+      }
+      moveBlockWithinParent(block.id, rowId, targetId);
+      // A manual order only becomes visible when no sort overrides it.
+      if (currentView && currentView.layout !== "board" && currentView.sorts?.length) {
+        updateDatabaseView(block.id, currentView.id, { sorts: [] });
+      }
+    } else if (o.startsWith("col:")) {
+      const colId = o.slice(4);
+      updateRowProperty(rowId, groupPropId, colId === "__null__" ? null : colId);
+    } else if (o.startsWith("day:")) {
+      updateRowProperty(rowId, "prop-due", o.slice(4));
+    }
   };
 
   // Toggle sort for a specific column header
@@ -401,6 +549,11 @@ export default function DatabaseView({ block }: { block: Block }) {
   });
 
   const dynamicProps = dbProperties.filter((p) => p.type !== "title" && p.id !== "prop-title");
+  const sortableProps: DatabaseProperty[] = [
+    dbProperties.find((p) => p.id === "prop-title") ||
+      ({ id: "prop-title", name: "Name", type: "title", position: "a0" } as DatabaseProperty),
+    ...dynamicProps.filter((p) => !p.isDeleted),
+  ];
 
   const handleAddView = (layout: ViewLayout) => {
     createDatabaseView(block.id, layout);
@@ -416,6 +569,7 @@ export default function DatabaseView({ block }: { block: Block }) {
   };
 
   return (
+    <DragProvider onEnd={handleDragEnd}>
     <div className={styles.databaseContainer}>
       {/* Database Title & Header */}
       <div className={styles.header}>
@@ -433,16 +587,54 @@ export default function DatabaseView({ block }: { block: Block }) {
         <div className={styles.viewTabsBar}>
           <div className={styles.viewTabs}>
             {dbViews.map((view) => (
-              <button
+              <DragItem
                 key={view.id}
+                id={`view:${view.id}`}
+                as="div"
+                role="tab"
+                aria-selected={view.id === activeViewId}
+                tabIndex={0}
                 className={`${styles.viewTab} ${view.id === activeViewId ? styles.viewTabActive : ""}`}
+                draggingClassName={styles.dragging}
+                overClassName={styles.dropTarget}
                 onClick={() => setActiveView(block.id, view.id)}
+                onDoubleClick={() => {
+                  setRenamingViewId(view.id);
+                  setRenameViewValue(view.name);
+                }}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    setActiveView(block.id, view.id);
+                  }
+                }}
+                {...contextMenuProps(() => viewMenu(view.id))}
               >
                 {view.layout === "table" && <Table2 size={14} />}
                 {view.layout === "board" && <Kanban size={14} />}
                 {view.layout === "calendar" && <CalendarIcon size={14} />}
                 {view.layout === "list" && <ListIcon size={14} />}
-                <span>{view.name}</span>
+                {renamingViewId === view.id ? (
+                  <input
+                    autoFocus
+                    className={styles.propInput}
+                    style={{ width: 110, margin: 0, padding: "1px 4px" }}
+                    value={renameViewValue}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenameViewValue(e.target.value)}
+                    onBlur={() => {
+                      updateDatabaseView(block.id, view.id, { name: renameViewValue.trim() || view.name });
+                      setRenamingViewId(null);
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      if (e.key === "Escape") setRenamingViewId(null);
+                    }}
+                  />
+                ) : (
+                  <span>{view.name}</span>
+                )}
                 {dbViews.length > 1 && (
                   <span
                     className={styles.deleteViewBtn}
@@ -455,7 +647,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                     <X size={12} />
                   </span>
                 )}
-              </button>
+              </DragItem>
             ))}
 
             {/* Add View Button & Popover */}
@@ -531,15 +723,37 @@ export default function DatabaseView({ block }: { block: Block }) {
               </button>
 
               {showSortPopover && currentView && (
-                <div className={styles.viewPopover} style={{ minWidth: 220, right: 0, left: "auto" }}>
-                  <div className={styles.popoverHeader}>Sorts</div>
+                <div className={styles.viewPopover} style={{ minWidth: 280, right: 0, left: "auto" }}>
+                  <div className={styles.popoverHeader}>Sort by</div>
+                  {(currentView.sorts || []).length === 0 && (
+                    <div style={{ fontSize: 12, padding: "4px 8px", opacity: 0.65 }}>No sort applied</div>
+                  )}
                   {currentView.sorts?.map((sort, idx) => (
-                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px" }}>
-                      <span style={{ fontSize: 12, flex: 1 }}>
-                        {dbProperties.find((p) => p.id === sort.propertyId)?.name || sort.propertyId}
-                      </span>
+                    <div key={`${sort.propertyId}-${idx}`} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px" }}>
+                      <select
+                        className={styles.propSelect}
+                        style={{ flex: 1, margin: 0 }}
+                        value={sort.propertyId}
+                        aria-label="Sort property"
+                        onChange={(e) => {
+                          const propertyId = e.target.value;
+                          const next = currentView.sorts!
+                            .map((s, i) => (i === idx ? { ...s, propertyId } : s))
+                            .filter((s, i, arr) => arr.findIndex((o) => o.propertyId === s.propertyId) === i);
+                          updateDatabaseView(block.id, currentView.id, { sorts: next });
+                        }}
+                      >
+                        {sortableProps
+                          .filter((p) => p.id === sort.propertyId || !currentView.sorts?.some((s) => s.propertyId === p.id))
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                      </select>
                       <button
                         className={styles.sortToggleBtn}
+                        title="Toggle direction"
                         onClick={() => {
                           const next: { propertyId: string; direction: "asc" | "desc" }[] = currentView.sorts!.map((s, i) =>
                             i === idx ? { ...s, direction: s.direction === "asc" ? ("desc" as const) : ("asc" as const) } : s
@@ -547,10 +761,12 @@ export default function DatabaseView({ block }: { block: Block }) {
                           updateDatabaseView(block.id, currentView.id, { sorts: next });
                         }}
                       >
-                        {sort.direction.toUpperCase()}
+                        {sort.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                        <span>{sort.direction === "asc" ? "Asc" : "Desc"}</span>
                       </button>
                       <button
                         className={styles.deleteViewBtn}
+                        title="Remove sort"
                         onClick={() => {
                           const next = currentView.sorts!.filter((_, i) => i !== idx);
                           updateDatabaseView(block.id, currentView.id, { sorts: next });
@@ -562,8 +778,9 @@ export default function DatabaseView({ block }: { block: Block }) {
                   ))}
                   <button
                     className={styles.popoverItem}
+                    disabled={sortableProps.every((p) => currentView.sorts?.some((s) => s.propertyId === p.id))}
                     onClick={() => {
-                      const firstAvail = dbProperties.find(
+                      const firstAvail = sortableProps.find(
                         (p) => !currentView.sorts?.some((s) => s.propertyId === p.id)
                       );
                       if (firstAvail) {
@@ -575,6 +792,18 @@ export default function DatabaseView({ block }: { block: Block }) {
                     <Plus size={13} />
                     <span>Add sort</span>
                   </button>
+                  {Boolean(currentView.sorts?.length) && (
+                    <button
+                      className={styles.popoverItem}
+                      onClick={() => {
+                        updateDatabaseView(block.id, currentView.id, { sorts: [] });
+                        setShowSortPopover(false);
+                      }}
+                    >
+                      <X size={13} />
+                      <span>Remove all sorts</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -790,7 +1019,7 @@ export default function DatabaseView({ block }: { block: Block }) {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th className={styles.thMain}>
+                  <th className={styles.thMain} {...contextMenuProps(() => columnMenu("prop-title"))}>
                     <div className={styles.thContent}>
                       <div className={styles.thTitleGroup}>
                         <span>Name</span>
@@ -813,7 +1042,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                   {dynamicProps.map((prop) => {
                     const sortConfig = currentView?.sorts?.find((s) => s.propertyId === prop.id);
                     return (
-                      <th key={prop.id} className={styles.th}>
+                      <th key={prop.id} className={styles.th} {...contextMenuProps(() => columnMenu(prop.id))}>
                         <div className={styles.thContent}>
                           <div className={styles.thTitleGroup}>
                             <span style={{ textDecoration: prop.isDeleted ? "line-through" : "none", opacity: prop.isDeleted ? 0.6 : 1 }}>
@@ -902,10 +1131,14 @@ export default function DatabaseView({ block }: { block: Block }) {
               </thead>
               <tbody>
                 {processedRows.map((row) => (
-                  <tr
+                  <DragItem
+                    as="tr"
+                    id={`row:${row.id}`}
                     key={row.id}
                     className={styles.tr}
-                    onContextMenu={(e) => openContextMenu(row.id, e)}
+                    draggingClassName={styles.dragging}
+                    overClassName={styles.dropTargetRow}
+                    {...contextMenuProps(() => rowMenu(row.id))}
                   >
                     <td className={styles.tdMain} onClick={() => setSidePeekBlock(row.id)}>
                       <span className={styles.rowIcon}>{row.icon || "📄"}</span>
@@ -1087,7 +1320,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                     })}
 
                     <td className={styles.td} />
-                  </tr>
+                  </DragItem>
                 ))}
               </tbody>
               {/* Footer Calculation Row */}
@@ -1157,11 +1390,12 @@ export default function DatabaseView({ block }: { block: Block }) {
               // If grouping property is marked deleted, display a single fallback null column
               if (isGroupDeleted) {
                 return (
-                  <div
-                    className={`${styles.boardColumn} ${dragOverColumnId === "__null__" ? styles.boardColumnDropActive : ""}`}
-                    onDragOver={(e) => handleDragOver(e, "__null__")}
-                    onDrop={(e) => handleDrop(e, "__null__")}
-                  >
+                  <DropZone
+id="col:__null__"
+className={styles.boardColumn}
+overClassName={styles.boardColumnDropActive}
+{...contextMenuProps(() => newEntryMenu("New entry (no status)", {}))}
+>
                     <div className={styles.columnHeader}>
                       <span className={styles.nullBadge}>Status: null (Deleted)</span>
                       <button
@@ -1175,22 +1409,23 @@ export default function DatabaseView({ block }: { block: Block }) {
                     </div>
                     <div className={styles.cardList}>
                       {processedRows.map((card) => (
-                        <div
-                          key={card.id}
-                          className={`${styles.boardCard} ${draggedCardId === card.id ? styles.boardCardDragging : ""}`}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, card.id)}
-                          onClick={() => setSidePeekBlock(card.id)}
-                          onContextMenu={(e) => openContextMenu(card.id, e)}
-                        >
+                        <DragItem
+key={card.id}
+id={`row:${card.id}`}
+className={styles.boardCard}
+draggingClassName={styles.dragging}
+overClassName={styles.dropTargetRow}
+onClick={() => setSidePeekBlock(card.id)}
+{...contextMenuProps(() => rowMenu(card.id))}
+>
                           <div className={styles.cardTitleRow}>
                             <span className={styles.cardIcon}>{card.icon || "📄"}</span>
                             <span className={styles.cardTitle}>{card.title || "Untitled"}</span>
                           </div>
-                        </div>
+                        </DragItem>
                       ))}
                     </div>
-                  </div>
+                  </DropZone>
                 );
               }
 
@@ -1209,33 +1444,35 @@ export default function DatabaseView({ block }: { block: Block }) {
                 <>
                   {/* Unassigned / No status column if any exists */}
                   {unassignedRows.length > 0 && (
-                    <div
-                      className={`${styles.boardColumn} ${dragOverColumnId === "__null__" ? styles.boardColumnDropActive : ""}`}
-                      onDragOver={(e) => handleDragOver(e, "__null__")}
-                      onDrop={(e) => handleDrop(e, "__null__")}
-                    >
+                    <DropZone
+id="col:__null__"
+className={styles.boardColumn}
+overClassName={styles.boardColumnDropActive}
+{...contextMenuProps(() => newEntryMenu("New entry (no status)", {}))}
+>
                       <div className={styles.columnHeader}>
                         <span className={styles.nullBadge}>No Status (null)</span>
                         <span className={styles.columnCount}>{unassignedRows.length}</span>
                       </div>
                       <div className={styles.cardList}>
                         {unassignedRows.map((card) => (
-                          <div
-                            key={card.id}
-                            className={`${styles.boardCard} ${draggedCardId === card.id ? styles.boardCardDragging : ""}`}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, card.id)}
-                            onClick={() => setSidePeekBlock(card.id)}
-                            onContextMenu={(e) => openContextMenu(card.id, e)}
-                          >
+                          <DragItem
+key={card.id}
+id={`row:${card.id}`}
+className={styles.boardCard}
+draggingClassName={styles.dragging}
+overClassName={styles.dropTargetRow}
+onClick={() => setSidePeekBlock(card.id)}
+{...contextMenuProps(() => rowMenu(card.id))}
+>
                             <div className={styles.cardTitleRow}>
                               <span className={styles.cardIcon}>{card.icon || "📄"}</span>
                               <span className={styles.cardTitle}>{card.title || "Untitled"}</span>
                             </div>
-                          </div>
+                          </DragItem>
                         ))}
                       </div>
-                    </div>
+                    </DropZone>
                   )}
 
                   {/* Standard status columns */}
@@ -1245,12 +1482,13 @@ export default function DatabaseView({ block }: { block: Block }) {
                     );
 
                     return (
-                      <div
-                        key={column.id}
-                        className={`${styles.boardColumn} ${dragOverColumnId === column.id ? styles.boardColumnDropActive : ""}`}
-                        onDragOver={(e) => handleDragOver(e, column.id)}
-                        onDrop={(e) => handleDrop(e, column.id)}
-                      >
+                      <DropZone
+key={column.id}
+id={`col:${column.id}`}
+className={styles.boardColumn}
+overClassName={styles.boardColumnDropActive}
+{...contextMenuProps(() => newEntryMenu(`New entry in ${column.name}`, { [groupProp?.id || "prop-status"]: column.id }))}
+>
                         <div className={styles.columnHeader}>
                           <span className={`${styles.pill} ${styles[`pill_${column.color || "default"}`]}`}>
                             {column.name}
@@ -1260,37 +1498,23 @@ export default function DatabaseView({ block }: { block: Block }) {
 
                         <div className={styles.cardList}>
                           {columnRows.map((card) => (
-                            <div
-                              key={card.id}
-                              className={`${styles.boardCard} ${draggedCardId === card.id ? styles.boardCardDragging : ""}`}
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, card.id)}
-                              onClick={() => setSidePeekBlock(card.id)}
-                              onContextMenu={(e) => openContextMenu(card.id, e)}
-                            >
+                            <DragItem
+key={card.id}
+id={`row:${card.id}`}
+className={styles.boardCard}
+draggingClassName={styles.dragging}
+overClassName={styles.dropTargetRow}
+onClick={() => setSidePeekBlock(card.id)}
+{...contextMenuProps(() => rowMenu(card.id))}
+>
                               <div className={styles.cardTitleRow}>
                                 <span className={styles.cardIcon}>{card.icon || "📄"}</span>
                                 <span className={styles.cardTitle}>{card.title || "Untitled"}</span>
                               </div>
 
-                              <div className={styles.cardBadges} onClick={(e) => e.stopPropagation()}>
+                              <div className={styles.cardBadges}>
                                 {priorityProp && !priorityProp.isDeleted && (
-                                  <div className={styles.badgeWrapper}>
-                                    <select
-                                      className={styles.cardSelect}
-                                      value={(card.properties?.[priorityProp.id] as string) || ""}
-                                      onChange={(e) =>
-                                        updateRowProperty(card.id, priorityProp.id, e.target.value)
-                                      }
-                                    >
-                                      <option value="">No priority</option>
-                                      {priorityProp.options?.map((opt) => (
-                                        <option key={opt.id} value={opt.id}>
-                                          {opt.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <div className={styles.pillDisplay}>
+                                  <div className={styles.badgeWrapper}><div className={styles.pillDisplay}>
                                       {renderPriorityPill(card.properties?.[priorityProp.id])}
                                     </div>
                                   </div>
@@ -1304,7 +1528,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                                   </span>
                                 ) : null}
                               </div>
-                            </div>
+                            </DragItem>
                           ))}
                         </div>
 
@@ -1322,7 +1546,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                           <Plus size={13} />
                           <span>New</span>
                         </button>
-                      </div>
+                      </DropZone>
                     );
                   })}
 
@@ -1376,12 +1600,15 @@ export default function DatabaseView({ block }: { block: Block }) {
         {currentView?.layout === "list" && (
           <div className={styles.listWrapper}>
             {processedRows.map((row) => (
-              <div
-                key={row.id}
-                className={styles.listItem}
-                onClick={() => setSidePeekBlock(row.id)}
-                onContextMenu={(e) => openContextMenu(row.id, e)}
-              >
+              <DragItem
+key={row.id}
+id={`row:${row.id}`}
+className={styles.listItem}
+draggingClassName={styles.dragging}
+overClassName={styles.dropTargetRow}
+onClick={() => setSidePeekBlock(row.id)}
+{...contextMenuProps(() => rowMenu(row.id))}
+>
                 <div className={styles.listItemMain}>
                   <span className={styles.rowIcon}>{row.icon || "📄"}</span>
                   <input
@@ -1404,24 +1631,11 @@ export default function DatabaseView({ block }: { block: Block }) {
                   </button>
                 </div>
 
-                <div className={styles.listItemProps} onClick={(e) => e.stopPropagation()}>
+                <div className={styles.listItemProps}>
                   {statusProp?.isDeleted ? (
                     <span className={styles.nullBadge}>null</span>
                   ) : statusProp ? (
-                    <div className={styles.badgeWrapper}>
-                      <select
-                        className={styles.cellSelect}
-                        value={(row.properties?.[statusProp.id] as string) || ""}
-                        onChange={(e) => updateRowProperty(row.id, statusProp.id, e.target.value)}
-                      >
-                        <option value="">Empty</option>
-                        {statusProp.options?.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className={styles.pillDisplay}>
+                    <div className={styles.badgeWrapper}><div className={styles.pillDisplay}>
                         {renderStatusPill(row.properties?.[statusProp.id])}
                       </div>
                     </div>
@@ -1430,20 +1644,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                   {priorityProp?.isDeleted ? (
                     <span className={styles.nullBadge}>null</span>
                   ) : priorityProp ? (
-                    <div className={styles.badgeWrapper}>
-                      <select
-                        className={styles.cellSelect}
-                        value={(row.properties?.[priorityProp.id] as string) || ""}
-                        onChange={(e) => updateRowProperty(row.id, priorityProp.id, e.target.value)}
-                      >
-                        <option value="">-</option>
-                        {priorityProp.options?.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className={styles.pillDisplay}>
+                    <div className={styles.badgeWrapper}><div className={styles.pillDisplay}>
                         {renderPriorityPill(row.properties?.[priorityProp.id])}
                       </div>
                     </div>
@@ -1455,7 +1656,7 @@ export default function DatabaseView({ block }: { block: Block }) {
                     </span>
                   ) : null}
                 </div>
-              </div>
+              </DragItem>
             ))}
 
             <button
@@ -1516,9 +1717,12 @@ export default function DatabaseView({ block }: { block: Block }) {
                 const isToday = cell.dateString === todayString;
 
                 return (
-                  <div
+                  <DropZone
                     key={idx}
+                    id={`day:${cell.dateString}`}
+                    overClassName={styles.dropTargetRow}
                     className={`${styles.calendarDayCell} ${!cell.isCurrentMonth ? styles.calendarDayCellOtherMonth : ""}`}
+                    {...contextMenuProps(() => newEntryMenu(`New entry on ${cell.dateString}`, { "prop-due": cell.dateString }))}
                   >
                     <div className={styles.calendarDayTopRow}>
                       <span
@@ -1542,99 +1746,28 @@ export default function DatabaseView({ block }: { block: Block }) {
 
                     <div className={styles.calendarEventsList}>
                       {cellRows.map((item) => (
-                        <div
+                        <DragItem
                           key={item.id}
+                          id={`row:${item.id}`}
                           className={styles.calendarEventItem}
+                          draggingClassName={styles.dragging}
                           onClick={() => setSidePeekBlock(item.id)}
-                          onContextMenu={(e) => openContextMenu(item.id, e)}
+                          {...contextMenuProps(() => rowMenu(item.id))}
                           title={item.title || "Untitled"}
                         >
                           <span>{item.icon || "📄"}</span>
                           <span>{item.title || "Untitled"}</span>
-                        </div>
+                        </DragItem>
                       ))}
                     </div>
-                  </div>
+                  </DropZone>
                 );
               })}
             </div>
           </div>
         )}
       </div>
-
-      {/* Floating Context Menu for Board Cards and Table Rows */}
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className={styles.floatingContextMenu}
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              setSidePeekBlock(contextMenu.rowId);
-              setContextMenu(null);
-            }}
-          >
-            <ExternalLink size={13} />
-            <span>Open in Side Peek</span>
-          </button>
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              setActiveBlock(contextMenu.rowId);
-              setSidePeekBlock(null);
-              setContextMenu(null);
-            }}
-          >
-            <Maximize2 size={13} />
-            <span>Open as Page</span>
-          </button>
-
-          {statusProp && !statusProp.isDeleted && (
-            <div className={styles.contextSubSection}>
-              <div className={styles.contextSubHeader}>Move status to:</div>
-              {statusProp.options?.map((opt) => (
-                <button
-                  key={opt.id}
-                  className={styles.contextMenuItem}
-                  onClick={() => {
-                    updateRowProperty(contextMenu.rowId, statusProp.id, opt.id);
-                    setContextMenu(null);
-                  }}
-                >
-                  <ArrowRight size={13} />
-                  <span>{opt.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className={styles.contextDivider} />
-
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              duplicateBlock(contextMenu.rowId);
-              setContextMenu(null);
-            }}
-          >
-            <Copy size={13} />
-            <span>Duplicate</span>
-          </button>
-          <button
-            className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
-            onClick={() => {
-              archiveBlock(contextMenu.rowId);
-              setContextMenu(null);
-            }}
-          >
-            <Trash2 size={13} />
-            <span>Delete</span>
-          </button>
-        </div>
-      )}
     </div>
+    </DragProvider>
   );
 }

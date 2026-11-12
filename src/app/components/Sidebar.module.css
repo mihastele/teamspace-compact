@@ -554,3 +554,7 @@
 .restoreBtn:hover {
   background-color: var(--bg-hover);
 }
+
+.dragging { opacity: 0.8; box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+.dropTarget { box-shadow: inset 0 2px 0 var(--accent, #2383e2); }
+

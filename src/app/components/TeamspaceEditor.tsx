@@ -22,7 +22,7 @@ import {
   Smile,
   Image as ImageIcon,
 } from "lucide-react";
-import styles from "./NotionEditor.module.css";
+import styles from "./TeamspaceEditor.module.css";
 
 const emojiOptions = ["📄", "📝", "💡", "🎯", "🚀", "🔥", "📚", "🎨", "⚡", "🌟", "📌", "🛠️", "💬", "✅"];
 
@@ -37,7 +37,7 @@ const COVER_PRESETS = [
   "linear-gradient(135deg, #373b44 0%, #4286f4 100%)",
 ];
 
-export default function NotionEditor({ block }: { block: Block }) {
+export default function TeamspaceEditor({ block }: { block: Block }) {
   const { blocks, updateBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);

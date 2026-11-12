@@ -8,7 +8,7 @@ const keys = new Map();
 function visit(node) {
   if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
     const name = node.tagName.getText(source);
-    if (["NotionEditor", "DatabaseView"].includes(name)) {
+    if (["TeamspaceEditor", "DatabaseView"].includes(name)) {
       const key = node.attributes.properties.find(attribute => ts.isJsxAttribute(attribute) && attribute.name.getText(source) === "key");
       assert.ok(key?.initializer && ts.isJsxExpression(key.initializer), `${name} must have an explicit scope key`);
       keys.set(name, new Function("activeBlock", `return (${key.initializer.expression.getText(source)});`));

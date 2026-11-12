@@ -24,7 +24,7 @@ export function generateSeedData(workspaceId: string = DEFAULT_WORKSPACE_ID): {
     workspaceId,
     parentId: null,
     type: "page",
-    title: "Getting Started with openNotion",
+    title: "Getting Started with Teamspace",
     icon: "👋",
     coverUrl: null,
     position: "a0",
@@ -38,14 +38,14 @@ export function generateSeedData(workspaceId: string = DEFAULT_WORKSPACE_ID): {
         {
           type: "heading",
           attrs: { level: 1 },
-          content: [{ type: "text", text: "Welcome to openNotion!" }],
+          content: [{ type: "text", text: "Welcome to Teamspace!" }],
         },
         {
           type: "paragraph",
           content: [
             {
               type: "text",
-              text: "openNotion is a high-performance, MIT-licensed open-source workspace built for notes, tasks, databases, and knowledge bases.",
+              text: "Teamspace is a high-performance, MIT-licensed open-source workspace built for notes, tasks, databases, and knowledge bases.",
             },
           ],
         },

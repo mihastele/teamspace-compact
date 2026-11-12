@@ -1,4 +1,4 @@
-// openNotion Unified Data Model (MIT License)
+// Teamspace Unified Data Model (MIT License)
 
 export type BlockType =
   | "page"

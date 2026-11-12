@@ -5,7 +5,7 @@ The product principles below are not aspirations; they are constraints on
 every piece of code written in this repo. Read `MISSION.md` (or equivalent)
 if you need the full reasoning behind them.
 
-Project name: `openNotion`
+Project name: `Teamspace`
 
 ## Session continuity
 

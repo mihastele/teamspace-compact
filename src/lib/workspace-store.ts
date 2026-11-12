@@ -48,20 +48,37 @@ export const CORE_PROPERTY_DEFINITIONS: Record<string, Omit<DatabaseProperty, "p
   },
 };
 
-const STORAGE_KEY = "opennotion_workspace_state_v1";
+const STORAGE_KEY = "teamspace_workspace_state_v1";
+// Pre-rebrand key; read once so existing local edits are not lost.
+const LEGACY_STORAGE_KEY = "opennotion_workspace_state_v1";
+
+function readStoredState(): { state: unknown; legacy: boolean } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) return { state: JSON.parse(stored), legacy: false };
+    const legacyStored = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacyStored) return { state: JSON.parse(legacyStored), legacy: true };
+  } catch {
+    // Fallback to fresh seed
+  }
+  return null;
+}
 
 function buildInitialState(): WorkspaceState {
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.workspace && parsed.blocks) {
-          return parsed;
+  const stored = readStoredState();
+  if (stored) {
+    const parsed = stored.state as { workspace?: unknown; blocks?: unknown };
+    if (parsed.workspace && parsed.blocks) {
+      if (stored.legacy && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          localStorage.removeItem(LEGACY_STORAGE_KEY);
+        } catch {
+          // Keep the legacy key if the migration cannot be persisted.
         }
       }
-    } catch {
-      // Fallback to fresh seed
+      return parsed as WorkspaceState;
     }
   }
 
@@ -545,6 +562,37 @@ export const workspaceStore = {
     emitChange();
   },
 
+  moveDatabaseView(databaseId: string, activeViewId: string, overViewId: string) {
+    const list = currentState.views[databaseId] || [];
+    const from = list.findIndex((v) => v.id === activeViewId);
+    const to = list.findIndex((v) => v.id === overViewId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    currentState = {
+      ...currentState,
+      views: { ...currentState.views, [databaseId]: next },
+    };
+    emitChange();
+  },
+
+  /** Custom manual ordering: place blockId at the position currently held by overId (same parent). */
+  moveBlockWithinParent(parentId: string, blockId: string, overId: string) {
+    const list = currentState.childrenIndex[parentId] || [];
+    const from = list.indexOf(blockId);
+    const to = list.indexOf(overId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...list];
+    next.splice(from, 1);
+    next.splice(to, 0, blockId);
+    currentState = {
+      ...currentState,
+      childrenIndex: { ...currentState.childrenIndex, [parentId]: next },
+    };
+    emitChange();
+  },
+
   updateDatabaseView(
     databaseId: string,
     viewId: string,
@@ -843,6 +891,7 @@ export const workspaceStore = {
   resetToDefaultSeed() {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
     }
     currentState = buildInitialState();
     emitChange();
@@ -875,6 +924,8 @@ export function useWorkspace() {
     updateRowProperty: workspaceStore.updateRowProperty,
     createDatabaseView: workspaceStore.createDatabaseView,
     updateDatabaseView: workspaceStore.updateDatabaseView,
+    moveDatabaseView: workspaceStore.moveDatabaseView,
+    moveBlockWithinParent: workspaceStore.moveBlockWithinParent,
     deleteDatabaseView: workspaceStore.deleteDatabaseView,
     createDatabaseProperty: workspaceStore.createDatabaseProperty,
     updateDatabaseProperty: workspaceStore.updateDatabaseProperty,
