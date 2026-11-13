@@ -20,6 +20,10 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}
       VAULT_ENC_KEY: ${VAULT_ENC_KEY:?Generate VAULT_ENC_KEY before starting Supabase}
   realtime:
+    networks:
+      default:
+        aliases:
+          - realtime-dev.supabase-realtime
     environment:
       DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?Generate REALTIME_DB_ENC_KEY before starting Supabase}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}

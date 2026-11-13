@@ -1272,3 +1272,21 @@
   - `npm run lint`: 0 errors, 0 warnings.
   - `npm run build`: Production Next.js Turbopack build succeeds with 0 errors.
   - `node ./scripts/deploy.mjs staging up`: Staging Docker containers successfully rebuilt and deployed on `http://localhost:3100`.
+
+### 2026-11-13 — Resolution of Blocks Batch Sync Transaction Rule, Presence Resolution for Page Blocks & Supabase Realtime Websocket Upstream
+
+- **Eliminated 500 Error on `POST /api/workspaces/.../blocks` (`src/lib/server/api.ts`)**:
+  - In `POST /api/workspaces/:workspaceId/blocks`, multiple blocks in `incomingBlocks` triggered `tx.get(ref)` inside the loop after previous writes, violating the strict `Transaction reads must precede writes` invariant in `document-store.ts`.
+  - Refactored the transaction to read all workspace blocks upfront (`const rows = await tx.get(workspace.collection("blocks"));`), indexed in memory into `existingMap`, and executed all writes afterward, returning the final reconciled map.
+- **Fixed 404 Errors on Note/Page Block Presence (`src/lib/server/api.ts`)**:
+  - In both `presenceOperation` and `GET /api/workspaces/.../notes/:id/presence`, the server looked only in `workspace.collection("notes")`. Modern page entities exist in `workspace.collection("blocks")`.
+  - Added parallel `Promise.all([tx.get(note), tx.get(block)])` checks so presence correctly recognizes both legacy notes and page blocks without 404 not found errors.
+- **Resolved Supabase Realtime Websocket Connection (101 Switching Protocols)**:
+  - Discovered Envoy upstream cluster `realtime` was configured with `address: realtime-dev.supabase-realtime`, while Compose renamed the container to `realtime-dev.teamspace-staging-realtime`, causing DNS resolution failure and HTTP 503 `no healthy upstream` (`NS_ERROR...` in browser).
+  - Added network alias `realtime-dev.supabase-realtime` to the `realtime` service in `deploy/supabase.override.yml` and `deployments/staging/supabase.override.yml`.
+  - Verified WebSocket handshake now immediately succeeds with `HTTP/1.1 101 Switching Protocols`.
+- **Verification**:
+  - Unit Tests: `npm test` runs 264 tests with 264 passing and 0 failures.
+  - TypeScript: `npm run typecheck` passed with 0 errors.
+  - ESLint: `npm run lint` passed with 0 errors and 0 warnings.
+  - Staging deployment rebuilt and restarted via `node ./scripts/deploy.mjs staging up`. Live WebSocket connection verified from Node client with `WEBSOCKET CONNECTED SUCCESSFULLY!`.
