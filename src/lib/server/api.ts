@@ -19,6 +19,7 @@ import {
   type DocumentStore as Firestore,
   type Transaction,
   type DocumentReference,
+  type DocumentSnapshot,
 } from "./document-store";
 import type { Firestore as NativeFirestore } from "firebase-admin/firestore";
 import type { Storage as NativeStorage } from "firebase-admin/storage";
@@ -86,10 +87,20 @@ async function authenticate(request: Request) {
   const configuration = backendConfiguration();
   accessConfiguration();
   if (!configuration.configured) throw new ApiError(503, "not_configured", "The selected backend is not configured. Ask the administrator to finish setup.");
+  let token = "";
   const match = /^Bearer ([^\s]+)$/.exec(
     request.headers.get("authorization") ?? "",
   );
-  if (!match)
+  if (match) {
+    token = match[1];
+  } else {
+    try {
+      const url = new URL(request.url);
+      const queryToken = url.searchParams.get("token") || url.searchParams.get("auth");
+      if (queryToken) token = queryToken;
+    } catch {}
+  }
+  if (!token)
     throw new ApiError(401, "unauthenticated", "Sign in to continue.");
   let user: DecodedIdToken;
   let db: Firestore;
@@ -97,7 +108,7 @@ async function authenticate(request: Request) {
   try {
     if (configuration.provider === "supabase") {
       const backend = supabaseAdmin();
-      const { data, error } = await backend.auth.getUser(match[1]);
+      const { data, error } = await backend.auth.getUser(token);
       if (error || !data.user) throw new Error("Invalid user");
       user = { uid: data.user.id, email: data.user.email, email_verified: !!data.user.email_confirmed_at,
         name: typeof data.user.user_metadata.display_name === "string" ? data.user.user_metadata.display_name : typeof data.user.user_metadata.full_name === "string" ? data.user.user_metadata.full_name : data.user.email?.split("@")[0],
@@ -106,7 +117,7 @@ async function authenticate(request: Request) {
       storage = supabaseStorage();
     } else {
       const backend = firebaseAdmin();
-      user = await backend.auth.verifyIdToken(match[1], true);
+      user = await backend.auth.verifyIdToken(token, true);
       db = firebaseDocumentStore(backend.db);
       storage = backend.storage as unknown as Storage;
     }
@@ -1261,6 +1272,10 @@ const EXTENSION_MAP: Record<string, string> = {
   "audio/mp4": "m4a",
   "audio/mpeg": "mp3",
   "audio/wav": "wav",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/ogg": "ogv",
+  "video/quicktime": "mov",
   "application/pdf": "pdf",
   "text/plain": "txt",
   "text/markdown": "md",
@@ -1320,8 +1335,13 @@ async function attachmentOperation(
         : null;
     await db.runTransaction(async (tx) => {
       await member(tx, workspace, user.uid);
-      const [parent, attachments] = await Promise.all([
-        tx.get(workspace.collection(`${parentType}s`).doc(parentId)),
+      const [noteSnap, blockSnap, attachments] = await Promise.all([
+        parentType === "note"
+          ? tx.get(workspace.collection("notes").doc(parentId))
+          : tx.get(workspace.collection("tasks").doc(parentId)),
+        parentType === "note"
+          ? tx.get(workspace.collection("blocks").doc(parentId))
+          : Promise.resolve({ exists: false, data: () => null } as unknown as DocumentSnapshot),
         tx.get(
           workspace
             .collection("attachments")
@@ -1329,6 +1349,7 @@ async function attachmentOperation(
             .where("parentType", "==", parentType),
         ),
       ]);
+      const parent = noteSnap.exists ? noteSnap : blockSnap;
       if (!parent.exists || parent.data()?.deleting)
         throw new ApiError(
           404,
@@ -1396,7 +1417,9 @@ async function attachmentOperation(
       action === "thumbnail" ||
       (action === "inline" &&
         (String(value.contentType).startsWith("image/") ||
-          String(value.contentType).startsWith("audio/")));
+          String(value.contentType).startsWith("audio/") ||
+          String(value.contentType).startsWith("video/") ||
+          String(value.contentType) === "application/pdf"));
     const [url] = await files
       .file(action === "thumbnail" ? value.thumbnailPath : value.storagePath)
       .getSignedUrl({
@@ -1407,6 +1430,16 @@ async function attachmentOperation(
           ? "inline"
           : `attachment; filename*=UTF-8''${encodeURIComponent(value.originalName)}`,
       });
+    const accept = request.headers.get("accept") ?? "";
+    const isDirectBrowserMediaRequest =
+      accept.includes("image/") ||
+      accept.includes("video/") ||
+      accept.includes("audio/") ||
+      accept.includes("text/html") ||
+      request.headers.get("range") !== null;
+    if (isDirectBrowserMediaRequest && !accept.includes("application/json")) {
+      return Response.redirect(url, 307);
+    }
     return json({ url });
   }
   if (request.method === "DELETE" && !action) {
@@ -1537,12 +1570,16 @@ async function attachmentOperation(
   try {
     await db.runTransaction(async (tx) => {
       await member(tx, workspace, user.uid);
-      const [snapshot, parent] = await Promise.all([
+      const [snapshot, noteSnap, blockSnap] = await Promise.all([
         tx.get(ref),
-        tx.get(
-          workspace.collection(`${value.parentType}s`).doc(value.parentId),
-        ),
+        value.parentType === "note"
+          ? tx.get(workspace.collection("notes").doc(value.parentId))
+          : tx.get(workspace.collection("tasks").doc(value.parentId)),
+        value.parentType === "note"
+          ? tx.get(workspace.collection("blocks").doc(value.parentId))
+          : Promise.resolve({ exists: false, data: () => null } as unknown as DocumentSnapshot),
       ]);
+      const parent = noteSnap.exists ? noteSnap : blockSnap;
       if (
         !snapshot.exists ||
         !parent.exists ||

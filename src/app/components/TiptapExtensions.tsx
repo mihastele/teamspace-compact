@@ -38,6 +38,7 @@ export type EditorNodeContextValue = {
   currentBlockId: string;
   onNavigatePage: (pageId: string) => void;
   renderEmbeddedDatabase: (props: EmbeddedDbRenderProps) => React.ReactNode;
+  onUploadMediaFile?: (file: File) => Promise<{ url: string; attachmentId?: string }>;
 };
 
 export const EditorNodeContext = createContext<EditorNodeContextValue>({
@@ -230,8 +231,8 @@ export const ColumnsExtension = Node.create({
 });
 
 function ImageBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
-  const { readOnly } = useContext(EditorNodeContext);
-  const src = (node.attrs.src as string | null) || null;
+  const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
+  const src = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
   const caption = (node.attrs.caption as string) || "";
   const width = (node.attrs.width as string) || "100%";
   const resolvedUrl = useMediaUrl(src);
@@ -239,8 +240,13 @@ function ImageBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
-    const saved = await saveMediaFile(file, file.name);
-    updateAttributes({ src: saved.url, alt: file.name });
+    if (onUploadMediaFile) {
+      const res = await onUploadMediaFile(file);
+      updateAttributes({ src: res.url, url: res.url, attachmentId: res.attachmentId, alt: file.name });
+    } else {
+      const saved = await saveMediaFile(file, file.name);
+      updateAttributes({ src: saved.url, alt: file.name });
+    }
   };
 
   return (
@@ -388,17 +394,29 @@ export const ImageBlockExtension = Node.create({
 });
 
 function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
-  const { readOnly } = useContext(EditorNodeContext);
-  const src = (node.attrs.src as string | null) || null;
-  const fileName = (node.attrs.fileName as string) || "";
+  const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
+  const src = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const fileName = (node.attrs.fileName as string) || (node.attrs.originalName as string) || "";
   const caption = (node.attrs.caption as string) || "";
   const resolvedUrl = useMediaUrl(src);
   const [urlInput, setUrlInput] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
-    const saved = await saveMediaFile(file, file.name);
-    updateAttributes({ src: saved.url, fileName: file.name });
+    if (onUploadMediaFile) {
+      const res = await onUploadMediaFile(file);
+      updateAttributes({
+        src: res.url,
+        url: res.url,
+        attachmentId: res.attachmentId,
+        fileName: file.name,
+        contentType: file.type,
+        bytes: file.size,
+      });
+    } else {
+      const saved = await saveMediaFile(file, file.name);
+      updateAttributes({ src: saved.url, fileName: file.name });
+    }
   };
 
   return (
@@ -538,21 +556,35 @@ export const VideoBlockExtension = Node.create({
 });
 
 function FileBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
-  const { readOnly } = useContext(EditorNodeContext);
-  const src = (node.attrs.src as string | null) || null;
-  const fileName = (node.attrs.fileName as string) || "Attachment";
-  const fileSize = (node.attrs.fileSize as number) || 0;
+  const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
+  const src = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const fileName = (node.attrs.fileName as string) || (node.attrs.originalName as string) || "Attachment";
+  const fileSize = (node.attrs.fileSize as number) || (node.attrs.bytes as number) || 0;
   const resolvedUrl = useMediaUrl(src);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
-    const saved = await saveMediaFile(file, file.name);
-    updateAttributes({
-      src: saved.url,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-    });
+    if (onUploadMediaFile) {
+      const res = await onUploadMediaFile(file);
+      updateAttributes({
+        src: res.url,
+        url: res.url,
+        attachmentId: res.attachmentId,
+        fileName: file.name,
+        fileSize: file.size,
+        bytes: file.size,
+        mimeType: file.type,
+        contentType: file.type,
+      });
+    } else {
+      const saved = await saveMediaFile(file, file.name);
+      updateAttributes({
+        src: saved.url,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+      });
+    }
   };
 
   return (

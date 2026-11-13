@@ -601,17 +601,31 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
           caption: (node.attrs?.caption || node.attrs?.alt) as string | undefined,
         },
       });
-    } else if (node.type === "attachmentBlock") {
+    } else if (node.type === "videoBlock") {
+      blocks.push({
+        id,
+        type: "video",
+        text: "",
+        media: {
+          attachmentId: node.attrs?.attachmentId as string | undefined,
+          url: (node.attrs?.url || node.attrs?.src) as string | undefined,
+          originalName: (node.attrs?.fileName || node.attrs?.originalName) as string | undefined,
+          contentType: node.attrs?.contentType as string | undefined,
+          bytes: (node.attrs?.bytes || node.attrs?.fileSize) as number | undefined,
+          caption: node.attrs?.caption as string | undefined,
+        },
+      });
+    } else if (node.type === "attachmentBlock" || node.type === "fileBlock") {
       blocks.push({
         id,
         type: "attachment",
         text: "",
         media: {
           attachmentId: node.attrs?.attachmentId as string | undefined,
-          url: node.attrs?.url as string | undefined,
-          originalName: node.attrs?.originalName as string | undefined,
-          contentType: node.attrs?.contentType as string | undefined,
-          bytes: node.attrs?.bytes as number | undefined,
+          url: (node.attrs?.url || node.attrs?.src) as string | undefined,
+          originalName: (node.attrs?.originalName || node.attrs?.fileName) as string | undefined,
+          contentType: (node.attrs?.contentType || node.attrs?.mimeType) as string | undefined,
+          bytes: (node.attrs?.bytes || node.attrs?.fileSize) as number | undefined,
         },
       });
     } else if (node.type === "audioBlock") {
@@ -742,6 +756,20 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
           bytes: block.media?.bytes,
           width: block.media?.width,
           caption: block.media?.caption,
+        },
+      });
+    } else if (block.type === "video") {
+      nodes.push({
+        type: "videoBlock",
+        attrs: {
+          blockId,
+          attachmentId: block.media?.attachmentId,
+          url: block.media?.url,
+          src: block.media?.url,
+          fileName: block.media?.originalName,
+          caption: block.media?.caption,
+          bytes: block.media?.bytes,
+          contentType: block.media?.contentType,
         },
       });
     } else if (block.type === "attachment") {

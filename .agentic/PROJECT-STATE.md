@@ -1308,3 +1308,27 @@
   - `npm run typecheck`: 0 errors.
   - `npm run lint`: 0 errors, 0 warnings.
   - Staging Docker containers updated on `http://localhost:3100`.
+
+### 2026-11-13 — Media Synchronization, Video Attachments & Tiered Client Caching
+
+- **Server-Side Video Attachments & Unified Block Storage (`src/lib/server/api.ts`, `src/lib/server/validation.ts`, `migrations/024-video-attachments.sql`)**:
+  - Added video MIME types (`video/mp4`, `video/webm`, `video/ogg`, `video/quicktime`) to `EXTENSION_MAP` and `isInlineMedia`.
+  - Added `024-video-attachments.sql` migration extending Supabase storage bucket `teamspace-private` allowed MIME types to include video files up to 25 MiB.
+  - Added `"video"` block type to `validateNoteContent` in `src/lib/server/validation.ts`.
+  - Fixed parent containment resolution in `attachmentOperation` (`tx.get(workspace.collection("notes").doc(parentId))` vs `blocks`) so attachments to unified block model pages resolve correctly without failing with 404 or falling back to local-only storage.
+  - Enabled query token authentication (`?token=` / `?auth=`) and 307 redirect for browser media streaming tags (`<video>`, `<audio>`, `<img>`).
+- **Tiptap and Model Extensions for Media (`src/lib/collaboration-model.ts`, `src/app/components/MediaNodes.tsx`, `src/app/components/TiptapExtensions.tsx`, `src/app/components/TeamspaceEditor.tsx`)**:
+  - Added full bi-directional mapping for `videoBlock` / `video` and `fileBlock` / `attachment` in `tiptapDocToNoteContent` and `noteContentToTiptapDoc`.
+  - Provided `onUploadMediaFile` in `EditorNodeContext` so manual pickers inside empty placeholder cards upload to the server instead of saving locally only.
+  - Enabled video uploads (`isVideo`) in `TeamspaceEditor.tsx` `handleFileUpload`.
+- **Tiered Media Storage & Streaming Lifecycle (`src/lib/attachments.ts`, `src/lib/media-store.ts`)**:
+  - Added `Authorization: Bearer <token>` to `uploadMediaFile` requests so uploads authenticate properly against the server.
+  - **Documents and Videos**: Kept temporarily in local IndexedDB only until upload succeeds; once uploaded to the server, local storage is cleaned up via `deleteMediaFile(tempId)` and media streams directly from the server via signed storage URLs.
+  - **Images**: Retained/cached in local IndexedDB (`teamspace-media-cache-v1` / `teamspace_media_v1`) so if pages are viewed offline or saved locally, images remain accessible.
+  - Enhanced `useMediaUrl` / `resolveMediaUrl` to transparently resolve `idb://`, `local-`, and `/api/.../attachments/.../inline` URLs into streaming signed storage URLs with in-memory caching.
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass with 0 failures.
+  - `npm run test:supabase`: 77/77 Supabase integration tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - Migration 024 applied and verified in staging stack. Staging containers updated on `http://localhost:3100`.

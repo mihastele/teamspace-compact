@@ -10,7 +10,7 @@ import { useWorkspace } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
 import { uploadMediaFile } from "@/lib/attachments";
-import { saveMediaFile, useMediaUrl } from "@/lib/media-store";
+import { saveMediaFile, deleteMediaFile, useMediaUrl } from "@/lib/media-store";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
 import DatabaseView from "./DatabaseView";
@@ -386,8 +386,13 @@ export default function TeamspaceEditor({
           .insertContent({
             type: "videoBlock",
             attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
               src: tempUrl,
               fileName: file.name,
+              contentType: file.type,
+              bytes: file.size,
             },
           })
           .run();
@@ -401,6 +406,7 @@ export default function TeamspaceEditor({
               blockId: tempId,
               attachmentId: tempId,
               url: tempUrl,
+              src: tempUrl,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -417,6 +423,7 @@ export default function TeamspaceEditor({
               blockId: tempId,
               attachmentId: tempId,
               url: tempUrl,
+              src: tempUrl,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -431,14 +438,14 @@ export default function TeamspaceEditor({
           api.configured &&
           api.user &&
           api.workspace &&
-          (isImage || isAudio || (!isVideo && file.size <= 25 * 1024 * 1024))
+          (isImage || isAudio || isVideo || file.size <= 25 * 1024 * 1024)
         ) {
           const result = await uploadMediaFile(file, "page", block.id, api);
           const currentJson = editor.getJSON();
           const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
             if (!nodes) return false;
             for (const n of nodes) {
-              if (n.attrs?.blockId === tempId) {
+              if (n.attrs?.blockId === tempId || n.attrs?.src === tempUrl) {
                 n.attrs.attachmentId = result.attachmentId;
                 n.attrs.url = result.url;
                 n.attrs.src = result.url;
@@ -452,6 +459,11 @@ export default function TeamspaceEditor({
           if (updateNodeAttrs(currentJson.content)) {
             editor.commands.setContent(currentJson, { emitUpdate: true });
           }
+
+          // Documents and videos are NOT kept permanently in browser storage once uploaded
+          if (!isImage) {
+            void deleteMediaFile(tempId);
+          }
         } else {
           const saved = await saveMediaFile(file, file.name);
           const currentJson = editor.getJSON();
@@ -460,7 +472,7 @@ export default function TeamspaceEditor({
             for (const n of nodes) {
               if (
                 n.attrs?.blockId === tempId ||
-                (isVideo && n.type === "videoBlock" && n.attrs?.src === tempUrl)
+                n.attrs?.src === tempUrl
               ) {
                 n.attrs.url = saved.url;
                 n.attrs.src = saved.url;
@@ -751,8 +763,21 @@ export default function TeamspaceEditor({
         }
       },
       renderEmbeddedDatabase,
+      onUploadMediaFile: async (file: File) => {
+        if (
+          api.configured &&
+          api.user &&
+          api.workspace &&
+          file.size <= 25 * 1024 * 1024
+        ) {
+          const res = await uploadMediaFile(file, "page", block.id, api);
+          return { url: res.url, attachmentId: res.attachmentId };
+        }
+        const saved = await saveMediaFile(file, file.name);
+        return { url: saved.url, attachmentId: saved.meta.id };
+      },
     }),
-    [readOnly, block.id, onNavigatePage, setActiveBlock, renderEmbeddedDatabase]
+    [readOnly, block.id, onNavigatePage, setActiveBlock, renderEmbeddedDatabase, api]
   );
 
   const coverBackground = useMemo(() => {
