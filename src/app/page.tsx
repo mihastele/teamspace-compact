@@ -43,6 +43,7 @@ export default function HomePage() {
     createOrGetShareLink,
     updateShareLink,
     revokeShareLink,
+    syncShareLink,
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -215,8 +216,10 @@ export default function HomePage() {
                         : sharePath;
 
                     return (
-                      <div className={styles.appearancePopover} style={{ width: 280, padding: 12 }}>
-                        <div className={styles.appearanceSectionHeader}>Share via link</div>
+                      <div className={styles.appearancePopover} style={{ width: 300, padding: 14 }}>
+                        <div className={styles.appearanceSectionHeader} style={{ marginBottom: 6 }}>
+                          Share via link
+                        </div>
                         {!activeShare || !activeShare.enabled ? (
                           <button
                             className={styles.appearanceActionItem}
@@ -232,7 +235,7 @@ export default function HomePage() {
                             <span>Create public share link</span>
                           </button>
                         ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
                             <div style={{ display: "flex", gap: 6 }}>
                               <button
                                 className={`${styles.fontOptionBtn} ${activeShare.permission === "read" ? styles.fontOptionBtnActive : ""}`}
@@ -248,49 +251,80 @@ export default function HomePage() {
                               </button>
                             </div>
 
-                            <input
-                              readOnly
-                              value={shareUrl}
-                              onClick={(e) => (e.target as HTMLInputElement).select()}
-                              style={{
-                                fontSize: 12,
-                                padding: "5px 8px",
-                                borderRadius: 5,
-                                border: "1px solid var(--border-subtle)",
-                                background: "var(--bg-main)",
-                                color: "var(--text-primary)",
-                              }}
-                            />
-
-                            <div style={{ display: "flex", gap: 6 }}>
+                            <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                              <input
+                                readOnly
+                                value={shareUrl}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                                style={{
+                                  flex: 1,
+                                  fontSize: 12,
+                                  padding: "6px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid var(--border-subtle)",
+                                  background: "var(--bg-main)",
+                                  color: "var(--text-primary)",
+                                  minWidth: 0,
+                                }}
+                              />
                               <button
-                                className={styles.appearanceActionItem}
-                                style={{ flex: 1, justifyContent: "center", border: "1px solid var(--border-subtle)" }}
                                 onClick={() => {
+                                  syncShareLink(activeShare, activeBlock);
                                   if (typeof navigator !== "undefined" && navigator.clipboard) {
                                     void navigator.clipboard.writeText(shareUrl);
                                     setCopiedShare(true);
                                     setTimeout(() => setCopiedShare(false), 1500);
                                   }
                                 }}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  padding: "6px 12px",
+                                  borderRadius: 6,
+                                  background: "var(--accent-blue)",
+                                  color: "#fff",
+                                  border: "none",
+                                  fontSize: 12,
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  flexShrink: 0,
+                                }}
                               >
                                 {copiedShare ? <Check size={13} /> : <Copy size={13} />}
-                                <span>{copiedShare ? "Copied!" : "Copy link"}</span>
+                                <span>{copiedShare ? "Copied!" : "Copy"}</span>
                               </button>
-                              <a
-                                href={sharePath}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={styles.appearanceActionItem}
-                                style={{ border: "1px solid var(--border-subtle)", textDecoration: "none" }}
-                                title="Open shared link"
-                              >
-                                <ExternalLink size={13} />
-                              </a>
                             </div>
+
+                            <a
+                              href={sharePath}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                                padding: "7px 10px",
+                                fontSize: 12,
+                                fontWeight: 500,
+                                borderRadius: 6,
+                                border: "1px solid var(--border-subtle)",
+                                background: "var(--bg-secondary)",
+                                color: "var(--text-primary)",
+                                textDecoration: "none",
+                              }}
+                              title="Open shared page in a new tab"
+                            >
+                              <ExternalLink size={13} />
+                              <span>Open in new tab</span>
+                            </a>
+
+                            <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "2px 0" }} />
 
                             <button
                               className={`${styles.appearanceActionItem} ${styles.appearanceActionDanger}`}
+                              style={{ justifyContent: "center" }}
                               onClick={() => revokeShareLink(activeShare.token)}
                             >
                               <Trash2 size={13} />

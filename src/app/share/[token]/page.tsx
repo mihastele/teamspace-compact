@@ -74,6 +74,10 @@ export default function SharedPage() {
             typeof remoteData.document.icon === "string"
               ? remoteData.document.icon
               : "📄",
+          coverUrl:
+            typeof remoteData.document.coverUrl === "string"
+              ? remoteData.document.coverUrl
+              : null,
           content: (remoteData.document.content as Block["content"]) || {
             type: "doc",
             content: [{ type: "paragraph" }],

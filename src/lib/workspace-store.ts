@@ -162,6 +162,39 @@ function emitChange() {
   }
 }
 
+function syncShareLinkAsync(link: ShareLink, block?: Block) {
+  if (typeof window === "undefined" || typeof fetch !== "function") return;
+  const targetBlock = block || currentState.blocks[link.blockId];
+  void fetch(`/api/share/${encodeURIComponent(link.token)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspaceId: link.workspaceId,
+      blockId: link.blockId,
+      permission: link.permission,
+      enabled: link.enabled,
+      document: targetBlock
+        ? {
+            title: targetBlock.title,
+            icon: targetBlock.icon,
+            coverUrl: targetBlock.coverUrl,
+            content: targetBlock.content,
+            revision: targetBlock.revision,
+            createdAt: targetBlock.createdAt,
+            updatedAt: targetBlock.updatedAt,
+          }
+        : {},
+    }),
+  }).catch(() => {});
+}
+
+function revokeShareLinkAsync(token: string) {
+  if (typeof window === "undefined" || typeof fetch !== "function") return;
+  void fetch(`/api/share/${encodeURIComponent(token)}`, {
+    method: "DELETE",
+  }).catch(() => {});
+}
+
 export const workspaceStore = {
   getState(): WorkspaceState {
     return currentState;
@@ -374,6 +407,13 @@ export const workspaceStore = {
       },
     };
     emitChange();
+
+    const matchingLink = Object.values(currentState.shareLinks || {}).find(
+      (l) => l.blockId === id && l.enabled
+    );
+    if (matchingLink) {
+      syncShareLinkAsync(matchingLink, currentState.blocks[id]);
+    }
   },
 
   toggleFavorite(id: string) {
@@ -869,6 +909,10 @@ export const workspaceStore = {
   },
 
   // Share Links
+  syncShareLink(link: ShareLink, block?: Block) {
+    syncShareLinkAsync(link, block);
+  },
+
   createOrGetShareLink(
     blockId: string,
     permission: SharePermission = "read"
@@ -889,8 +933,10 @@ export const workspaceStore = {
           shareLinks: { ...existingMap, [existing.token]: updated },
         };
         emitChange();
+        syncShareLinkAsync(updated);
         return updated;
       }
+      syncShareLinkAsync(existing);
       return existing;
     }
 
@@ -916,6 +962,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    syncShareLinkAsync(link);
     return link;
   },
 
@@ -923,18 +970,20 @@ export const workspaceStore = {
     const existingMap = currentState.shareLinks || {};
     const existing = existingMap[token];
     if (!existing) return;
+    const updated = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now(),
+    };
     currentState = {
       ...currentState,
       shareLinks: {
         ...existingMap,
-        [token]: {
-          ...existing,
-          ...updates,
-          updatedAt: Date.now(),
-        },
+        [token]: updated,
       },
     };
     emitChange();
+    syncShareLinkAsync(updated);
   },
 
   revokeShareLink(token: string) {
@@ -946,6 +995,7 @@ export const workspaceStore = {
       shareLinks: existingMap,
     };
     emitChange();
+    revokeShareLinkAsync(token);
   },
 
   setWorkspace(workspace: Workspace) {
@@ -1153,6 +1203,7 @@ export function useWorkspace() {
     createOrGetShareLink: workspaceStore.createOrGetShareLink,
     updateShareLink: workspaceStore.updateShareLink,
     revokeShareLink: workspaceStore.revokeShareLink,
+    syncShareLink: workspaceStore.syncShareLink,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,

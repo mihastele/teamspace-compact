@@ -1141,3 +1141,16 @@
 - **Database Cross-Page Relations & Page Templates**: Added `targetDatabaseId` (`__any__` workspace pages or specific database) when creating `relation` properties; added `DatabaseTemplatesModal.tsx` and `workspaceStore` template instantiation resolving `$today` (current `YYYY-MM-DD`) and `$this` (newly created page ID) in default properties and embedded `databaseView` filter rules.
 - **Page Sharing via Link**: Added `ShareLink` state/actions (`read` vs `edit` permissions), topbar Share popover in `src/app/page.tsx`, public `/share/[token]` route (`src/app/share/[token]/page.tsx`), `GET/PATCH /api/share/[token]` API route, and `migrations/021-share-links.sql` (`public.teamspace_share_links` with RLS enabled and registered in `scripts/migrate-supabase.mjs`).
 - **Verification**: `npm run typecheck`, `npm run lint` (0 errors, 0 warnings), `npm test` (257/257 including 2 new tests in `tests/workspace-templates-sharing.test.cjs` and `tests/migration-chain.test.mjs`), and `npm run build` passed. Verified all 9 features interactively in the browser at `http://127.0.0.1:3107` (including `/2 columns` side-by-side flex layout and continuous slash command typing). OPEN GAP: `migrations/021-share-links.sql` and `/api/share/[token]` Supabase persistence are not yet verified against a live Supabase container (`npm run test:supabase` not rerun for 021).
+
+### 2026-11-13 - Fixed Share Popover UI & Incognito / Remote Link Sharing
+
+- **Share Popover UI Redesign**: Fixed deformed/awkward button row in `src/app/page.tsx`. Replaced the split half-width buttons with an input group (`[ URL input ] [ Copy ]`) paired with a dedicated full-width `Open in new tab` action button displaying icon and text, plus a subtle divider above `Disable & revoke link`.
+- **Public Share Link Server Persistence & Incognito Support**:
+  - Root cause: share links and page document snapshots previously existed only in browser client `localStorage`, causing unauthenticated or incognito visitors to receive a 404 "This shared link is unavailable".
+  - Created migration `migrations/022-share-links-data.sql` to add `data jsonb not null default '{}'::jsonb` to `public.teamspace_share_links`, dropped rigid workspace document foreign key constraint, and granted `service_role` access; registered `022` in `scripts/migrate-supabase.mjs`.
+  - Implemented full `PUT`, `GET`, `PATCH`, and `DELETE` handlers in `src/app/api/share/[token]/route.ts` with in-memory caching for zero-latency local fallback and Supabase table persistence.
+  - Wired `workspace-store.ts` (`createOrGetShareLink`, `updateShareLink`, `revokeShareLink`, `updateBlock`) and `src/app/page.tsx` to automatically push document snapshots to `/api/share/[token]`.
+- **Verification**:
+  - `npm run typecheck` (0 errors), `npm run lint` (0 warnings), `npm test` (257/257 pass).
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
+  - Tested unauthenticated incognito access via browser subagent at `http://localhost:3100/share/[token]`: page rendered title, icon, content, and `Read-only` badge with 200 OK (evidence screenshot: `browser_evidence/dde4882f-3f52-4d3d-b674-f531d651bb1e/final_step_12.png`).

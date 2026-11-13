@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const literal = value => "'" + value.replace(/'/g, "''") + "'";
 // Ordered application migrations. `021-teamspace-unified-schema` was retired
 // unapplied because it re-created `public.teamspace_blocks`; see the ledger doc.
-export const applicationMigrations = ['007-supabase-backend.sql', '008-workspace-administration.sql', '009-board-properties.sql', '012-canonical-projects-fields.sql', '013-ticket-queries-views.sql', '014-agent-queue.sql', '015-task-pages-templates.sql', '016-independent-databases.sql', '017-block-containment.sql', '018-database-entity-relations.sql', '019-entity-database-relations.sql', '020-entity-relation-backlinks.sql', '021-share-links.sql'];
+export const applicationMigrations = ['007-supabase-backend.sql', '008-workspace-administration.sql', '009-board-properties.sql', '012-canonical-projects-fields.sql', '013-ticket-queries-views.sql', '014-agent-queue.sql', '015-task-pages-templates.sql', '016-independent-databases.sql', '017-block-containment.sql', '018-database-entity-relations.sql', '019-entity-database-relations.sql', '020-entity-relation-backlinks.sql', '021-share-links.sql', '022-share-links-data.sql'];
 export function migrationSQL() {
   let sql = "\\set ON_ERROR_STOP on\nselect pg_advisory_lock(71649328);\n";
   sql += readFileSync(resolve(root, 'migrations/000-supabase-migration-ledger.sql'), 'utf8') + '\n';
