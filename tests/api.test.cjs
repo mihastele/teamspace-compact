@@ -1183,7 +1183,9 @@ test("video attachments are accepted, supported for streaming and bound to block
   const attachmentId = created.data.attachmentId;
   const ref = db.doc(`${prefix}/attachments/${attachmentId}`);
   const pending = (await ref.get()).data();
-  files.objects.set(pending.stagingPath, { bytes: Buffer.alloc(2048), contentType: "video/mp4" });
+  const videoBytes = Buffer.alloc(2048);
+  videoBytes.write("....ftypisom", 0, "ascii");
+  files.objects.set(pending.stagingPath, { bytes: videoBytes, contentType: "video/mp4" });
   const completed = await api(
     "member",
     "POST",

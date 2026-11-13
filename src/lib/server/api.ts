@@ -1240,8 +1240,12 @@ function validMagic(bytes: Buffer, contentType: string) {
       (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) ||
       bytes.toString("ascii", 0, 3) === "ID3"
     );
-  if (contentType === "audio/mp4")
-    return bytes.toString("ascii", 4, 8) === "ftyp";
+  if (contentType === "audio/mp4" || contentType === "video/mp4" || contentType === "video/quicktime")
+    return bytes.toString("ascii", 4, 8) === "ftyp" || bytes.toString("ascii", 4, 8) === "moov";
+  if (contentType === "video/webm")
+    return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (contentType === "video/ogg")
+    return bytes.toString("ascii", 0, 4) === "OggS";
   if (
     contentType === "application/zip" ||
     contentType.startsWith("application/vnd.openxmlformats-officedocument.")
@@ -1505,9 +1509,9 @@ async function attachmentOperation(
   const thumbnailType =
     value.contentType === "image/png" ? "image/png" : "image/webp";
   const thumbnailPath =
-    value.contentType === "application/pdf"
-      ? null
-      : `${value.storagePath}.thumbnail.${thumbnailType === "image/png" ? "png" : "webp"}`;
+    ["image/jpeg", "image/png", "image/webp"].includes(value.contentType)
+      ? `${value.storagePath}.thumbnail.${thumbnailType === "image/png" ? "png" : "webp"}`
+      : null;
   if (thumbnailPath) {
     try {
       const image = sharp(bytes, {

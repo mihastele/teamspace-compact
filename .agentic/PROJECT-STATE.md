@@ -1332,3 +1332,27 @@
   - `npm run typecheck`: 0 errors.
   - `npm run lint`: 0 errors, 0 warnings.
   - Migration 024 applied and verified in staging stack. Staging containers updated on `http://localhost:3100`.
+
+### 2026-11-13 — Resolution of Video Attachment Validation in `tests/api.test.cjs`
+
+- **Diagnosis (`tests/api.test.cjs:1165`)**:
+  - The test `"video attachments are accepted, supported for streaming and bound to block pages"` failed with `400 !== 200` on attachment completion (`POST .../complete`).
+  - Two underlying issues identified:
+    1. `validMagic` in `src/lib/server/api.ts` did not validate video magic headers (`ftyp` / `moov` for MP4/QuickTime, EBML for WebM, `OggS` for OGG), returning false and triggering a 400 rejection.
+    2. Attachment completion attempted to generate a Sharp image thumbnail for any attachment that was not `application/pdf`, causing Sharp decoding to fail on non-image files (like video/mp4) and throwing `400 invalid_file`.
+- **Fixes**:
+  - In `src/lib/server/api.ts`:
+    - Updated `validMagic` to validate MP4 (`ftyp`/`moov`), WebM (EBML header `0x1a, 0x45, 0xdf, 0xa3`), and OGG (`OggS`).
+    - Guarded `thumbnailPath` in `attachmentOperation` completion to only generate thumbnails for image MIME types (`["image/jpeg", "image/png", "image/webp"].includes(value.contentType)`).
+  - In `tests/api.test.cjs`:
+    - Provided valid `ftyp` magic bytes (`Buffer.alloc(2048)` with `"....ftypisom"`) for the mock video payload.
+  - In `firebase.json`:
+    - Changed firestore emulator port from 8080 to 8088 to avoid port collision with local Docker containers.
+- **Verification**:
+  - `npm run test:rules`: 70/70 tests pass with 0 failures.
+  - `npm run test:api`: 70/70 tests pass with 0 failures.
+  - `npm test`: 264/264 unit tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm run test:deployment`: 1/1 passes.
+  - `npm run test:http`: 1/1 passes.
