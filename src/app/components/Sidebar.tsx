@@ -116,7 +116,7 @@ export default function Sidebar({
     setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const rootBlockIds = (childrenIndex["root"] || []).filter(
+  const rootBlockIds = ((childrenIndex && childrenIndex["root"]) || []).filter(
     (id) => !blocks[id]?.isArchived
   );
   const favoriteBlockIds = Object.keys(blocks).filter(
@@ -184,7 +184,7 @@ export default function Sidebar({
     const block = blocks[blockId];
     if (!block || block.isArchived) return null;
 
-    const childIds = (childrenIndex[blockId] || []).filter(
+    const childIds = ((childrenIndex && childrenIndex[blockId]) || []).filter(
       (cid) => !blocks[cid]?.isArchived
     );
     const hasChildren = childIds.length > 0;
@@ -292,8 +292,8 @@ export default function Sidebar({
     );
   }
 
-  const currentWorkspaceName = api?.workspace?.name || workspace.name;
-  const workspacesList = api?.workspaces || [{ id: workspace.id, name: workspace.name, ownerId: workspace.ownerId }];
+  const currentWorkspaceName = api?.workspace?.name || workspace?.name || "Workspace";
+  const workspacesList = api?.workspaces || (workspace ? [{ id: workspace.id, name: workspace.name, ownerId: workspace.ownerId }] : []);
   const currentUser = api?.user;
 
   return (
@@ -312,7 +312,7 @@ export default function Sidebar({
           onClick={() => setShowWorkspaceMenu(!showWorkspaceMenu)}
           title="Switch workspace"
         >
-          <span className={styles.workspaceIcon}>{workspace.icon || "🚀"}</span>
+          <span className={styles.workspaceIcon}>{workspace?.icon || "🚀"}</span>
           <span className={styles.workspaceName}>{currentWorkspaceName}</span>
           <ChevronDown size={14} className={styles.workspaceChevron} />
         </div>

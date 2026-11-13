@@ -1356,3 +1356,33 @@
   - `npm run lint`: 0 errors, 0 warnings.
   - `npm run test:deployment`: 1/1 passes.
   - `npm run test:http`: 1/1 passes.
+
+### 2026-11-13 — Resolution of Client Hydration/Crash ("This page couldn’t load") & Error Boundary Addition
+
+- **Root Cause Analysis ("This page couldn’t load / Reload to try again, or go back.")**:
+  - The message is the default fallback UI of Next.js App Router (`DefaultGlobalError`), triggered when an unhandled runtime error bubbles out of the React client component tree without an `error.tsx` boundary.
+  - Three distinct triggers identified:
+    1. **Missing State Fields during Hydration (`src/lib/workspace-store.ts`)**: `buildInitialState()` and `BroadcastChannel` reload did not provide default empty objects for `activeViewIdByDatabase`, `childrenIndex`, `properties`, and `views` when restoring existing state from `localStorage`. In `DatabaseView.tsx` line 96, accessing `activeViewIdByDatabase[block.id]` threw `TypeError: Cannot read properties of undefined` when restoring a workspace containing databases.
+    2. **Unsafe Type Coercion in Media Components (`src/lib/media-store.ts`, `src/app/components/MediaNodes.tsx`)**: In `useMediaUrl`, `resolveMediaUrl`, and `MediaNodes.tsx`, `url`, `src`, and `attachmentId` attributes were assumed to be strings. If non-string values or empty strings were present, calling `.startsWith()` threw `TypeError: url.startsWith is not a function`.
+    3. **Missing `safeUUID` Fallback (`src/lib/collaboration-model.ts`, `src/lib/use-page-collaboration.ts`)**: In environments or non-secure contexts where `crypto.randomUUID()` is undefined or restricted, direct calls threw a runtime exception.
+- **Fixes Applied**:
+  - **Error Boundaries (`src/app/error.tsx`, `src/app/global-error.tsx`)**:
+    - Created React Error Boundaries catching unhandled client and root exceptions, logging the detailed error to `console.error`, and displaying an informative recovery card with "Try again" and "Reload page" buttons instead of Next.js's uninformative generic fallback.
+  - **State Normalization & Safe Restoring (`src/lib/workspace-store.ts`)**:
+    - Ensured `buildInitialState()` and `syncChannel.onmessage` always guarantee non-null definitions for `workspace`, `blocks`, `childrenIndex`, `properties`, `views`, `templates`, `shareLinks`, and `activeViewIdByDatabase`.
+    - Added automatic reconstruction of `childrenIndex` if missing or malformed in `localStorage`.
+    - Added safe initialization of `currentState.activeViewIdByDatabase` in `unpackDatabaseBlock`.
+  - **Defensive Accessors (`src/app/components/DatabaseView.tsx`, `src/app/components/Sidebar.tsx`, `src/app/page.tsx`)**:
+    - Guarded `activeViewIdByDatabase?.[block.id]`, `childrenIndex?.["root"]`, and `childrenIndex?.[blockId]`.
+    - Guarded `workspace?.name`, `workspace?.icon`, and `workspace?.id` in `Sidebar.tsx`.
+    - Added cycle/depth guard (`visitedBreadcrumbs.size < 50`) in `page.tsx` breadcrumb resolution.
+  - **Strict String Checking in Media Store (`src/lib/media-store.ts`, `src/app/components/MediaNodes.tsx`)**:
+    - Sanitized `useMediaUrl`, `resolveMediaUrl`, and `deleteMediaFile` to require `typeof url === "string"` and non-empty trimmed strings before calling `.startsWith()`.
+    - Added `safeUUID()` fallback implementation in `src/lib/collaboration-model.ts` and used it across collaborative document generation.
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass with 0 failures.
+  - `npm run test:api`: 70/70 API tests pass with 0 failures.
+  - `npm run test:supabase`: 77/77 Supabase integration tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.

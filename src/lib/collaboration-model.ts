@@ -8,6 +8,17 @@ export const REMOTE_ORIGIN = Symbol("remote-server");
 export const MAX_STATE_BYTES = 350000;
 export const MAX_UPDATE_BYTES = 64000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function safeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 const TYPES = new Set([
   "paragraph",
   "heading",
@@ -124,7 +135,7 @@ export function initializeDocument(content: NoteContent): Y.Doc {
   let rank: string | null = null;
   doc.transact(() => {
     for (const block of content.blocks) {
-      const id = block.id ?? crypto.randomUUID();
+      const id = block.id ?? safeUUID();
       if (!UUID.test(id) || blocks.has(id))
         throw new Error("Invalid or duplicate block identity.");
       rank = rankBetween(rank, null, id);
@@ -228,7 +239,7 @@ function applyEditorIntent(
 ): void {
   if (next.blocks.length > 1000) throw new Error("Too many blocks.");
   // IDs assigned here are immediately reflected in the caller's optimistic draft.
-  for (const block of next.blocks) block.id ??= crypto.randomUUID();
+  for (const block of next.blocks) block.id ??= safeUUID();
   const nextIds = next.blocks.map((block) => block.id!);
   if (
     new Set(nextIds).size !== nextIds.length ||
@@ -522,7 +533,7 @@ function extractText(nodes?: TiptapNode[]): string {
 
 export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   if (!doc || typeof doc !== "object") {
-    return { blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }] };
+    return { blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] };
   }
   const tiptap = doc as TiptapDoc;
   const blocks: NoteBlock[] = [];
@@ -530,7 +541,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   const rawNodes = Array.isArray(tiptap.content) ? tiptap.content : [];
 
   for (const node of rawNodes) {
-    const id = (node.attrs?.blockId as string) || crypto.randomUUID();
+    const id = (node.attrs?.blockId as string) || safeUUID();
 
     if (node.type === "heading") {
       const level = Number(node.attrs?.level) || 1;
@@ -544,7 +555,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: (item.attrs?.blockId as string) || safeUUID(),
           type: "bullet",
           text: extractText(item.content),
         });
@@ -553,7 +564,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: (item.attrs?.blockId as string) || safeUUID(),
           type: "ordered",
           text: extractText(item.content),
         });
@@ -562,7 +573,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: (item.attrs?.blockId as string) || safeUUID(),
           type: "todo",
           checked: Boolean(item.attrs?.checked),
           text: extractText(item.content),
@@ -656,7 +667,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   }
 
   if (blocks.length === 0) {
-    blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
+    blocks.push({ id: safeUUID(), type: "paragraph", text: "" });
   }
 
   return { blocks };
@@ -666,7 +677,7 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
   if (!content || !Array.isArray(content.blocks) || content.blocks.length === 0) {
     return {
       type: "doc",
-      content: [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+      content: [{ type: "paragraph", attrs: { blockId: safeUUID() }, content: [] }],
     };
   }
 
@@ -683,7 +694,7 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
   }
 
   for (const block of content.blocks) {
-    const blockId = block.id || crypto.randomUUID();
+    const blockId = block.id || safeUUID();
     const textNode = block.text ? [{ type: "text", text: block.text }] : [];
 
     if (block.type === "bullet") {
@@ -813,6 +824,6 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
 
   return {
     type: "doc",
-    content: nodes.length ? nodes : [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+    content: nodes.length ? nodes : [{ type: "paragraph", attrs: { blockId: safeUUID() }, content: [] }],
   };
 }

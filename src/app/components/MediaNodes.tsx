@@ -37,16 +37,16 @@ export function formatBytes(bytes?: number): string {
 
 function ImageBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const { url, attachmentId, originalName, caption, width, src } = node.attrs;
-  const rawUrl = url || src;
+  const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
   const resolvedUrl = useMediaUrl(rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
   const [captionText, setCaptionText] = useState(caption || "");
   const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
 
   useEffect(() => {
-    if (rawUrl && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
+    if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
     let active = true;
-    if (attachmentId?.startsWith("local-")) {
+    if (typeof attachmentId === "string" && attachmentId.startsWith("local-")) {
       getLocalMedia(attachmentId).then((blobUrl) => {
         if (active && blobUrl) setLocalBlobUrl(blobUrl);
       });
@@ -162,15 +162,15 @@ export const ImageBlockExtension = Node.create({
 
 function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
   const { url, attachmentId, originalName, contentType, bytes, src } = node.attrs;
-  const rawUrl = url || src;
+  const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
   const resolvedUrl = useMediaUrl(rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
   const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
 
   useEffect(() => {
-    if (rawUrl && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
+    if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
     let active = true;
-    if (attachmentId?.startsWith("local-")) {
+    if (typeof attachmentId === "string" && attachmentId.startsWith("local-")) {
       getLocalMedia(attachmentId).then((blobUrl) => {
         if (active && blobUrl) setLocalBlobUrl(blobUrl);
       });
@@ -280,7 +280,7 @@ function formatTimer(seconds: number): string {
 
 function AudioBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const { url, attachmentId, originalName, durationSeconds, transcript, summary, transcriptionStatus, src } = node.attrs;
-  const rawUrl = url || src;
+  const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
   const resolvedUrl = useMediaUrl(rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
   const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
@@ -305,9 +305,9 @@ function AudioBlockComponent({ node, updateAttributes, deleteNode }: NodeViewPro
   const [isAiLoading, setIsAiLoading] = useState(transcriptionStatus === "transcribing");
 
   useEffect(() => {
-    if (rawUrl && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
+    if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
     let active = true;
-    if (attachmentId?.startsWith("local-")) {
+    if (typeof attachmentId === "string" && attachmentId.startsWith("local-")) {
       getLocalMedia(attachmentId).then((blobUrl) => {
         if (active && blobUrl) setLocalBlobUrl(blobUrl);
       });

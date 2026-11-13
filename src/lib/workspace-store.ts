@@ -125,6 +125,12 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
             currentState = {
               ...currentState,
               ...parsed,
+              childrenIndex: parsed.childrenIndex || currentState.childrenIndex || { root: [] },
+              properties: parsed.properties || currentState.properties || {},
+              views: parsed.views || currentState.views || {},
+              templates: parsed.templates || currentState.templates || {},
+              shareLinks: parsed.shareLinks || currentState.shareLinks || {},
+              activeViewIdByDatabase: parsed.activeViewIdByDatabase || currentState.activeViewIdByDatabase || {},
             };
             for (const listener of listeners) {
               listener();
@@ -186,6 +192,9 @@ function unpackDatabaseBlock(
   const customViews = dbBlock.properties?.databaseViews as DatabaseView[] | undefined;
   if (Array.isArray(customViews)) {
     targetViews[dbBlock.id] = customViews;
+    if (!currentState.activeViewIdByDatabase) {
+      currentState.activeViewIdByDatabase = {};
+    }
     if (!currentState.activeViewIdByDatabase[dbBlock.id] && customViews[0]) {
       currentState.activeViewIdByDatabase[dbBlock.id] = customViews[0].id;
     }
@@ -366,10 +375,40 @@ function buildInitialState(): WorkspaceState {
         }
       }
       const ws = parsed as Partial<WorkspaceState>;
+      const blocks = (ws.blocks as Record<string, Block>) || {};
+      const workspace = (ws.workspace as Workspace) || createDefaultWorkspace();
+
+      let childrenIndex = ws.childrenIndex;
+      if (!childrenIndex || typeof childrenIndex !== "object" || !childrenIndex["root"]) {
+        childrenIndex = { root: [] };
+        for (const b of Object.values(blocks)) {
+          if (!b || b.isArchived) continue;
+          const parentKey = b.parentId || "root";
+          if (!childrenIndex[parentKey]) childrenIndex[parentKey] = [];
+          if (!childrenIndex[parentKey].includes(b.id)) {
+            childrenIndex[parentKey].push(b.id);
+          }
+        }
+      }
+
+      const activeViewIdByDatabase = ws.activeViewIdByDatabase || {};
+      const properties = ws.properties || {};
+      const views = ws.views || {};
+
       return {
-        ...(ws as WorkspaceState),
+        workspace,
+        blocks,
+        childrenIndex,
+        properties,
+        views,
         templates: ws.templates || {},
         shareLinks: ws.shareLinks || {},
+        activeBlockId: ws.activeBlockId ?? (childrenIndex["root"]?.[0] || null),
+        sidePeekBlockId: ws.sidePeekBlockId ?? null,
+        activeViewIdByDatabase,
+        searchQuery: ws.searchQuery || "",
+        theme: ws.theme === "dark" ? "dark" : "light",
+        sidebarCollapsed: Boolean(ws.sidebarCollapsed),
       };
     }
   }

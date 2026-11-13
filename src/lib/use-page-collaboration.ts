@@ -16,6 +16,7 @@ import {
   tiptapDocToNoteContent,
   fromBase64,
   REMOTE_ORIGIN,
+  safeUUID,
 } from "./collaboration-model";
 import { useTeamspace, type DocumentPresence } from "./client";
 import * as Y from "yjs";
@@ -75,7 +76,7 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
       revision: block.revision || 1,
       collab: {
         version: 1,
-        generation: crypto.randomUUID(),
+        generation: safeUUID(),
         state: encodeDocument(initialDoc),
         sequence: 0,
       },
@@ -149,7 +150,7 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
     });
 
     // Cross-tab / Server presence
-    const sessionId = crypto.randomUUID();
+    const sessionId = safeUUID();
     let presenceCleanup: (() => void) | undefined;
 
     if (isServerCollab) {

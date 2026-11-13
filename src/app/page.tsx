@@ -182,8 +182,10 @@ export default function HomePage() {
 
   // Build breadcrumbs for nested pages
   const breadcrumbs: { id: string; title: string; icon?: string | null }[] = [];
+  const visitedBreadcrumbs = new Set<string>();
   let curr = activeBlock;
-  while (curr) {
+  while (curr && !visitedBreadcrumbs.has(curr.id) && visitedBreadcrumbs.size < 50) {
+    visitedBreadcrumbs.add(curr.id);
     breadcrumbs.unshift({ id: curr.id, title: curr.title || "Untitled", icon: curr.icon });
     curr = curr.parentId ? blocks[curr.parentId] : null;
   }

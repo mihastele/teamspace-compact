@@ -92,7 +92,7 @@ export async function saveMediaFile(file: File | Blob, fileName?: string): Promi
 }
 
 export async function deleteMediaFile(urlOrId: string | null | undefined): Promise<void> {
-  if (!urlOrId) return;
+  if (typeof urlOrId !== "string" || !urlOrId.trim()) return;
   const id = isIdbMediaUrl(urlOrId) ? extractMediaId(urlOrId) : urlOrId;
   objectUrlCache.delete(id);
   objectUrlCache.delete(urlOrId);
@@ -112,13 +112,14 @@ export async function deleteMediaFile(urlOrId: string | null | undefined): Promi
 }
 
 export async function resolveMediaUrl(url: string | null | undefined): Promise<string | null> {
-  if (!url) return null;
+  if (typeof url !== "string" || !url.trim()) return null;
+  const cleanUrl = url.trim();
 
-  const cached = objectUrlCache.get(url);
+  const cached = objectUrlCache.get(cleanUrl);
   if (cached) return cached;
 
-  if (isIdbMediaUrl(url)) {
-    const id = extractMediaId(url);
+  if (isIdbMediaUrl(cleanUrl)) {
+    const id = extractMediaId(cleanUrl);
     const cachedById = objectUrlCache.get(id);
     if (cachedById) return cachedById;
 
@@ -149,19 +150,19 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
     return null;
   }
 
-  if (url.startsWith("local-")) {
-    const local = await getLocalMedia(url);
+  if (cleanUrl.startsWith("local-")) {
+    const local = await getLocalMedia(cleanUrl);
     if (local) {
-      objectUrlCache.set(url, local);
+      objectUrlCache.set(cleanUrl, local);
       return local;
     }
   }
 
   // Server attachment endpoint (e.g. /api/workspaces/.../attachments/.../inline)
-  if (url.startsWith("/api/") && url.includes("/attachments/")) {
+  if (cleanUrl.startsWith("/api/") && cleanUrl.includes("/attachments/")) {
     try {
       const token = await browserAccessToken();
-      const res = await fetch(url, {
+      const res = await fetch(cleanUrl, {
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -170,12 +171,12 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.url && typeof data.url === "string") {
-          objectUrlCache.set(url, data.url);
+          objectUrlCache.set(cleanUrl, data.url);
 
           // If this is an image attachment, cache the blob for offline usage
-          const match = /\/attachments\/([^/]+)/.exec(url);
+          const match = /\/attachments\/([^/]+)/.exec(cleanUrl);
           const attachmentId = match?.[1];
-          if (attachmentId && (url.includes("image") || data.url.includes(".png") || data.url.includes(".jpg") || data.url.includes(".webp"))) {
+          if (attachmentId && (cleanUrl.includes("image") || data.url.includes(".png") || data.url.includes(".jpg") || data.url.includes(".webp"))) {
             void fetch(data.url)
               .then((r) => r.blob())
               .then((blob) => {
@@ -189,19 +190,19 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
       }
     } catch {
       // Offline fallback: check if local cache has this image
-      const match = /\/attachments\/([^/]+)/.exec(url);
+      const match = /\/attachments\/([^/]+)/.exec(cleanUrl);
       const attachmentId = match?.[1];
       if (attachmentId) {
         const local = await getLocalMedia(attachmentId);
         if (local) {
-          objectUrlCache.set(url, local);
+          objectUrlCache.set(cleanUrl, local);
           return local;
         }
       }
     }
   }
 
-  return url;
+  return cleanUrl;
 }
 
 export function useMediaUrl(url: string | null | undefined): string | null {
@@ -210,30 +211,32 @@ export function useMediaUrl(url: string | null | undefined): string | null {
     resolved: string | null;
   } | null>(null);
 
+  const safeUrl = typeof url === "string" && url.trim().length > 0 ? url.trim() : null;
+
   const needsAsyncLookup =
-    Boolean(url) &&
-    (isIdbMediaUrl(url) ||
-      url!.startsWith("local-") ||
-      (url!.startsWith("/api/") && url!.includes("/attachments/"))) &&
-    !objectUrlCache.has(url!) &&
-    !(isIdbMediaUrl(url) && objectUrlCache.has(extractMediaId(url)));
+    Boolean(safeUrl) &&
+    (isIdbMediaUrl(safeUrl) ||
+      safeUrl!.startsWith("local-") ||
+      (safeUrl!.startsWith("/api/") && safeUrl!.includes("/attachments/"))) &&
+    !objectUrlCache.has(safeUrl!) &&
+    !(isIdbMediaUrl(safeUrl) && objectUrlCache.has(extractMediaId(safeUrl)));
 
   useEffect(() => {
-    if (!needsAsyncLookup || !url) return;
+    if (!needsAsyncLookup || !safeUrl) return;
     let active = true;
-    void resolveMediaUrl(url).then((nextUrl) => {
-      if (active) setAsyncResolved({ source: url, resolved: nextUrl });
+    void resolveMediaUrl(safeUrl).then((nextUrl) => {
+      if (active) setAsyncResolved({ source: safeUrl, resolved: nextUrl });
     });
     return () => {
       active = false;
     };
-  }, [url, needsAsyncLookup]);
+  }, [safeUrl, needsAsyncLookup]);
 
-  if (!url) return null;
-  const cached = objectUrlCache.get(url) || (isIdbMediaUrl(url) ? objectUrlCache.get(extractMediaId(url)) : null);
+  if (!safeUrl) return null;
+  const cached = objectUrlCache.get(safeUrl) || (isIdbMediaUrl(safeUrl) ? objectUrlCache.get(extractMediaId(safeUrl)) : null);
   if (cached) return cached;
-  if (asyncResolved && asyncResolved.source === url) return asyncResolved.resolved;
-  if (!isIdbMediaUrl(url) && !url.startsWith("local-") && !url.startsWith("/api/")) return url;
+  if (asyncResolved && asyncResolved.source === safeUrl) return asyncResolved.resolved;
+  if (!isIdbMediaUrl(safeUrl) && !safeUrl.startsWith("local-") && !safeUrl.startsWith("/api/")) return safeUrl;
   return null;
 }
 

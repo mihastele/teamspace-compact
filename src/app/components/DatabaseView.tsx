@@ -93,14 +93,14 @@ export default function DatabaseView({
   const [localViewId, setLocalViewId] = useState<string | undefined>(initialViewId);
   const activeViewId = embedded
     ? localViewId || dbViews[0]?.id
-    : activeViewIdByDatabase[block.id] || dbViews[0]?.id;
+    : (activeViewIdByDatabase && activeViewIdByDatabase[block.id]) || dbViews[0]?.id;
   const currentView = dbViews.find((v) => v.id === activeViewId) || dbViews[0];
   const allDatabases = useMemo(
     () => Object.values(blocks).filter((b) => b.type === "database" && !b.isArchived),
     [blocks]
   );
 
-  const rowIds = (childrenIndex[block.id] || []).filter(
+  const rowIds = ((childrenIndex && childrenIndex[block.id]) || []).filter(
     (id) => !blocks[id]?.isArchived
   );
   const rows = rowIds.map((id) => blocks[id]).filter(Boolean);
