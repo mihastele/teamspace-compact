@@ -1168,3 +1168,4 @@
 - **Verification**:
   - `npm run typecheck` (0 errors), `npm run lint` (0 warnings), `npm test` (257/257 pass), `npm run build` passed.
   - Browser QA verified on mobile viewport (390px x 844px) at `http://localhost:3100/`: no sidebar strip on left, content blocks span ~85% of screen width with minimal 14px edge padding.
+  - Fixed hardcoded migration count assertion in `tests/supabase-integration.test.cjs:335` to dynamically assert `String(applicationMigrations.length)` (14 migrations with `021-share-links.sql` and `022-share-links-data.sql`). Full Supabase integration suite passed: `npm run test:supabase` (77/77 pass).

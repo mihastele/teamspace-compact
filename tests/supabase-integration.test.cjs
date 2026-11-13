@@ -319,7 +319,7 @@ test('custom field definitions retain member-only RLS reads and SDK write denial
 });
 
 test('migration runner applies clean schemas once, guards checksums and keeps bookkeeping private',async()=>{
-  const {migrationSQL}=await import('../scripts/migrate-supabase.mjs');
+  const {migrationSQL, applicationMigrations}=await import('../scripts/migrate-supabase.mjs');
   await sql('create database teamspace_migration_test;');
   const query=source=>command(['exec','-i',container,'psql','-U','postgres','-d','teamspace_migration_test','-qAt','-v','ON_ERROR_STOP=1'],source);
   await query(`create schema auth; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
@@ -332,7 +332,7 @@ test('migration runner applies clean schemas once, guards checksums and keeps bo
   assert.equal(await query("select to_regprocedure('public.teamspace_registered_account_id(text)') is null;"),'t');
   await Promise.all([query(script),query(script)]);
   await query(script);
-  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),'12');
+  assert.equal(await query('select count(*) from public.teamspace_schema_migrations;'),String(applicationMigrations.length));
   assert.equal(await query("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state','teamspace_schema_migrations');"),'t');
   await assert.rejects(query('set role authenticated; select * from public.teamspace_schema_migrations;'),/permission denied/);
   await assert.rejects(query('set role service_role; select * from public.teamspace_schema_migrations;'),/permission denied/);
