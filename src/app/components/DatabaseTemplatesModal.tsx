@@ -4,7 +4,17 @@ import React, { useState } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
 import type { Block, DatabaseProperty, DatabaseTemplate } from "@/lib/model";
 import TeamspaceEditor from "./TeamspaceEditor";
-import { Plus, Trash2, Edit2, Star, Play, X, ArrowLeft } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Star,
+  Play,
+  X,
+  ArrowLeft,
+  Calendar,
+  Sparkles,
+} from "lucide-react";
 import styles from "./DatabaseTemplatesModal.module.css";
 
 export default function DatabaseTemplatesModal({
@@ -46,7 +56,7 @@ export default function DatabaseTemplatesModal({
       parentId: database.id,
       type: "page",
       title: tpl.name,
-      icon: tpl.icon || "📄",
+      icon: tpl.icon || null,
       content: tpl.content || { type: "doc", content: [{ type: "paragraph" }] },
       position: "0",
       revision: 1,
@@ -60,7 +70,8 @@ export default function DatabaseTemplatesModal({
 
     return (
       <>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* Navigation row and help tip */}
+        <div className={styles.editorNavRow}>
           <button
             type="button"
             className={styles.btn}
@@ -69,85 +80,115 @@ export default function DatabaseTemplatesModal({
             <ArrowLeft size={13} />
             <span>All templates</span>
           </button>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Tip: Use <code>$today</code> for dates or embed a Database View filtered by <code>$this</code>
-          </span>
+          <div className={styles.tipBanner}>
+            <Sparkles size={13} color="var(--accent-blue)" />
+            <span>
+              Dynamic values: use <span className={styles.tipCode}>$today</span> for creation date or filter embedded views by <span className={styles.tipCode}>$this</span>
+            </span>
+          </div>
         </div>
 
-        <div className={styles.propsBox}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
-            Default Properties
-          </div>
-          {editableProps.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No custom properties</div>
-          ) : (
-            editableProps.map((prop) => {
-              const val = tpl.defaultProperties?.[prop.id];
-              const setVal = (nextVal: unknown) => {
-                updateDatabaseTemplate(database.id, tpl.id, {
-                  defaultProperties: {
-                    ...(tpl.defaultProperties || {}),
-                    [prop.id]: nextVal,
-                  },
-                });
-              };
+        {/* Default Properties Section */}
+        {editableProps.length > 0 && (
+          <div className={styles.propsSection}>
+            <div className={styles.propsSectionHeader}>Default Property Values</div>
+            <div className={styles.propsGrid}>
+              {editableProps.map((prop) => {
+                const val = tpl.defaultProperties?.[prop.id];
+                const setVal = (nextVal: unknown) => {
+                  updateDatabaseTemplate(database.id, tpl.id, {
+                    defaultProperties: {
+                      ...(tpl.defaultProperties || {}),
+                      [prop.id]: nextVal,
+                    },
+                  });
+                };
 
-              return (
-                <div key={prop.id} className={styles.propRow}>
-                  <span className={styles.propLabel}>{prop.name}</span>
-                  <div>
-                    {prop.type === "date" || prop.id === "prop-due" ? (
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <input
-                          type={val === "$today" ? "text" : "date"}
+                return (
+                  <div key={prop.id} className={styles.propRow}>
+                    <span className={styles.propLabel}>{prop.name}</span>
+                    <div>
+                      {prop.type === "date" || prop.id === "prop-due" ? (
+                        <div className={styles.dateFieldGroup}>
+                          <div className={styles.modeToggle}>
+                            <button
+                              type="button"
+                              className={`${styles.modeBtn} ${!val ? styles.modeBtnActive : ""}`}
+                              onClick={() => setVal(null)}
+                            >
+                              Empty
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.modeBtn} ${val === "$today" ? styles.modeBtnActive : ""}`}
+                              onClick={() => setVal("$today")}
+                            >
+                              Today’s date ($today)
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.modeBtn} ${val && val !== "$today" ? styles.modeBtnActive : ""}`}
+                              onClick={() => {
+                                if (!val || val === "$today") {
+                                  setVal(new Date().toISOString().slice(0, 10));
+                                }
+                              }}
+                            >
+                              Exact date
+                            </button>
+                          </div>
+
+                          {val === "$today" ? (
+                            <span className={styles.todayIndicator}>
+                              <Calendar size={13} />
+                              <span>Sets to the current date when new page is created</span>
+                            </span>
+                          ) : val && val !== "$today" ? (
+                            <input
+                              type="date"
+                              className={styles.input}
+                              value={String(val)}
+                              onChange={(e) => setVal(e.target.value)}
+                            />
+                          ) : null}
+                        </div>
+                      ) : prop.type === "select" || prop.type === "status" ? (
+                        <select
                           className={styles.input}
                           value={String(val ?? "")}
-                          readOnly={val === "$today"}
+                          onChange={(e) => setVal(e.target.value || null)}
+                        >
+                          <option value="">Empty</option>
+                          {prop.options?.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : prop.type === "checkbox" ? (
+                        <input
+                          type="checkbox"
+                          checked={Boolean(val)}
+                          onChange={(e) => setVal(e.target.checked)}
+                        />
+                      ) : (
+                        <input
+                          className={styles.input}
+                          value={String(val ?? "")}
+                          placeholder={`Default ${prop.name}...`}
                           onChange={(e) => setVal(e.target.value)}
                         />
-                        <button
-                          type="button"
-                          className={`${styles.btn} ${val === "$today" ? styles.btnPrimary : ""}`}
-                          onClick={() => setVal(val === "$today" ? "" : "$today")}
-                        >
-                          {val === "$today" ? "Using $today" : "Set $today"}
-                        </button>
-                      </div>
-                    ) : prop.type === "select" || prop.type === "status" ? (
-                      <select
-                        className={styles.input}
-                        value={String(val ?? "")}
-                        onChange={(e) => setVal(e.target.value || null)}
-                      >
-                        <option value="">Empty</option>
-                        {prop.options?.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : prop.type === "checkbox" ? (
-                      <input
-                        type="checkbox"
-                        checked={Boolean(val)}
-                        onChange={(e) => setVal(e.target.checked)}
-                      />
-                    ) : (
-                      <input
-                        className={styles.input}
-                        value={String(val ?? "")}
-                        placeholder={`Default ${prop.name}...`}
-                        onChange={(e) => setVal(e.target.value)}
-                      />
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-        <div className={styles.editorBox}>
+        {/* Page Canvas Editor */}
+        <div className={styles.editorContainer}>
           <TeamspaceEditor
             key={tpl.id}
             block={virtualBlock}
@@ -177,7 +218,7 @@ export default function DatabaseTemplatesModal({
                 : `${database.title} — Page Templates`}
             </span>
           </div>
-          <button type="button" className={styles.closeBtn} onClick={onClose}>
+          <button type="button" className={styles.closeBtn} onClick={onClose} title="Close">
             <X size={18} />
           </button>
         </div>
@@ -189,7 +230,7 @@ export default function DatabaseTemplatesModal({
             <>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                  Define reusable page structures, default properties (<code>$today</code>), and embedded views (<code>$this</code>).
+                  Define reusable page layouts, default values, and embedded views for new rows.
                 </span>
                 <button
                   type="button"
@@ -204,15 +245,16 @@ export default function DatabaseTemplatesModal({
               {dbTemplates.length === 0 ? (
                 <div
                   style={{
-                    padding: "28px 16px",
+                    padding: "36px 16px",
                     textAlign: "center",
-                    border: "1px dashed var(--border-subtle)",
-                    borderRadius: 8,
+                    border: "1.5px dashed var(--border-subtle)",
+                    borderRadius: 10,
                     color: "var(--text-muted)",
                     fontSize: 13,
+                    background: "var(--bg-card)",
                   }}
                 >
-                  No templates yet. Click <strong>New template</strong> to create one.
+                  No templates created yet. Click <strong>New template</strong> to create one.
                 </div>
               ) : (
                 <div className={styles.templateList}>
@@ -259,6 +301,7 @@ export default function DatabaseTemplatesModal({
                           type="button"
                           className={`${styles.btn} ${styles.btnDanger}`}
                           onClick={() => deleteDatabaseTemplate(database.id, tpl.id)}
+                          title="Delete template"
                         >
                           <Trash2 size={12} />
                         </button>

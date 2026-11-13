@@ -202,6 +202,39 @@
   transform: scale(1.05);
 }
 
+.pageIconContainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pageIconContainer .pageIcon {
+  margin-bottom: 0;
+}
+
+.removeIconBtn {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.pageIconContainer:hover .removeIconBtn {
+  opacity: 1;
+}
+
+.removeIconBtn:hover {
+  background: var(--bg-hover);
+  color: #eb5757;
+  border-color: rgba(235, 87, 87, 0.3);
+}
+
 .emojiPicker {
   position: absolute;
   top: 90px;

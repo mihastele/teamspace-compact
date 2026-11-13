@@ -59,7 +59,7 @@ const CALLOUT_COLORS = [
 function CalloutNodeView({ node, updateAttributes }: NodeViewProps) {
   const { readOnly } = useContext(EditorNodeContext);
   const [showEmoji, setShowEmoji] = useState(false);
-  const icon = (node.attrs.icon as string) || "💡";
+  const icon = (node.attrs.icon as string | null) || null;
   const color = (node.attrs.color as string) || "gray";
 
   return (
@@ -73,9 +73,9 @@ function CalloutNodeView({ node, updateAttributes }: NodeViewProps) {
         onClick={() => {
           if (!readOnly) setShowEmoji((p) => !p);
         }}
-        title={readOnly ? undefined : "Change callout icon"}
+        title={readOnly ? undefined : icon ? "Change or remove callout icon" : "Add callout icon"}
       >
-        {icon}
+        {icon || "💡"}
       </button>
 
       {showEmoji && !readOnly && (
@@ -83,6 +83,10 @@ function CalloutNodeView({ node, updateAttributes }: NodeViewProps) {
           <EmojiPicker
             onSelect={(next) => {
               updateAttributes({ icon: next });
+              setShowEmoji(false);
+            }}
+            onRemove={() => {
+              updateAttributes({ icon: null });
               setShowEmoji(false);
             }}
           />

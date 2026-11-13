@@ -1,21 +1,22 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 200;
-  padding: 20px;
+  padding: 24px;
 }
 
 .modal {
-  width: min(860px, 100%);
-  max-height: 88vh;
-  background: var(--bg-main);
+  width: min(940px, 100%);
+  height: min(88vh, 880px);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -25,13 +26,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
 }
 
 .headerTitle {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
@@ -40,10 +41,14 @@
 }
 
 .closeBtn {
-  padding: 4px 8px;
+  padding: 5px 8px;
   border-radius: 6px;
   color: var(--text-secondary);
+  background: transparent;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .closeBtn:hover {
@@ -52,14 +57,16 @@
 }
 
 .body {
-  padding: 18px;
+  padding: 20px 24px;
   overflow-y: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+  background: var(--bg-main);
 }
 
+/* Template List View */
 .templateList {
   display: flex;
   flex-direction: column;
@@ -71,10 +78,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--bg-card);
+  transition: border-color 0.12s ease;
+}
+
+.templateRow:hover {
+  border-color: var(--accent-blue);
 }
 
 .templateInfo {
@@ -100,10 +112,11 @@
   flex-shrink: 0;
 }
 
+/* Buttons */
 .btn {
   font-size: 12.5px;
   font-weight: 500;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -111,7 +124,8 @@
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  transition: background 0.1s ease, border-color 0.1s ease;
 }
 
 .btn:hover {
@@ -133,42 +147,151 @@
   color: #eb5757;
 }
 
-.propsBox {
+.btnDanger:hover {
+  background: rgba(235, 87, 87, 0.1);
+  border-color: rgba(235, 87, 87, 0.3);
+}
+
+/* Editor subview top banner */
+.editorNavRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+}
+
+.tipBanner {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tipCode {
+  font-family: monospace;
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--accent-blue);
+}
+
+/* Default properties card */
+.propsSection {
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  padding: 12px;
   background: var(--bg-card);
+  overflow: hidden;
+}
+
+.propsSectionHeader {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.propsGrid {
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .propRow {
   display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 10px;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
   align-items: center;
 }
 
 .propLabel {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
 }
 
 .input {
   font-size: 13px;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-main);
   color: var(--text-primary);
+  outline: none;
 }
 
-.editorBox {
+.input:focus {
+  border-color: var(--accent-blue);
+}
+
+/* Date property control with clear segmented modes */
+.dateFieldGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modeToggle {
+  display: inline-flex;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 14px 18px;
+  border-radius: 6px;
   background: var(--bg-main);
-  min-height: 260px;
+  overflow: hidden;
+}
+
+.modeBtn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.modeBtn:hover {
+  color: var(--text-primary);
+}
+
+.modeBtnActive {
+  background: var(--accent-blue);
+  color: #ffffff;
+}
+
+.modeBtnActive:hover {
+  color: #ffffff;
+}
+
+.todayIndicator {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(35, 131, 226, 0.08);
+  border: 1px solid rgba(35, 131, 226, 0.25);
+}
+
+/* Editor container - authentic Notion page canvas styling */
+.editorContainer {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 24px 32px;
+  min-height: 380px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }

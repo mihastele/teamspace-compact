@@ -787,14 +787,26 @@ export default function TeamspaceEditor({
 
           {/* Page Icon Display */}
           {block.icon && (
-            <div
-              className={styles.pageIcon}
-              onClick={() => {
-                if (!readOnly) setShowEmojiPicker((prev) => !prev);
-              }}
-              title={readOnly ? undefined : "Change icon"}
-            >
-              {block.icon}
+            <div className={styles.pageIconContainer}>
+              <div
+                className={styles.pageIcon}
+                onClick={() => {
+                  if (!readOnly) setShowEmojiPicker((prev) => !prev);
+                }}
+                title={readOnly ? undefined : "Change icon"}
+              >
+                {block.icon}
+              </div>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className={styles.removeIconBtn}
+                  onClick={() => applyBlockChange({ icon: null })}
+                  title="Remove icon"
+                >
+                  Remove icon
+                </button>
+              )}
             </div>
           )}
 
