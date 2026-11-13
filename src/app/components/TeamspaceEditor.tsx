@@ -7,6 +7,10 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { useWorkspace } from "@/lib/workspace-store";
+import { useTeamspace } from "@/lib/client";
+import { usePageCollaboration } from "@/lib/use-page-collaboration";
+import { uploadMediaFile } from "@/lib/attachments";
+import { noteContentToTiptapDoc } from "@/lib/collaboration-model";
 import { saveMediaFile, useMediaUrl } from "@/lib/media-store";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
@@ -19,11 +23,15 @@ import {
   DatabaseViewExtension,
   EditorNodeContext,
   FileBlockExtension,
-  ImageBlockExtension,
   PageMentionExtension,
   VideoBlockExtension,
   type EmbeddedDbRenderProps,
 } from "./TiptapExtensions";
+import {
+  ImageBlockExtension,
+  AttachmentBlockExtension,
+  AudioBlockExtension,
+} from "./MediaNodes";
 import {
   Heading1,
   Heading2,
@@ -40,9 +48,10 @@ import {
   Columns2,
   Columns3,
   Film,
-  FileText,
   Table2,
   Link2,
+  Paperclip,
+  Mic,
 } from "lucide-react";
 import styles from "./TeamspaceEditor.module.css";
 
@@ -55,6 +64,33 @@ const COVER_PRESETS = [
   "linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)",
   "linear-gradient(135deg, #2b5876 0%, #4e4376 100%)",
   "linear-gradient(135deg, #373b44 0%, #4286f4 100%)",
+];
+
+type SlashCommand = {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+};
+
+const ALL_SLASH_COMMANDS: SlashCommand[] = [
+  { id: "h1", title: "Heading 1", icon: <Heading1 size={15} /> },
+  { id: "h2", title: "Heading 2", icon: <Heading2 size={15} /> },
+  { id: "h3", title: "Heading 3", icon: <Heading3 size={15} /> },
+  { id: "todo", title: "To-do List", icon: <CheckSquare size={15} /> },
+  { id: "bullet", title: "Bullet List", icon: <List size={15} /> },
+  { id: "numbered", title: "Numbered List", icon: <ListOrdered size={15} /> },
+  { id: "callout", title: "Callout", icon: <MessageSquareQuote size={15} /> },
+  { id: "columns2", title: "2 Columns", icon: <Columns2 size={15} /> },
+  { id: "columns3", title: "3 Columns", icon: <Columns3 size={15} /> },
+  { id: "databaseView", title: "Database View", icon: <Table2 size={15} /> },
+  { id: "image", title: "Image", icon: <ImageIcon size={15} /> },
+  { id: "video", title: "Video", icon: <Film size={15} /> },
+  { id: "file", title: "File / Attachment", icon: <Paperclip size={15} /> },
+  { id: "audio", title: "Record Audio", icon: <Mic size={15} /> },
+  { id: "pageMention", title: "Page Reference", icon: <Link2 size={15} /> },
+  { id: "quote", title: "Quote", icon: <Quote size={15} /> },
+  { id: "code", title: "Code Block", icon: <Code size={15} /> },
+  { id: "divider", title: "Divider", icon: <Minus size={15} /> },
 ];
 
 export type TeamspaceEditorProps = {
@@ -72,6 +108,7 @@ export default function TeamspaceEditor({
   hideProperties = false,
   onNavigatePage,
 }: TeamspaceEditorProps) {
+  const api = useTeamspace();
   const { blocks, updateBlock, setActiveBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
@@ -83,6 +120,7 @@ export default function TeamspaceEditor({
   const [slashMenuPosition, setSlashMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const [mentionMenuPosition, setMentionMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [mentionFilter, setMentionFilter] = useState("");
@@ -95,8 +133,13 @@ export default function TeamspaceEditor({
   const coverFileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resolvedCoverUrl = useMediaUrl(block.coverUrl);
+
+  // Real-time CRDT Page Collaboration hook
+  const { view: collabView, presenceUsers, applyTiptapChange } = usePageCollaboration(block);
 
   const applyBlockChange = useCallback(
     (updates: Partial<Block>) => {
@@ -130,6 +173,8 @@ export default function TeamspaceEditor({
       .slice(0, 12);
   }, [blocks, block.id, mentionFilter]);
 
+  const handleFileUploadRef = useRef<(file: File) => Promise<void>>(() => Promise.resolve());
+
   const editor = useEditor({
     editable: !readOnly,
     extensions: [
@@ -139,7 +184,7 @@ export default function TeamspaceEditor({
         },
       }),
       Placeholder.configure({
-        placeholder: readOnly ? "" : "Type '/' for commands, '@' to link a page...",
+        placeholder: readOnly ? "" : "Type '/' for commands, '@' to link a page…",
       }),
       TaskList,
       TaskItem.configure({
@@ -148,11 +193,13 @@ export default function TeamspaceEditor({
       CalloutExtension,
       ColumnExtension,
       ColumnsExtension,
-      ImageBlockExtension,
       VideoBlockExtension,
       FileBlockExtension,
       PageMentionExtension,
       DatabaseViewExtension,
+      ImageBlockExtension,
+      AttachmentBlockExtension,
+      AudioBlockExtension,
     ],
     content: (block.content as JSONContent) || {
       type: "doc",
@@ -162,6 +209,7 @@ export default function TeamspaceEditor({
       if (readOnly) return;
       const json = ed.getJSON();
       applyBlockChange({ content: json });
+      applyTiptapChange(json);
 
       const { from } = ed.state.selection;
       const textBefore = ed.state.doc.textBetween(Math.max(0, from - 24), from);
@@ -190,34 +238,28 @@ export default function TeamspaceEditor({
       handleDrop: (_view, event) => {
         if (readOnly) return false;
         const files = event.dataTransfer?.files;
-        if (!files || files.length === 0) return false;
-        const file = files[0];
-        event.preventDefault();
-        void saveMediaFile(file, file.name).then((saved) => {
-          if (!editor) return;
-          if (file.type.startsWith("image/")) {
-            editor.chain().focus().insertContent({
-              type: "imageBlock",
-              attrs: { src: saved.url, alt: file.name },
-            }).run();
-          } else if (file.type.startsWith("video/")) {
-            editor.chain().focus().insertContent({
-              type: "videoBlock",
-              attrs: { src: saved.url, fileName: file.name },
-            }).run();
-          } else {
-            editor.chain().focus().insertContent({
-              type: "fileBlock",
-              attrs: {
-                src: saved.url,
-                fileName: file.name,
-                fileSize: file.size,
-                mimeType: file.type,
-              },
-            }).run();
+        if (files && files.length > 0) {
+          event.preventDefault();
+          setIsDragOver(false);
+          for (let i = 0; i < files.length; i++) {
+            void handleFileUploadRef.current(files[i]);
           }
-        });
-        return true;
+          return true;
+        }
+        setIsDragOver(false);
+        return false;
+      },
+      handlePaste: (_view, event) => {
+        if (readOnly) return false;
+        const files = event.clipboardData?.files;
+        if (files && files.length > 0) {
+          event.preventDefault();
+          for (let i = 0; i < files.length; i++) {
+            void handleFileUploadRef.current(files[i]);
+          }
+          return true;
+        }
+        return false;
       },
       handleKeyDown: (_view, event) => {
         const mentionState = mentionStateRef.current;
@@ -263,7 +305,7 @@ export default function TeamspaceEditor({
             event.preventDefault();
             const cmd = state.commands[state.selectedIndex] || state.commands[0];
             if (cmd) {
-              state.execute(cmd.action);
+              state.execute(cmd.id);
             }
             return true;
           }
@@ -286,7 +328,7 @@ export default function TeamspaceEditor({
 
   const insertPageMention = useCallback(
     (target: Block) => {
-      if (!editor) return;
+      if (!editor || readOnly) return;
       const { from } = editor.state.selection;
       if (mentionTriggerChar === "@") {
         const deleteCount = mentionFilter.length + 1;
@@ -309,183 +351,273 @@ export default function TeamspaceEditor({
         .run();
       setMentionMenuPosition(null);
     },
-    [editor, mentionFilter, mentionTriggerChar]
+    [editor, readOnly, mentionFilter, mentionTriggerChar]
   );
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      if (!editor || readOnly) return;
+      const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
+      const isAudio = file.type.startsWith("audio/");
+      const tempId = `temp-${Date.now()}`;
+      const tempUrl = URL.createObjectURL(file);
+
+      if (isImage) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "imageBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              src: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+              width: 100,
+            },
+          })
+          .run();
+      } else if (isVideo) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "videoBlock",
+            attrs: {
+              src: tempUrl,
+              fileName: file.name,
+            },
+          })
+          .run();
+      } else if (isAudio) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "audioBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+            },
+          })
+          .run();
+      } else {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "attachmentBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+            },
+          })
+          .run();
+      }
+
+      // Background persistence: Supabase Storage when configured, local media store otherwise
+      try {
+        if (
+          api.configured &&
+          api.user &&
+          api.workspace &&
+          (isImage || isAudio || (!isVideo && file.size <= 25 * 1024 * 1024))
+        ) {
+          const result = await uploadMediaFile(file, "page", block.id, api);
+          const currentJson = editor.getJSON();
+          const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+            if (!nodes) return false;
+            for (const n of nodes) {
+              if (n.attrs?.blockId === tempId) {
+                n.attrs.attachmentId = result.attachmentId;
+                n.attrs.url = result.url;
+                n.attrs.src = result.url;
+                return true;
+              }
+              if (n.content && updateNodeAttrs(n.content)) return true;
+            }
+            return false;
+          };
+
+          if (updateNodeAttrs(currentJson.content)) {
+            editor.commands.setContent(currentJson, { emitUpdate: true });
+          }
+        } else {
+          const saved = await saveMediaFile(file, file.name);
+          const currentJson = editor.getJSON();
+          const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+            if (!nodes) return false;
+            for (const n of nodes) {
+              if (
+                n.attrs?.blockId === tempId ||
+                (isVideo && n.type === "videoBlock" && n.attrs?.src === tempUrl)
+              ) {
+                n.attrs.url = saved.url;
+                n.attrs.src = saved.url;
+                return true;
+              }
+              if (n.content && updateNodeAttrs(n.content)) return true;
+            }
+            return false;
+          };
+
+          if (updateNodeAttrs(currentJson.content)) {
+            editor.commands.setContent(currentJson, { emitUpdate: true });
+          }
+        }
+      } catch (err) {
+        console.warn("Media upload background sync notice", err);
+      }
+    },
+    [editor, readOnly, block.id, api]
+  );
+
+  useEffect(() => {
+    handleFileUploadRef.current = handleFileUpload;
+  }, [handleFileUpload]);
 
   const slashCommands = useMemo(
     () =>
-      [
-        {
-          title: "Heading 1",
-          icon: <Heading1 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 1 }).run(),
-        },
-        {
-          title: "Heading 2",
-          icon: <Heading2 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 2 }).run(),
-        },
-        {
-          title: "Heading 3",
-          icon: <Heading3 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleHeading({ level: 3 }).run(),
-        },
-        {
-          title: "To-do List",
-          icon: <CheckSquare size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleTaskList().run(),
-        },
-        {
-          title: "Bullet List",
-          icon: <List size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBulletList().run(),
-        },
-        {
-          title: "Numbered List",
-          icon: <ListOrdered size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleOrderedList().run(),
-        },
-        {
-          title: "Callout",
-          icon: <MessageSquareQuote size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "callout",
-                attrs: { icon: "💡", color: "blue" },
-                content: [{ type: "paragraph" }],
-              })
-              .run(),
-        },
-        {
-          title: "2 Columns",
-          icon: <Columns2 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "columns",
-                content: [
-                  { type: "column", content: [{ type: "paragraph" }] },
-                  { type: "column", content: [{ type: "paragraph" }] },
-                ],
-              })
-              .run(),
-        },
-        {
-          title: "3 Columns",
-          icon: <Columns3 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "columns",
-                content: [
-                  { type: "column", content: [{ type: "paragraph" }] },
-                  { type: "column", content: [{ type: "paragraph" }] },
-                  { type: "column", content: [{ type: "paragraph" }] },
-                ],
-              })
-              .run(),
-        },
-        {
-          title: "Database View",
-          icon: <Table2 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "databaseView",
-                attrs: { databaseId: null, viewId: null, filterRules: null },
-              })
-              .run(),
-        },
-        {
-          title: "Image",
-          icon: <ImageIcon size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "imageBlock",
-                attrs: { src: null },
-              })
-              .run(),
-        },
-        {
-          title: "Video",
-          icon: <Film size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "videoBlock",
-                attrs: { src: null },
-              })
-              .run(),
-        },
-        {
-          title: "File",
-          icon: <FileText size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) =>
-            ed
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "fileBlock",
-                attrs: { src: null },
-              })
-              .run(),
-        },
-        {
-          title: "Page Reference",
-          icon: <Link2 size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => {
-            if (!ed) return;
-            const coords = ed.view.coordsAtPos(ed.state.selection.from);
-            setMentionFilter("");
-            setMentionTriggerChar("/");
-            setSelectedMentionIndex(0);
-            setMentionMenuPosition({ x: coords.left, y: coords.bottom + 6 });
-          },
-        },
-        {
-          title: "Quote",
-          icon: <Quote size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleBlockquote().run(),
-        },
-        {
-          title: "Code Block",
-          icon: <Code size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().toggleCodeBlock().run(),
-        },
-        {
-          title: "Divider",
-          icon: <Minus size={15} />,
-          action: (ed: ReturnType<typeof useEditor>) => ed?.chain().focus().setHorizontalRule().run(),
-        },
-      ].filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase())),
+      ALL_SLASH_COMMANDS.filter((c) =>
+        c.title.toLowerCase().includes(slashFilter.toLowerCase())
+      ),
     [slashFilter]
   );
 
   const executeSlashCommand = useCallback(
-    (action: (ed: ReturnType<typeof useEditor>) => void) => {
-      if (!editor) return;
+    (cmdId: string) => {
+      if (!editor || readOnly) return;
       const { from } = editor.state.selection;
       const deleteCount = slashFilter.length + 1;
       editor.commands.deleteRange({ from: Math.max(0, from - deleteCount), to: from });
-      action(editor);
       setSlashMenuPosition(null);
       editor.commands.focus();
+
+      switch (cmdId) {
+        case "h1":
+          editor.chain().focus().toggleHeading({ level: 1 }).run();
+          break;
+        case "h2":
+          editor.chain().focus().toggleHeading({ level: 2 }).run();
+          break;
+        case "h3":
+          editor.chain().focus().toggleHeading({ level: 3 }).run();
+          break;
+        case "todo":
+          editor.chain().focus().toggleTaskList().run();
+          break;
+        case "bullet":
+          editor.chain().focus().toggleBulletList().run();
+          break;
+        case "numbered":
+          editor.chain().focus().toggleOrderedList().run();
+          break;
+        case "callout":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "callout",
+              attrs: { icon: "💡", color: "blue" },
+              content: [{ type: "paragraph" }],
+            })
+            .run();
+          break;
+        case "columns2":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "columns",
+              content: [
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+              ],
+            })
+            .run();
+          break;
+        case "columns3":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "columns",
+              content: [
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+              ],
+            })
+            .run();
+          break;
+        case "databaseView":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "databaseView",
+              attrs: { databaseId: null, viewId: null, filterRules: null },
+            })
+            .run();
+          break;
+        case "image":
+          imageInputRef.current?.click();
+          break;
+        case "video":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "videoBlock",
+              attrs: { src: null },
+            })
+            .run();
+          break;
+        case "file":
+          fileInputRef.current?.click();
+          break;
+        case "audio":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "audioBlock",
+              attrs: { blockId: `audio-${Date.now()}` },
+            })
+            .run();
+          break;
+        case "pageMention": {
+          const coords = editor.view.coordsAtPos(editor.state.selection.from);
+          setMentionFilter("");
+          setMentionTriggerChar("/");
+          setSelectedMentionIndex(0);
+          setMentionMenuPosition({ x: coords.left, y: coords.bottom + 6 });
+          break;
+        }
+        case "quote":
+          editor.chain().focus().toggleBlockquote().run();
+          break;
+        case "code":
+          editor.chain().focus().toggleCodeBlock().run();
+          break;
+        case "divider":
+          editor.chain().focus().setHorizontalRule().run();
+          break;
+      }
     },
-    [editor, slashFilter]
+    [editor, readOnly, slashFilter]
   );
 
   const slashStateRef = useRef({
@@ -520,15 +652,16 @@ export default function TeamspaceEditor({
     };
   }, [mentionMenuPosition, mentionablePages, selectedMentionIndex, insertPageMention]);
 
-  // Re-sync editor content only when unfocused and content externally differs
+  // Re-sync editor content only when unfocused and collaboration content externally differs
   useEffect(() => {
-    if (editor && !editor.isFocused && block.content) {
+    if (editor && !editor.isFocused && collabView.content) {
+      const tiptapDoc = noteContentToTiptapDoc(collabView.content);
       const currentJson = editor.getJSON();
-      if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
-        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
+      if (JSON.stringify(currentJson) !== JSON.stringify(tiptapDoc)) {
+        editor.commands.setContent(tiptapDoc as JSONContent, { emitUpdate: false });
       }
     }
-  }, [block.id, block.content, editor]);
+  }, [collabView.content, editor]);
 
   // Click-outside listener to dismiss popovers
   useEffect(() => {
@@ -636,7 +769,67 @@ export default function TeamspaceEditor({
     <EditorNodeContext.Provider value={editorContextValue}>
       <div
         className={`${styles.canvasContainer} ${block.isFullWidth ? styles.canvasFullWidth : ""} ${styles[`font_${block.fontStyle || "sans"}`]}`}
+        onDragOver={(e) => {
+          if (readOnly) return;
+          e.preventDefault();
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={() => setIsDragOver(false)}
       >
+        {/* Hidden file pickers for slash commands */}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) void handleFileUpload(e.target.files[0]);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) void handleFileUpload(e.target.files[0]);
+            e.target.value = "";
+          }}
+        />
+
+        {/* Collaboration Sync & Live Presence Bar */}
+        {!readOnly && (collabView.status || presenceUsers.length > 0) && (
+          <div className={styles.collaborationBar}>
+            <div className={styles.collabStatusBadge}>
+              <div
+                className={`${styles.collabStatusDot} ${
+                  collabView.status === "Saving…"
+                    ? styles.collabStatusDotSaving
+                    : collabView.status === "Offline"
+                    ? styles.collabStatusDotOffline
+                    : ""
+                }`}
+              />
+              <span>{collabView.status}</span>
+            </div>
+
+            {presenceUsers.length > 0 && (
+              <div className={styles.presenceAvatars}>
+                {presenceUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className={styles.presenceAvatar}
+                    title={user.displayName || "Collaborator"}
+                  >
+                    {(user.displayName || "U")[0].toUpperCase()}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Cover Image Banner */}
         {block.coverUrl && (
           <div className={styles.coverContainer}>
@@ -841,7 +1034,7 @@ export default function TeamspaceEditor({
         {isDatabaseEntry && <DatabaseEntryProperties row={block} readOnly={readOnly} />}
 
         {/* Tiptap Block Editor Content */}
-        <div className={styles.editorArea}>
+        <div className={`${styles.editorArea} ${isDragOver ? styles.editorAreaDropActive : ""}`}>
           <EditorContent editor={editor} />
         </div>
 
@@ -855,14 +1048,14 @@ export default function TeamspaceEditor({
               left: `${slashMenuPosition.x}px`,
             }}
           >
-            <div className={styles.slashMenuHeader}>Blocks & Media</div>
+            <div className={styles.slashMenuHeader}>Basic blocks & Media</div>
             {slashCommands.map((cmd, idx) => (
               <button
                 key={cmd.title}
                 type="button"
                 className={`${styles.slashMenuItem} ${idx === selectedSlashIndex ? styles.slashMenuItemActive : ""}`}
                 onMouseEnter={() => setSelectedSlashIndex(idx)}
-                onClick={() => executeSlashCommand(cmd.action)}
+                onClick={() => executeSlashCommand(cmd.id)}
               >
                 <span className={styles.slashMenuIcon}>{cmd.icon}</span>
                 <span>{cmd.title}</span>

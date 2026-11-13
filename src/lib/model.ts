@@ -21,6 +21,8 @@ export type BlockType =
   | "column"
   | "image"
   | "file"
+  | "attachment"
+  | "audio"
   | "video"
   | "page_mention";
 
@@ -246,6 +248,19 @@ export type BoardView = {
   deadline: "all" | "overdue" | "today" | "week" | "undated";
   sort: "position" | "title" | "dueDate";
 };
+export type MediaBlockData = {
+  attachmentId?: string;
+  url?: string;
+  originalName?: string;
+  contentType?: string;
+  bytes?: number;
+  width?: number;
+  caption?: string;
+  durationSeconds?: number;
+  transcript?: string;
+  summary?: string;
+  transcriptionStatus?: "idle" | "transcribing" | "completed" | "failed";
+};
 export type NoteBlock = {
   id?: string;
   type: string;
@@ -254,6 +269,7 @@ export type NoteBlock = {
   checked?: boolean;
   boardView?: BoardView;
   source?: BlockSource;
+  media?: MediaBlockData;
 };
 export type NoteContent = { blocks: NoteBlock[] };
 export type Note = {

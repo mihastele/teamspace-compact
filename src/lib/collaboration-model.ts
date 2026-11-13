@@ -20,6 +20,9 @@ const TYPES = new Set([
   "markdown",
   "board",
   "synced",
+  "image",
+  "attachment",
+  "audio",
 ]);
 
 export function toBase64(value: Uint8Array): string {
@@ -91,13 +94,14 @@ function rankBetween(
 
 function blockFormat(
   block: NoteBlock,
-): Pick<NoteBlock, "type" | "level" | "checked" | "boardView" | "source"> {
+): Pick<NoteBlock, "type" | "level" | "checked" | "boardView" | "source" | "media"> {
   return {
     type: block.type,
     ...(block.level !== undefined ? { level: block.level } : {}),
     ...(block.checked !== undefined ? { checked: block.checked } : {}),
     ...(block.boardView !== undefined ? { boardView: block.boardView } : {}),
     ...(block.source !== undefined ? { source: block.source } : {}),
+    ...(block.media !== undefined ? { media: block.media } : {}),
   };
 }
 
@@ -156,7 +160,7 @@ export function readContent(doc: Y.Doc): NoteContent {
         id,
         ...(meta.get("format") as Pick<
           NoteBlock,
-          "type" | "level" | "checked" | "boardView" | "source"
+          "type" | "level" | "checked" | "boardView" | "source" | "media"
         >),
         text: (value.get("text") as Y.Text).toString(),
       };
@@ -408,7 +412,7 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
       typeof format !== "object" ||
       Array.isArray(format) ||
       Object.keys(format).some(
-        (key) => !["type", "level", "checked", "boardView", "source"].includes(key),
+        (key) => !["type", "level", "checked", "boardView", "source", "media"].includes(key),
       )
     )
       throw new Error("Invalid block format.");
@@ -450,6 +454,12 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
       validateBlockSource(format.source);
     }
     if (format.type === "synced" && !format.source) throw new Error("A synced block requires a source.");
+    if (format.media !== undefined) {
+      if (!["image", "attachment", "audio"].includes(format.type))
+        throw new Error("Only media blocks have media settings.");
+      if (typeof format.media !== "object" || format.media === null)
+        throw new Error("Invalid media metadata.");
+    }
     if (
       text.length > 20000 ||
       (["board", "divider", "synced"].includes(format.type) && text.length)
@@ -483,4 +493,298 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
         throw new Error("Deleted blocks cannot reappear.");
   }
   encodeDocument(doc);
+}
+
+export type TiptapNode = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: TiptapNode[];
+  text?: string;
+  [key: string]: unknown;
+};
+
+export type TiptapDoc = {
+  type: "doc";
+  content?: TiptapNode[];
+  [key: string]: unknown;
+};
+
+function extractText(nodes?: TiptapNode[]): string {
+  if (!nodes || !nodes.length) return "";
+  return nodes
+    .map((n) => {
+      if (n.type === "text") return n.text || "";
+      if (n.content) return extractText(n.content);
+      return "";
+    })
+    .join("");
+}
+
+export function tiptapDocToNoteContent(doc: unknown): NoteContent {
+  if (!doc || typeof doc !== "object") {
+    return { blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }] };
+  }
+  const tiptap = doc as TiptapDoc;
+  const blocks: NoteBlock[] = [];
+
+  const rawNodes = Array.isArray(tiptap.content) ? tiptap.content : [];
+
+  for (const node of rawNodes) {
+    const id = (node.attrs?.blockId as string) || crypto.randomUUID();
+
+    if (node.type === "heading") {
+      const level = Number(node.attrs?.level) || 1;
+      blocks.push({
+        id,
+        type: "heading",
+        level: (level >= 1 && level <= 6 ? level : 1) as 1 | 2 | 3 | 4 | 5 | 6,
+        text: extractText(node.content),
+      });
+    } else if (node.type === "bulletList") {
+      const items = node.content || [];
+      for (const item of items) {
+        blocks.push({
+          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          type: "bullet",
+          text: extractText(item.content),
+        });
+      }
+    } else if (node.type === "orderedList") {
+      const items = node.content || [];
+      for (const item of items) {
+        blocks.push({
+          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          type: "ordered",
+          text: extractText(item.content),
+        });
+      }
+    } else if (node.type === "taskList") {
+      const items = node.content || [];
+      for (const item of items) {
+        blocks.push({
+          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          type: "todo",
+          checked: Boolean(item.attrs?.checked),
+          text: extractText(item.content),
+        });
+      }
+    } else if (node.type === "blockquote") {
+      blocks.push({
+        id,
+        type: "quote",
+        text: extractText(node.content),
+      });
+    } else if (node.type === "codeBlock") {
+      blocks.push({
+        id,
+        type: "code",
+        text: extractText(node.content),
+      });
+    } else if (node.type === "horizontalRule") {
+      blocks.push({
+        id,
+        type: "divider",
+        text: "",
+      });
+    } else if (node.type === "imageBlock" || node.type === "image") {
+      blocks.push({
+        id,
+        type: "image",
+        text: "",
+        media: {
+          attachmentId: node.attrs?.attachmentId as string | undefined,
+          url: (node.attrs?.url || node.attrs?.src) as string | undefined,
+          originalName: node.attrs?.originalName as string | undefined,
+          contentType: node.attrs?.contentType as string | undefined,
+          bytes: node.attrs?.bytes as number | undefined,
+          width: node.attrs?.width as number | undefined,
+          caption: (node.attrs?.caption || node.attrs?.alt) as string | undefined,
+        },
+      });
+    } else if (node.type === "attachmentBlock") {
+      blocks.push({
+        id,
+        type: "attachment",
+        text: "",
+        media: {
+          attachmentId: node.attrs?.attachmentId as string | undefined,
+          url: node.attrs?.url as string | undefined,
+          originalName: node.attrs?.originalName as string | undefined,
+          contentType: node.attrs?.contentType as string | undefined,
+          bytes: node.attrs?.bytes as number | undefined,
+        },
+      });
+    } else if (node.type === "audioBlock") {
+      blocks.push({
+        id,
+        type: "audio",
+        text: "",
+        media: {
+          attachmentId: node.attrs?.attachmentId as string | undefined,
+          url: node.attrs?.url as string | undefined,
+          originalName: node.attrs?.originalName as string | undefined,
+          contentType: node.attrs?.contentType as string | undefined,
+          bytes: node.attrs?.bytes as number | undefined,
+          durationSeconds: node.attrs?.durationSeconds as number | undefined,
+          transcript: node.attrs?.transcript as string | undefined,
+          summary: node.attrs?.summary as string | undefined,
+          transcriptionStatus: node.attrs?.transcriptionStatus as "idle" | "transcribing" | "completed" | "failed" | undefined,
+        },
+      });
+    } else {
+      // Default to paragraph
+      blocks.push({
+        id,
+        type: "paragraph",
+        text: extractText(node.content),
+      });
+    }
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
+  }
+
+  return { blocks };
+}
+
+export function noteContentToTiptapDoc(content: NoteContent | null | undefined): TiptapDoc {
+  if (!content || !Array.isArray(content.blocks) || content.blocks.length === 0) {
+    return {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+    };
+  }
+
+  const nodes: TiptapNode[] = [];
+  let currentList: { type: "bulletList" | "orderedList" | "taskList"; items: TiptapNode[] } | null = null;
+
+  function flushList() {
+    if (!currentList) return;
+    nodes.push({
+      type: currentList.type,
+      content: currentList.items,
+    });
+    currentList = null;
+  }
+
+  for (const block of content.blocks) {
+    const blockId = block.id || crypto.randomUUID();
+    const textNode = block.text ? [{ type: "text", text: block.text }] : [];
+
+    if (block.type === "bullet") {
+      if (currentList && currentList.type !== "bulletList") flushList();
+      if (!currentList) currentList = { type: "bulletList", items: [] };
+      currentList.items.push({
+        type: "listItem",
+        attrs: { blockId },
+        content: [{ type: "paragraph", content: textNode }],
+      });
+      continue;
+    }
+
+    if (block.type === "ordered") {
+      if (currentList && currentList.type !== "orderedList") flushList();
+      if (!currentList) currentList = { type: "orderedList", items: [] };
+      currentList.items.push({
+        type: "listItem",
+        attrs: { blockId },
+        content: [{ type: "paragraph", content: textNode }],
+      });
+      continue;
+    }
+
+    if (block.type === "todo") {
+      if (currentList && currentList.type !== "taskList") flushList();
+      if (!currentList) currentList = { type: "taskList", items: [] };
+      currentList.items.push({
+        type: "taskItem",
+        attrs: { blockId, checked: Boolean(block.checked) },
+        content: [{ type: "paragraph", content: textNode }],
+      });
+      continue;
+    }
+
+    flushList();
+
+    if (block.type === "heading") {
+      nodes.push({
+        type: "heading",
+        attrs: { blockId, level: block.level || 1 },
+        content: textNode,
+      });
+    } else if (block.type === "quote") {
+      nodes.push({
+        type: "blockquote",
+        attrs: { blockId },
+        content: [{ type: "paragraph", content: textNode }],
+      });
+    } else if (block.type === "code") {
+      nodes.push({
+        type: "codeBlock",
+        attrs: { blockId },
+        content: textNode,
+      });
+    } else if (block.type === "divider") {
+      nodes.push({
+        type: "horizontalRule",
+        attrs: { blockId },
+      });
+    } else if (block.type === "image") {
+      nodes.push({
+        type: "imageBlock",
+        attrs: {
+          blockId,
+          attachmentId: block.media?.attachmentId,
+          url: block.media?.url,
+          originalName: block.media?.originalName,
+          contentType: block.media?.contentType,
+          bytes: block.media?.bytes,
+          width: block.media?.width,
+          caption: block.media?.caption,
+        },
+      });
+    } else if (block.type === "attachment") {
+      nodes.push({
+        type: "attachmentBlock",
+        attrs: {
+          blockId,
+          attachmentId: block.media?.attachmentId,
+          url: block.media?.url,
+          originalName: block.media?.originalName,
+          contentType: block.media?.contentType,
+          bytes: block.media?.bytes,
+        },
+      });
+    } else if (block.type === "audio") {
+      nodes.push({
+        type: "audioBlock",
+        attrs: {
+          blockId,
+          attachmentId: block.media?.attachmentId,
+          url: block.media?.url,
+          originalName: block.media?.originalName,
+          contentType: block.media?.contentType,
+          bytes: block.media?.bytes,
+          durationSeconds: block.media?.durationSeconds,
+          transcript: block.media?.transcript,
+          summary: block.media?.summary,
+          transcriptionStatus: block.media?.transcriptionStatus || "idle",
+        },
+      });
+    } else {
+      nodes.push({
+        type: "paragraph",
+        attrs: { blockId },
+        content: textNode,
+      });
+    }
+  }
+
+  flushList();
+
+  return {
+    type: "doc",
+    content: nodes.length ? nodes : [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+  };
 }

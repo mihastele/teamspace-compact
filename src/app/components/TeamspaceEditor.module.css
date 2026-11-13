@@ -330,6 +330,71 @@
   align-items: center;
 }
 
+.collaborationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.collabStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--bg-hover, #f3f4f6);
+  color: var(--fg-secondary, #6b7280);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.collabStatusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.collabStatusDotSaving {
+  background: #f59e0b;
+  animation: pulse 1s infinite;
+}
+
+.collabStatusDotOffline {
+  background: #9ca3af;
+}
+
+.presenceAvatars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.presenceAvatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg-primary, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.editorAreaDropActive {
+  outline: 2px dashed #3b82f6;
+  outline-offset: 4px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.02);
+}
+
 @media (max-width: 768px) {
   .canvasContainer {
     padding: 16px 14px 60px;

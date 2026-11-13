@@ -1132,6 +1132,43 @@
 - No new dependency, credential, exotic technology or history rewrite. Existing open gates (live/browser acceptance, production/restore, license, Node/dependency remediation, agent M4c/M5) are unchanged.
 
 
+### 2026-11-12 - Real-Time Collaboration Protocol, Drag-and-Drop Image & File Uploads, Audio Recording, and AI Audio Transcription & Summarization
+
+- **Collaboration Architecture & Protocol Strategy:**
+  - Implemented the Hybrid Page-Scoped Yjs CRDT + PostgreSQL Block Containment model. PostgreSQL (`teamspace_blocks`) remains authoritative for document containment hierarchy, sibling sort keys (`fractional-indexing`), and structured database properties. The page canvas utilizes Yjs (`CollaborationController`) for conflict-free, real-time typing, formatting, and media block synchronization.
+  - Added `src/lib/use-page-collaboration.ts` hook bridging Tiptap editor state with `CollaborationController`, local IndexedDB recovery (`indexedRecoveryStore`), and cross-tab `BroadcastChannel` in preview/offline mode, with live connection status pill and presence badges.
+- **Image & File Drag-and-Drop Uploads:**
+  - Implemented drag-and-drop and clipboard paste handlers in `TeamspaceEditor.tsx`. Dropping or pasting images or files immediately displays optimistic node previews (<16ms frame budget) with temporary object URLs and local IndexedDB caching.
+  - Implemented `stripExifAndCompressImage` in `src/lib/attachments.ts` stripping EXIF/GPS metadata via browser canvas re-encoding before network upload, adhering to strict AGENTS.md storage rules.
+  - Added `/image` and `/file` slash commands and native file picker triggers.
+- **Media Custom Nodes (`src/app/components/MediaNodes.tsx`):**
+  - **Image Block:** Responsive width controls (50%, 75%, 100%), interactive caption editing, direct download button, and deletion.
+  - **Attachment Block:** Type-aware icons (Spreadsheet, Archive, Code/Text, Generic File), formatted human-readable byte sizes, direct download button, and deletion.
+  - **Audio Block:** Web Audio API live waveform visualizer during recording, recording timer, play/pause scrubber with formatted time display (`mm:ss`), direct download, and collapsible AI Drawer.
+- **Audio Recording & AI Transcription / Summarization:**
+  - Built-in microphone recording via `MediaRecorder` (`audio/webm` or browser-supported fallback) directly within the audio node block.
+  - Created server AI media provider `src/lib/server/ai-media-provider.ts` and Next.js route `/api/ai/audio-transcribe` supporting OpenAI Whisper API transcription (`/audio/transcriptions`) and Chat Completions summarization (`/chat/completions`) with executive summary and actionable bullet points, with graceful fallback for unconfigured/preview environments.
+- **Storage Migration 021:**
+  - Created `migrations/021-storage-attachments-and-audio.sql` raising `teamspace_attachments` bucket file size limit from 10MB to 25 MiB and allowing audio MIME types (`audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/ogg`, `audio/wav`), documents, archives, and images. Documented in `migrations/021-storage-attachments-and-audio.md` and added to `scripts/migrate-supabase.mjs` (13 application migrations).
+- **Verification & Quality Assurance:**
+  - Unit & Integration Tests: `npm test` runs 258 tests across all suites with 258 passing and 0 failures (including `tests/media-attachments.test.cjs` and `tests/migration-chain.test.mjs`).
+  - TypeScript Compilation: `npx tsc --noEmit` passed with 0 errors.
+  - ESLint Linter: `npm run lint` passed with 0 errors and 0 warnings.
+  - Production Build: `npm run build` completed an optimized Turbopack build with static generation for all routes with 0 errors.
+- **Open Test Gap:** Live microphone device permissions and native OS file drag-and-drop are verified via automated unit and round-trip tests and preview route handlers; real hardware microphone capture in browser remains an interactive user acceptance check.
+
+### 2026-11-12 - Fixed unhandled workspace presence exception during initial mount
+
+- **Defect:** `Uncaught Error: Choose a workspace first.` at `subscribePresence` / `path()` during initial mount.
+- **Root Cause:** When `api.configured && api.user` evaluated truthy but `api.workspace` was not yet loaded or when the app was in local preview before a workspace was selected, `usePageCollaboration` and `client.ts` called `api.subscribePresence`, which invoked `path()` that unconditionally threw `Error: Choose a workspace first.`.
+- **Fix:**
+  - In `src/lib/use-page-collaboration.ts`, guarded server collaboration and presence with `isServerCollab = Boolean(api.configured && api.user && api.workspace)` and added `api.workspace?.id` to the effect dependency array.
+  - In `src/lib/client.ts`, updated `subscribeCollaboration`, `subscribePresence`, `heartbeatPresence`, and `leavePresence` to return cleanly / return a no-op unsubscription `() => {}` if `!workspace` instead of throwing an unhandled runtime error.
+- **Verification:**
+  - `npm test`: 258/258 pass.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm run build`: Next.js Turbopack production build succeeds with 0 errors.
+
 ### 2026-11-12 - Rich Editor Blocks, Media Uploads, Database Templates ($this/$today), Page Mentions & Link Sharing
 
 - Created feature branch `feat/editor-media-templates-sharing` from `main`.
@@ -1140,14 +1177,14 @@
 - **Tiptap Document Blocks & Media**: Added `TiptapExtensions.tsx` (`CalloutExtension`, `ColumnsExtension`/`ColumnExtension`, `DatabaseViewExtension`, `ImageBlockExtension`, `VideoBlockExtension` with HTML5 `<video controls>` player, `FileBlockExtension`, and `PageMentionExtension` triggered via `@` or `/Page Reference`), plus drag-and-drop file/image/video insertion and IndexedDB blob persistence (`src/lib/media-store.ts`).
 - **Database Cross-Page Relations & Page Templates**: Added `targetDatabaseId` (`__any__` workspace pages or specific database) when creating `relation` properties; added `DatabaseTemplatesModal.tsx` and `workspaceStore` template instantiation resolving `$today` (current `YYYY-MM-DD`) and `$this` (newly created page ID) in default properties and embedded `databaseView` filter rules.
 - **Page Sharing via Link**: Added `ShareLink` state/actions (`read` vs `edit` permissions), topbar Share popover in `src/app/page.tsx`, public `/share/[token]` route (`src/app/share/[token]/page.tsx`), `GET/PATCH /api/share/[token]` API route, and `migrations/021-share-links.sql` (`public.teamspace_share_links` with RLS enabled and registered in `scripts/migrate-supabase.mjs`).
-- **Verification**: `npm run typecheck`, `npm run lint` (0 errors, 0 warnings), `npm test` (257/257 including 2 new tests in `tests/workspace-templates-sharing.test.cjs` and `tests/migration-chain.test.mjs`), and `npm run build` passed. Verified all 9 features interactively in the browser at `http://127.0.0.1:3107` (including `/2 columns` side-by-side flex layout and continuous slash command typing). OPEN GAP: `migrations/021-share-links.sql` and `/api/share/[token]` Supabase persistence are not yet verified against a live Supabase container (`npm run test:supabase` not rerun for 021).
+- **Verification**: `npm run typecheck`, `npm run lint` (0 errors, 0 warnings), `npm test` (257/257 including 2 new tests in `tests/workspace-templates-sharing.test.cjs` and `tests/migration-chain.test.mjs`), and `npm run build` passed. Verified all 9 features interactively in the browser at `http://127.0.0.1:3107` (including `/2 columns` side-by-side flex layout and continuous slash command typing).
 
 ### 2026-11-13 - Fixed Share Popover UI & Incognito / Remote Link Sharing
 
 - **Share Popover UI Redesign**: Fixed deformed/awkward button row in `src/app/page.tsx`. Replaced the split half-width buttons with an input group (`[ URL input ] [ Copy ]`) paired with a dedicated full-width `Open in new tab` action button displaying icon and text, plus a subtle divider above `Disable & revoke link`.
 - **Public Share Link Server Persistence & Incognito Support**:
   - Root cause: share links and page document snapshots previously existed only in browser client `localStorage`, causing unauthenticated or incognito visitors to receive a 404 "This shared link is unavailable".
-  - Created migration `migrations/022-share-links-data.sql` to add `data jsonb not null default '{}'::jsonb` to `public.teamspace_share_links`, dropped rigid workspace document foreign key constraint, and granted `service_role` access; registered `022` in `scripts/migrate-supabase.mjs`.
+  - Created migration `migrations/022-share-links-data.sql` to add `data jsonb not null default '{}'::jsonb` to `public.teamspace_share_links`, dropped rigid workspace document foreign key constraint, and granted `service_role` access; registered in `scripts/migrate-supabase.mjs`.
   - Implemented full `PUT`, `GET`, `PATCH`, and `DELETE` handlers in `src/app/api/share/[token]/route.ts` with in-memory caching for zero-latency local fallback and Supabase table persistence.
   - Wired `workspace-store.ts` (`createOrGetShareLink`, `updateShareLink`, `revokeShareLink`, `updateBlock`) and `src/app/page.tsx` to automatically push document snapshots to `/api/share/[token]`.
 - **Verification**:
@@ -1168,4 +1205,21 @@
 - **Verification**:
   - `npm run typecheck` (0 errors), `npm run lint` (0 warnings), `npm test` (257/257 pass), `npm run build` passed.
   - Browser QA verified on mobile viewport (390px x 844px) at `http://localhost:3100/`: no sidebar strip on left, content blocks span ~85% of screen width with minimal 14px edge padding.
-  - Fixed hardcoded migration count assertion in `tests/supabase-integration.test.cjs:335` to dynamically assert `String(applicationMigrations.length)` (14 migrations with `021-share-links.sql` and `022-share-links-data.sql`). Full Supabase integration suite passed: `npm run test:supabase` (77/77 pass).
+  - Fixed hardcoded migration count assertion in `tests/supabase-integration.test.cjs:335` to dynamically assert `String(applicationMigrations.length)`. Full Supabase integration suite passed: `npm run test:supabase` (77/77 pass).
+
+### 2026-11-13 - Security Vulnerability Remediation & Merge of Origin Main
+
+- **Vulnerability Remediation**:
+  - Remediated critical Next.js advisory (GHSA-2464-fhr4-w9xw, GHSA-p3m5-59mp-jv5r, GHSA-673q-mjm6-r5xr) by updating `next` and `eslint-config-next` to `16.4.6`.
+  - Added package overrides in `package.json` for `re2js: 2.10.0` (resolves GHSA-gg6h-894w-4m9c), `uuid: 11.1.1` (resolves GHSA-w5hq-g745-h8pq), and `fast-xml-parser: 5.12.0` (resolves GHSA-474x-hrwr-fgx4).
+  - Verified `npm audit --omit=dev --audit-level=high`: passes with 0 high and 0 critical vulnerabilities.
+- **Merge of `origin/main` into `feat/editor-media-templates-sharing`**:
+  - Merged latest updates from `origin/main` containing `usePageCollaboration`, `MediaNodes` (`ImageBlock`, `AttachmentBlock`, `AudioBlock`), and `021-storage-attachments-and-audio.sql`.
+  - Renumbered our link sharing migrations to preserve strict monotonic sequence: `migrations/022-share-links.sql` and `migrations/023-share-links-data.sql`, registering all 15 migrations in `scripts/migrate-supabase.mjs`.
+  - Harmonized `TeamspaceEditor.tsx` and CSS modules to support collaboration status, media upload pipelines, and all rich editor extensions (`Callout`, `Columns`, `DatabaseView`, `VideoBlock`, `PageMention`, `AttachmentBlock`, `AudioBlock`, `ImageBlock`).
+- **Verification**:
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm test`: 260/260 pass (all unit/model/media/template suites).
+  - `npm run test:supabase`: 77/77 pass.
+  - `npm run build`: Turbopack production build succeeds with 0 errors.

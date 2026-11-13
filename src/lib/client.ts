@@ -903,7 +903,7 @@ export function useTeamspace() {
       next: (note: Note) => void,
       fail: (error: Error) => void,
     ) => {
-      if (!workspace) throw new Error("Choose a workspace first.");
+      if (!workspace) return () => {};
       const observer = { workspaceId: workspace.id, noteId, next, fail };
       noteObservers.current.add(observer);
       queueMicrotask(() => {
@@ -927,8 +927,9 @@ export function useTeamspace() {
       fail: (error: Error) => void,
     ) => {
       let active = true;
+      if (!workspace) return () => {};
       const unsubscribe = subscribeBrowserCollection(
-        `${path()}/notes/${noteId}/presence`,
+        `workspaces/${workspace.id}/notes/${noteId}/presence`,
         (snapshot) => {
           if (!active) return;
           next(
@@ -948,18 +949,18 @@ export function useTeamspace() {
       };
     },
     heartbeatPresence: async (noteId: string, sessionId: string) => {
-      if (!user) return;
+      if (!user || !workspace) return;
       await api(
-        `${path()}/notes/${noteId}/presence`,
+        `workspaces/${workspace.id}/notes/${noteId}/presence`,
         "POST",
         { sessionId },
         user.uid,
       );
     },
     leavePresence: async (noteId: string, sessionId: string) => {
-      if (!user) return;
+      if (!user || !workspace) return;
       await api(
-        `${path()}/notes/${noteId}/presence`,
+        `workspaces/${workspace.id}/notes/${noteId}/presence`,
         "DELETE",
         { sessionId },
         user.uid,
