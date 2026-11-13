@@ -44,6 +44,7 @@ export default function HomePage() {
     updateShareLink,
     revokeShareLink,
     syncShareLink,
+    setServerSyncAdapter,
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -52,6 +53,28 @@ export default function HomePage() {
   const [copiedShare, setCopiedShare] = useState(false);
   const appearanceMenuRef = useRef<HTMLDivElement>(null);
   const shareMenuRef = useRef<HTMLDivElement>(null);
+
+  // Connect workspaceStore to server sync adapter when authenticated and workspace is loaded
+  useEffect(() => {
+    if (api.configured && api.user && api.workspace) {
+      setServerSyncAdapter({
+        workspaceId: api.workspace.id,
+        fetchBlocks: api.fetchBlocks,
+        syncBlocks: api.syncBlocks,
+        deleteBlock: api.deleteBlock,
+      });
+    } else {
+      setServerSyncAdapter(null);
+    }
+  }, [
+    api.configured,
+    api.user,
+    api.workspace,
+    api.fetchBlocks,
+    api.syncBlocks,
+    api.deleteBlock,
+    setServerSyncAdapter,
+  ]);
 
   // Auto-collapse sidebar on mobile screen widths to give maximum canvas space
   useEffect(() => {

@@ -1223,3 +1223,26 @@
   - `npm test`: 260/260 pass (all unit/model/media/template suites).
   - `npm run test:supabase`: 77/77 pass.
   - `npm run build`: Turbopack production build succeeds with 0 errors.
+
+### 2026-11-13 - Full Multi-Browser & Offline Synchronization Engine with Block-Level LWW and Tombstone Deletion
+
+- **Resolved CI Test Failure (`tests/api.test.cjs:1009`)**:
+  - Identified cause: commit `af3386f` raised `MAX_BYTES` for attachments to 25 MiB (`25 * 1024 * 1024`), making the old test payload of `11 * 1024 * 1024` valid (returned 201). Updated test assertion in `tests/api.test.cjs:1067` to test `26 * 1024 * 1024`, which correctly triggers 400.
+- **Server API Batch Sync & Lazy Note Collaboration Initialization (`src/lib/server/api.ts`)**:
+  - Added batch sync support in `POST /api/workspaces/:workspaceId/blocks` accepting `{ blocks: Block[], tombstones?: Record<string, number> }`.
+  - Implemented block-level merging using Last Write Wins (LWW: `incoming.updatedAt >= existing.updatedAt`) with client timestamp preservation.
+  - Implemented persistent tombstone recording on server (`isArchived: true, deletedAt: time, updatedAt: time`) on block deletion and tombstone sync.
+  - Added lazy note collaboration initialization in `collaborationOperation`: if a collaborative note document does not exist yet in `notes`, but exists as a block in `blocks`, automatically initialize the CRDT note document so collaborative editing works seamlessly for any page block. Also added bidirectional synchronization of updated collaborative content back to the page block record.
+- **Client Synchronization Engine (`src/lib/workspace-store.ts`, `src/lib/client.ts`, `src/app/page.tsx`)**:
+  - Added `ServerSyncAdapter` (`fetchBlocks`, `syncBlocks`, `deleteBlock`) wired from `useTeamspace()` into `workspaceStore.setServerSyncAdapter` in `src/app/page.tsx`.
+  - Implemented persistent sync outbox (`teamspace_sync_outbox_v1`) and tombstones (`teamspace_sync_tombstones_v1`) in `localStorage` for complete offline durability.
+  - Implemented block-level conflict resolution: unrelated block edits on different devices merge cleanly without overwriting each other; conflicting edits within the same block resolve via LWW (`updatedAt`).
+  - Implemented tombstone deletion synchronization: deleting a block on one device stores a deletion tombstone that propagates to the server and other devices, preventing resurrected blocks.
+  - Connected `packDatabaseBlock`: all database view, property, and template modifications pack into the database block's metadata and synchronize automatically.
+  - Added cross-tab synchronization via `BroadcastChannel("teamspace_workspace_sync")` and automatic sync flushes on window focus, online restoration (`window.addEventListener("online")`), and background polling.
+- **Verification**:
+  - Unit & Integration Tests: `npm test` runs 264 tests across all suites with 264 passing and 0 failures (including 4 new tests in `tests/workspace-templates-sharing.test.cjs`).
+  - Supabase Integration: `npm run test:supabase` runs 77 tests with 77 passing and 0 failures.
+  - TypeScript Compilation: `npm run typecheck` passed with 0 errors.
+  - ESLint Linter: `npm run lint` passed with 0 errors and 0 warnings.
+  - Production Build: `npm run build` completed with 0 errors.

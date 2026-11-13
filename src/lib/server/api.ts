@@ -830,9 +830,30 @@ async function collaborationOperation(
     : undefined;
   const saved = await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
-    const snapshot = await tx.get(ref);
-    if (!snapshot.exists)
-      throw new ApiError(404, "not_found", "Note not found.");
+    let snapshot = await tx.get(ref);
+    if (!snapshot.exists) {
+      const blockRef = workspace.collection("blocks").doc(id);
+      const blockSnap = await tx.get(blockRef);
+      if (blockSnap.exists) {
+        const blockData = blockSnap.data()!;
+        const initialContent = { blocks: [{ id: `${id}_p`, type: "paragraph", text: "" }] };
+        const doc = initializeDocument(initialContent);
+        const initialNoteData = {
+          title: (blockData.title as string) || "Untitled",
+          parentId: (blockData.parentId as string) || null,
+          content: initialContent,
+          revision: 1,
+          createdAt: now(),
+          updatedAt: now(),
+          createdBy: user.uid,
+        };
+        doc.destroy();
+        tx.set(ref, initialNoteData);
+        snapshot = await tx.get(ref);
+      } else {
+        throw new ApiError(404, "not_found", "Note not found.");
+      }
+    }
     const value = snapshot.data()!;
     if (value.deleting)
       throw new ApiError(409, "deleting", "This note is being deleted.");
@@ -952,6 +973,16 @@ async function collaborationOperation(
         updatedBy: user.uid,
         updatedAt: now(),
       });
+      const blockRef = workspace.collection("blocks").doc(id);
+      const blockSnap = await tx.get(blockRef);
+      if (blockSnap.exists) {
+        tx.update(blockRef, {
+          content,
+          revision: value.revision + 1,
+          updatedAt: Date.now(),
+          updatedBy: user.uid,
+        });
+      }
       tx.create(receipt!, {
         uid: user.uid,
         operationId,
@@ -1718,13 +1749,80 @@ export async function handleTrustedApi(
       }
       if (method === "POST" && !itemId) {
         const data = (await body(request)) as Record<string, unknown>;
+        if (Array.isArray(data?.blocks)) {
+          const incomingBlocks = data.blocks as Record<string, unknown>[];
+          const incomingTombstones = (data.tombstones || {}) as Record<string, number>;
+          const result = await db.runTransaction(async tx => {
+            await member(tx, workspace, user.uid);
+            const tsNow = Date.now();
+            for (const b of incomingBlocks) {
+              const bId = b.id as string;
+              if (!bId) continue;
+              const ref = workspace.collection("blocks").doc(bId);
+              const existing = await tx.get(ref);
+              const existingData = existing.exists ? (existing.data() as Record<string, unknown>) : null;
+              const existingUpdatedAt = typeof existingData?.updatedAt === "number" ? existingData.updatedAt : 0;
+              const incomingUpdatedAt = typeof b.updatedAt === "number" ? b.updatedAt : tsNow;
+
+              if (!existing.exists) {
+                const tombstoneTime = incomingTombstones[bId];
+                if (typeof tombstoneTime === "number" && tombstoneTime >= incomingUpdatedAt) {
+                  continue;
+                }
+                const payload = {
+                  ...b,
+                  createdAt: typeof b.createdAt === "number" ? b.createdAt : tsNow,
+                  updatedAt: incomingUpdatedAt,
+                  createdBy: (b.createdBy as string) || user.uid,
+                };
+                tx.create(ref, payload);
+              } else if (incomingUpdatedAt >= existingUpdatedAt) {
+                const payload = {
+                  ...existingData,
+                  ...b,
+                  updatedAt: incomingUpdatedAt,
+                  updatedBy: user.uid,
+                };
+                tx.update(ref, payload);
+              }
+            }
+
+            for (const [delId, delTime] of Object.entries(incomingTombstones)) {
+              const ref = workspace.collection("blocks").doc(delId);
+              const existing = await tx.get(ref);
+              if (existing.exists) {
+                const existingData = existing.data() as Record<string, unknown>;
+                const existingUpdatedAt = typeof existingData?.updatedAt === "number" ? existingData.updatedAt : 0;
+                if (typeof delTime === "number" && delTime >= existingUpdatedAt) {
+                  tx.update(ref, {
+                    ...existingData,
+                    isArchived: true,
+                    deletedAt: delTime,
+                    updatedAt: delTime,
+                    updatedBy: user.uid,
+                  });
+                }
+              }
+            }
+
+            const rows = await tx.get(workspace.collection("blocks"));
+            return {
+              blocks: rows.docs.map(item => ({
+                id: item.id,
+                ...(encodeStoreValue(item.data()) as Record<string, unknown>),
+              })),
+            };
+          });
+          return json(result);
+        }
+
         const result = await db.runTransaction(async tx => {
           await member(tx, workspace, user.uid);
           const ref = workspace.collection("blocks").doc((data?.id as string) || randomUUID());
           const payload = {
             ...data,
-            createdAt: now(),
-            updatedAt: now(),
+            createdAt: typeof data?.createdAt === "number" ? data.createdAt : Date.now(),
+            updatedAt: typeof data?.updatedAt === "number" ? data.updatedAt : Date.now(),
             createdBy: user.uid,
           };
           tx.create(ref, payload);
@@ -1740,12 +1838,13 @@ export async function handleTrustedApi(
           const existing = await tx.get(ref);
           if (!existing.exists) throw new ApiError(404, "not_found", "Block not found.");
           const payload = {
+            ...existing.data(),
             ...data,
-            updatedAt: now(),
+            updatedAt: typeof data?.updatedAt === "number" ? data.updatedAt : Date.now(),
             updatedBy: user.uid,
           };
           tx.update(ref, payload);
-          return { block: { id: ref.id, ...existing.data(), ...payload } };
+          return { block: { id: ref.id, ...payload } };
         });
         return json(result);
       }
@@ -1753,7 +1852,17 @@ export async function handleTrustedApi(
         await db.runTransaction(async tx => {
           await member(tx, workspace, user.uid);
           const ref = workspace.collection("blocks").doc(itemId);
-          tx.delete(ref);
+          const existing = await tx.get(ref);
+          if (existing.exists) {
+            const delNow = Date.now();
+            tx.update(ref, {
+              ...existing.data(),
+              isArchived: true,
+              deletedAt: delNow,
+              updatedAt: delNow,
+              updatedBy: user.uid,
+            });
+          }
         });
         return json({ ok: true });
       }

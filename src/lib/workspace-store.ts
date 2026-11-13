@@ -61,6 +61,280 @@ export const CORE_PROPERTY_DEFINITIONS: Record<string, Omit<DatabaseProperty, "p
 const STORAGE_KEY = "teamspace_workspace_state_v1";
 // Pre-rebrand key; read once so existing local edits are not lost.
 const LEGACY_STORAGE_KEY = "opennotion_workspace_state_v1";
+const OUTBOX_STORAGE_KEY = "teamspace_sync_outbox_v1";
+const TOMBSTONES_STORAGE_KEY = "teamspace_sync_tombstones_v1";
+const SYNC_CHANNEL_NAME = "teamspace_workspace_sync";
+
+export type ServerSyncAdapter = {
+  workspaceId: string;
+  fetchBlocks: () => Promise<Block[]>;
+  syncBlocks: (blocks: Block[], tombstones?: Record<string, number>) => Promise<Block[]>;
+  deleteBlock: (blockId: string) => Promise<void>;
+};
+
+let currentAdapter: ServerSyncAdapter | null = null;
+let isFirstSync = true;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+function loadOutbox(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function saveOutbox(outbox: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(Array.from(outbox)));
+  } catch {}
+}
+
+function loadTombstones(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(TOMBSTONES_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveTombstones(records: Record<string, number>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TOMBSTONES_STORAGE_KEY, JSON.stringify(records));
+  } catch {}
+}
+
+const syncOutbox: Set<string> = loadOutbox();
+const tombstones: Record<string, number> = loadTombstones();
+
+let syncChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+  try {
+    syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+    syncChannel.onmessage = (event) => {
+      if (event.data?.type === "workspace_reload") {
+        const stored = readStoredState();
+        if (stored) {
+          const parsed = stored.state as Partial<WorkspaceState>;
+          if (parsed.workspace && parsed.blocks) {
+            currentState = {
+              ...currentState,
+              ...parsed,
+            };
+            for (const listener of listeners) {
+              listener();
+            }
+          }
+        }
+      }
+    };
+  } catch {}
+}
+
+function broadcastLocalChange() {
+  if (syncChannel) {
+    try {
+      syncChannel.postMessage({ type: "workspace_reload" });
+    } catch {}
+  }
+}
+
+let activeSyncPromise: Promise<void> | null = null;
+
+function scheduleSync(delayMs = 250) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    void workspaceStore.flushSync();
+  }, delayMs);
+  if (syncTimer && typeof (syncTimer as unknown as { unref?: () => void }).unref === "function") {
+    (syncTimer as unknown as { unref: () => void }).unref();
+  }
+}
+
+function markDirty(blockId: string) {
+  syncOutbox.add(blockId);
+  saveOutbox(syncOutbox);
+  broadcastLocalChange();
+  scheduleSync(250);
+}
+
+function recordTombstone(blockId: string, timestamp = Date.now()) {
+  tombstones[blockId] = Math.max(tombstones[blockId] || 0, timestamp);
+  saveTombstones(tombstones);
+  syncOutbox.add(blockId);
+  saveOutbox(syncOutbox);
+  broadcastLocalChange();
+  scheduleSync(0);
+}
+
+function unpackDatabaseBlock(
+  dbBlock: Block,
+  targetProperties: Record<string, DatabaseProperty[]>,
+  targetViews: Record<string, DatabaseView[]>,
+  targetTemplates: Record<string, DatabaseTemplate[]>
+) {
+  const customProps = dbBlock.properties?.databaseProperties as DatabaseProperty[] | undefined;
+  if (Array.isArray(customProps)) {
+    targetProperties[dbBlock.id] = customProps;
+  }
+  const customViews = dbBlock.properties?.databaseViews as DatabaseView[] | undefined;
+  if (Array.isArray(customViews)) {
+    targetViews[dbBlock.id] = customViews;
+    if (!currentState.activeViewIdByDatabase[dbBlock.id] && customViews[0]) {
+      currentState.activeViewIdByDatabase[dbBlock.id] = customViews[0].id;
+    }
+  }
+  const customTemplates = dbBlock.properties?.databaseTemplates as DatabaseTemplate[] | undefined;
+  if (Array.isArray(customTemplates)) {
+    targetTemplates[dbBlock.id] = customTemplates;
+  }
+}
+
+function packDatabaseBlock(databaseId: string) {
+  const db = currentState.blocks[databaseId];
+  if (!db || db.type !== "database") return;
+  const now = Date.now();
+  currentState = {
+    ...currentState,
+    blocks: {
+      ...currentState.blocks,
+      [databaseId]: {
+        ...db,
+        updatedAt: now,
+        revision: (db.revision || 1) + 1,
+        properties: {
+          ...(db.properties || {}),
+          databaseProperties: currentState.properties[databaseId] || [],
+          databaseViews: currentState.views[databaseId] || [],
+          databaseTemplates: currentState.templates?.[databaseId] || [],
+        },
+      },
+    },
+  };
+  markDirty(databaseId);
+}
+
+function reconcileWithServerBlocks(serverBlocks: Block[]) {
+  const nextBlocks = { ...currentState.blocks };
+  const nextProps = { ...currentState.properties };
+  const nextViews = { ...currentState.views };
+  const nextTemplates = { ...(currentState.templates || {}) };
+  let stateChanged = false;
+
+  for (const sb of serverBlocks) {
+    const isDeleted = Boolean(sb.isArchived || typeof sb.deletedAt === "number");
+    const localTombstone = tombstones[sb.id];
+    const localBlock = nextBlocks[sb.id];
+
+    if (isDeleted) {
+      const serverDelTime = typeof sb.deletedAt === "number" ? sb.deletedAt : (sb.updatedAt || 0);
+      if (localBlock && (localBlock.updatedAt || 0) > serverDelTime) {
+        // Local edit occurred after server deletion: local edit wins
+        syncOutbox.add(sb.id);
+        continue;
+      }
+      // Server deletion wins
+      tombstones[sb.id] = Math.max(tombstones[sb.id] || 0, serverDelTime);
+      if (localBlock) {
+        delete nextBlocks[sb.id];
+        syncOutbox.delete(sb.id);
+        stateChanged = true;
+      }
+      continue;
+    }
+
+    // Server block is active
+    if (localTombstone && localTombstone >= (sb.updatedAt || 0)) {
+      // Local deletion wins over older server block
+      syncOutbox.add(sb.id);
+      if (localBlock) {
+        delete nextBlocks[sb.id];
+        stateChanged = true;
+      }
+      continue;
+    }
+
+    if (!localBlock) {
+      nextBlocks[sb.id] = sb;
+      syncOutbox.delete(sb.id);
+      stateChanged = true;
+      if (sb.type === "database") {
+        unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+      }
+    } else {
+      const serverTime = (sb.updatedAt || 0) as number;
+      const localTime = (localBlock.updatedAt || 0) as number;
+
+      if (serverTime > localTime) {
+        // Server block is newer
+        nextBlocks[sb.id] = sb;
+        syncOutbox.delete(sb.id);
+        stateChanged = true;
+        if (sb.type === "database") {
+          unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+        }
+      } else if (localTime > serverTime) {
+        // Local block is newer: keep local block and keep in outbox to push
+        syncOutbox.add(sb.id);
+      } else {
+        if ((sb.revision || 0) >= (localBlock.revision || 0)) {
+          nextBlocks[sb.id] = sb;
+          syncOutbox.delete(sb.id);
+          stateChanged = true;
+          if (sb.type === "database") {
+            unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+          }
+        }
+      }
+    }
+  }
+
+  if (stateChanged) {
+    const nextChildren: Record<string, string[]> = { root: [] };
+    for (const b of Object.values(nextBlocks)) {
+      if (b.isArchived) continue;
+      const parentKey = b.parentId || "root";
+      if (!nextChildren[parentKey]) nextChildren[parentKey] = [];
+      if (!nextChildren[parentKey].includes(b.id)) {
+        nextChildren[parentKey].push(b.id);
+      }
+    }
+
+    let nextActive = currentState.activeBlockId;
+    if (nextActive && !nextBlocks[nextActive]) {
+      const rootIds = nextChildren["root"] || [];
+      nextActive = rootIds[0] || null;
+    }
+
+    currentState = {
+      ...currentState,
+      blocks: nextBlocks,
+      childrenIndex: nextChildren,
+      properties: nextProps,
+      views: nextViews,
+      templates: nextTemplates,
+      activeBlockId: nextActive,
+    };
+    saveOutbox(syncOutbox);
+    saveTombstones(tombstones);
+    emitChange();
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    scheduleSync(0);
+  });
+  window.addEventListener("focus", () => {
+    scheduleSync(0);
+  });
+}
 
 function readStoredState(): { state: unknown; legacy: boolean } | null {
   if (typeof window === "undefined") return null;
@@ -295,24 +569,13 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(id);
     return newPage;
   },
 
   createDatabase(parentId: string | null = null, title: string = "Untitled Database"): Block {
     const now = Date.now();
     const id = `database-${now}-${Math.random().toString(36).slice(2, 7)}`;
-    const newDb: Block = {
-      id,
-      workspaceId: currentState.workspace.id,
-      parentId,
-      type: "database",
-      title,
-      icon: "🗂️",
-      position: `z${now}`,
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
 
     const defaultProps: DatabaseProperty[] = [
       { id: "prop-title", name: "Name", type: "title", position: "a0" },
@@ -349,6 +612,24 @@ export const workspaceStore = {
       },
     ];
 
+    const newDb: Block = {
+      id,
+      workspaceId: currentState.workspace.id,
+      parentId,
+      type: "database",
+      title,
+      icon: "🗂️",
+      position: `z${now}`,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+      properties: {
+        databaseProperties: defaultProps,
+        databaseViews: defaultViews,
+        databaseTemplates: [],
+      },
+    };
+
     const parentKey = parentId || "root";
     const existingChildren = currentState.childrenIndex[parentKey] || [];
 
@@ -378,6 +659,7 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(id);
     return newDb;
   },
 
@@ -407,6 +689,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    markDirty(id);
 
     const matchingLink = Object.values(currentState.shareLinks || {}).find(
       (l) => l.blockId === id && l.enabled
@@ -426,20 +709,38 @@ export const workspaceStore = {
   archiveBlock(id: string) {
     const block = currentState.blocks[id];
     if (block) {
-      workspaceStore.updateBlock(id, { isArchived: true });
-      if (currentState.sidePeekBlockId === id) {
-        workspaceStore.setSidePeekBlock(null);
+      recordTombstone(id);
+      const nextBlocks = { ...currentState.blocks };
+      delete nextBlocks[id];
+
+      const parentKey = block.parentId || "root";
+      const existingChildren = currentState.childrenIndex[parentKey] || [];
+      const nextChildren = {
+        ...currentState.childrenIndex,
+        [parentKey]: existingChildren.filter((bid) => bid !== id),
+      };
+
+      let nextActive = currentState.activeBlockId;
+      if (nextActive === id) {
+        const rootIds = nextChildren["root"] || [];
+        const nextId = rootIds.find((bid) => bid !== id && !nextBlocks[bid]?.isArchived);
+        nextActive = nextId || null;
       }
-      if (currentState.activeBlockId === id) {
-        // Find another root page to switch to
-        const rootIds = currentState.childrenIndex["root"] || [];
-        const nextId = rootIds.find((bid) => bid !== id && !currentState.blocks[bid]?.isArchived);
-        workspaceStore.setActiveBlock(nextId || null);
-      }
+
+      currentState = {
+        ...currentState,
+        blocks: nextBlocks,
+        childrenIndex: nextChildren,
+        activeBlockId: nextActive,
+        sidePeekBlockId: currentState.sidePeekBlockId === id ? null : currentState.sidePeekBlockId,
+      };
+      emitChange();
     }
   },
 
   restoreBlock(id: string) {
+    delete tombstones[id];
+    saveTombstones(tombstones);
     workspaceStore.updateBlock(id, { isArchived: false });
   },
 
@@ -483,6 +784,7 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(newId);
     return duplicate;
   },
 
@@ -583,6 +885,7 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(newRow.id);
     return newRow;
   },
 
@@ -638,6 +941,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
     return newView;
   },
 
@@ -660,6 +964,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   moveDatabaseView(databaseId: string, activeViewId: string, overViewId: string) {
@@ -675,6 +980,7 @@ export const workspaceStore = {
       views: { ...currentState.views, [databaseId]: next },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   /** Custom manual ordering: place blockId at the position currently held by overId (same parent). */
@@ -691,6 +997,7 @@ export const workspaceStore = {
       childrenIndex: { ...currentState.childrenIndex, [parentId]: next },
     };
     emitChange();
+    markDirty(parentId);
   },
 
   updateDatabaseView(
@@ -707,6 +1014,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   createDatabaseProperty(
@@ -750,6 +1058,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
     return newProp;
   },
 
@@ -769,6 +1078,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   deleteDatabaseProperty(databaseId: string, propertyId: string) {
@@ -797,6 +1107,7 @@ export const workspaceStore = {
       };
     }
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   restoreDatabaseProperty(databaseId: string, propertyId: string) {
@@ -830,6 +1141,7 @@ export const workspaceStore = {
       };
     }
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   // Database Templates
@@ -869,6 +1181,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
     return newTemplate;
   },
 
@@ -894,6 +1207,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   deleteDatabaseTemplate(databaseId: string, templateId: string) {
@@ -906,6 +1220,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   // Share Links
@@ -1153,11 +1468,119 @@ export const workspaceStore = {
     emitChange();
   },
 
+  setServerSyncAdapter(adapter: ServerSyncAdapter | null) {
+    currentAdapter = adapter;
+    isFirstSync = true;
+    if (adapter) {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(() => {
+        if (currentAdapter && !activeSyncPromise && !syncTimer) {
+          if (typeof document === "undefined" || document.visibilityState === "visible") {
+            void workspaceStore.flushSync();
+          }
+        }
+      }, 4000);
+      if (pollInterval && typeof (pollInterval as unknown as { unref?: () => void }).unref === "function") {
+        (pollInterval as unknown as { unref: () => void }).unref();
+      }
+      void workspaceStore.flushSync();
+    } else {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+  },
+
+  getServerSyncAdapter(): ServerSyncAdapter | null {
+    return currentAdapter;
+  },
+
+  async flushSync() {
+    if (!currentAdapter) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (activeSyncPromise) return activeSyncPromise;
+
+    activeSyncPromise = (async () => {
+      try {
+        let blocksToPush: Block[] = [];
+        const dirtyIds = Array.from(syncOutbox);
+
+        if (isFirstSync) {
+          isFirstSync = false;
+          const serverBlocks = await currentAdapter.fetchBlocks();
+          if (serverBlocks.length === 0) {
+            // Server has no blocks yet: push all local non-archived blocks
+            blocksToPush = Object.values(currentState.blocks).filter((b) => !b.isArchived);
+          } else {
+            // Check if local was only initial seed with no local modifications
+            const localOnlySeed =
+              dirtyIds.length === 0 &&
+              Object.keys(tombstones).length === 0 &&
+              Object.keys(currentState.blocks).every((id) =>
+                id.startsWith("page-getting-started") ||
+                id.startsWith("database-tasks") ||
+                id.startsWith("task-")
+              );
+
+            if (localOnlySeed) {
+              // Replace local seed state with server blocks cleanly
+              currentState = {
+                ...currentState,
+                blocks: {},
+                childrenIndex: { root: [] },
+                properties: {},
+                views: {},
+                templates: {},
+              };
+            }
+            reconcileWithServerBlocks(serverBlocks);
+            blocksToPush = Array.from(syncOutbox)
+              .map((id) => currentState.blocks[id])
+              .filter(Boolean) as Block[];
+          }
+        } else if (dirtyIds.length > 0) {
+          blocksToPush = dirtyIds
+            .map((id) => currentState.blocks[id])
+            .filter(Boolean) as Block[];
+        }
+
+        const tombstoneCount = Object.keys(tombstones).length;
+        if (blocksToPush.length > 0 || tombstoneCount > 0) {
+          const returnedBlocks = await currentAdapter.syncBlocks(blocksToPush, tombstones);
+          if (Array.isArray(returnedBlocks)) {
+            for (const b of blocksToPush) {
+              syncOutbox.delete(b.id);
+            }
+            saveOutbox(syncOutbox);
+            reconcileWithServerBlocks(returnedBlocks);
+          }
+        }
+      } catch (err) {
+        console.warn("workspaceStore sync warning:", err);
+      }
+    })().finally(() => {
+      activeSyncPromise = null;
+    });
+
+    return activeSyncPromise;
+  },
+
+  reconcileWithServer(blocks: Block[]) {
+    reconcileWithServerBlocks(blocks);
+  },
+
   // Reset to default seed
   resetToDefaultSeed() {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(LEGACY_STORAGE_KEY);
+      localStorage.removeItem(OUTBOX_STORAGE_KEY);
+      localStorage.removeItem(TOMBSTONES_STORAGE_KEY);
+    }
+    syncOutbox.clear();
+    for (const key of Object.keys(tombstones)) {
+      delete tombstones[key];
     }
     currentState = buildInitialState();
     emitChange();
@@ -1207,5 +1630,8 @@ export function useWorkspace() {
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,
+    setServerSyncAdapter: workspaceStore.setServerSyncAdapter,
+    flushSync: workspaceStore.flushSync,
+    reconcileWithServer: workspaceStore.reconcileWithServer,
   };
 }

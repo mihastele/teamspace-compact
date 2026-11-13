@@ -26,6 +26,7 @@ import type { SavedView, TicketQuery, ViewConfig } from "./ticket-query";
 import { buildInviteUrl, resolveAppBaseUrl } from "./app-url";
 import type {
   Attachment,
+  Block,
   Member,
   Note,
   Task,
@@ -1272,5 +1273,38 @@ export function useTeamspace() {
       action(async () => {
         await api(`${path()}/attachments/${id}`, "DELETE");
       }),
+    fetchBlocks: async () => {
+      if (!configured || !user || !workspace) return [] as Block[];
+      try {
+        const data = await api(`workspaces/${workspace.id}/blocks`, "GET", undefined, user.uid);
+        return (data.blocks || []) as Block[];
+      } catch (err) {
+        console.warn("fetchBlocks notice:", err);
+        return [] as Block[];
+      }
+    },
+    syncBlocks: async (blocks: Block[], tombstones?: Record<string, number>) => {
+      if (!configured || !user || !workspace) return [] as Block[];
+      try {
+        const data = await api(
+          `workspaces/${workspace.id}/blocks`,
+          "POST",
+          { blocks, tombstones },
+          user.uid
+        );
+        return (data.blocks || []) as Block[];
+      } catch (err) {
+        console.warn("syncBlocks notice:", err);
+        return [] as Block[];
+      }
+    },
+    deleteBlock: async (blockId: string) => {
+      if (!configured || !user || !workspace) return;
+      try {
+        await api(`workspaces/${workspace.id}/blocks/${blockId}`, "DELETE", undefined, user.uid);
+      } catch (err) {
+        console.warn("deleteBlock notice:", err);
+      }
+    },
   };
 }

@@ -168,6 +168,7 @@ export type Block = {
   isFullWidth?: boolean;
   fontStyle?: "sans" | "serif" | "mono";
   isArchived?: boolean;
+  deletedAt?: number;
   revision: number;
   createdBy?: string;
   updatedBy?: string;

@@ -1064,7 +1064,7 @@ test("signed upload policy binds exact length and create-only generation before 
           parentId: "task",
           originalName: "photo.png",
           contentType: "image/png",
-          bytes: 11 * 1024 * 1024,
+          bytes: 26 * 1024 * 1024,
         },
         files.backend,
       )

@@ -68,3 +68,124 @@ test("share links support read-only, edit, and revocation lifecycle", () => {
   workspaceStore.revokeShareLink(link.token);
   assert.equal(workspaceStore.getState().shareLinks[link.token], undefined);
 });
+
+test("server sync reconciles blocks at block level without overwriting unrelated blocks", async () => {
+  workspaceStore.resetToDefaultSeed();
+  const pageA = workspaceStore.createPage(null, "Device A Page");
+  assert.ok(workspaceStore.getState().blocks[pageA.id]);
+
+  // Simulate server sending Device B's new block
+  const serverBlockB = {
+    id: "page-device-b",
+    workspaceId: workspaceStore.getState().workspace.id,
+    parentId: null,
+    type: "page",
+    title: "Device B Page",
+    icon: "📄",
+    position: "z100",
+    revision: 1,
+    createdAt: 1000,
+    updatedAt: 1000,
+    content: { type: "doc", content: [] },
+  };
+
+  workspaceStore.reconcileWithServer([serverBlockB]);
+
+  const state = workspaceStore.getState();
+  // Both pageA and page-device-b must exist!
+  assert.equal(state.blocks[pageA.id]?.title, "Device A Page");
+  assert.equal(state.blocks["page-device-b"]?.title, "Device B Page");
+  assert.ok(state.childrenIndex["root"].includes(pageA.id));
+  assert.ok(state.childrenIndex["root"].includes("page-device-b"));
+});
+
+test("same-block conflict resolution uses newer value (LWW)", async () => {
+  workspaceStore.resetToDefaultSeed();
+  const page = workspaceStore.createPage(null, "Original Title");
+  const blockId = page.id;
+
+  // Case 1: Server has a newer update
+  const newerServerBlock = {
+    ...page,
+    title: "Newer Server Title",
+    updatedAt: page.updatedAt + 10000,
+    revision: page.revision + 1,
+  };
+  workspaceStore.reconcileWithServer([newerServerBlock]);
+  assert.equal(workspaceStore.getState().blocks[blockId]?.title, "Newer Server Title");
+
+  // Case 2: Local has a newer update than an older server update
+  workspaceStore.updateBlock(blockId, { title: "Local Fresh Edit" });
+  const localTime = workspaceStore.getState().blocks[blockId].updatedAt;
+
+  const olderServerBlock = {
+    ...page,
+    title: "Stale Server Title",
+    updatedAt: localTime - 5000,
+    revision: 1,
+  };
+  workspaceStore.reconcileWithServer([olderServerBlock]);
+  // Local newer edit must win
+  assert.equal(workspaceStore.getState().blocks[blockId]?.title, "Local Fresh Edit");
+});
+
+test("tombstone deletion synchronization prevents resurrecting deleted blocks", async () => {
+  workspaceStore.resetToDefaultSeed();
+  const pageToDelete = workspaceStore.createPage(null, "To Be Deleted");
+  const delId = pageToDelete.id;
+
+  // Archive / delete block on this device
+  workspaceStore.archiveBlock(delId);
+  assert.equal(workspaceStore.getState().blocks[delId], undefined);
+
+  // Stale server response arrives containing the block from before deletion
+  const staleServerBlock = {
+    ...pageToDelete,
+    updatedAt: pageToDelete.updatedAt,
+  };
+  workspaceStore.reconcileWithServer([staleServerBlock]);
+
+  // Must NOT be resurrected!
+  assert.equal(workspaceStore.getState().blocks[delId], undefined);
+  assert.ok(!workspaceStore.getState().childrenIndex["root"]?.includes(delId));
+
+  // If another device deleted a block, server sends tombstone
+  const remotePage = workspaceStore.createPage(null, "Remote Active Page");
+  assert.ok(workspaceStore.getState().blocks[remotePage.id]);
+
+  const remoteServerTombstone = {
+    id: remotePage.id,
+    isArchived: true,
+    deletedAt: Date.now() + 5000,
+    updatedAt: Date.now() + 5000,
+  };
+  workspaceStore.reconcileWithServer([remoteServerTombstone]);
+
+  // Must be deleted locally
+  assert.equal(workspaceStore.getState().blocks[remotePage.id], undefined);
+});
+
+test("offline changes queue in outbox and flush when connected", async () => {
+  workspaceStore.resetToDefaultSeed();
+
+  let syncedBlocks = [];
+
+  const mockAdapter = {
+    workspaceId: workspaceStore.getState().workspace.id,
+    fetchBlocks: async () => [],
+    syncBlocks: async (blocks) => {
+      syncedBlocks = blocks;
+      return blocks;
+    },
+    deleteBlock: async () => {},
+  };
+
+  const offlinePage = workspaceStore.createPage(null, "Offline Created Page");
+  workspaceStore.updateBlock(offlinePage.id, { title: "Offline Updated Page" });
+
+  workspaceStore.setServerSyncAdapter(mockAdapter);
+  await workspaceStore.flushSync();
+
+  assert.ok(syncedBlocks.some((b) => b.id === offlinePage.id && b.title === "Offline Updated Page"));
+  workspaceStore.setServerSyncAdapter(null);
+});
