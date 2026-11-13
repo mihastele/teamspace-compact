@@ -121,7 +121,7 @@ async function authenticate(request: Request) {
   const policy = await db.doc("security/policy").get();
   assertAuthPolicy(policy.data(), configuration.emailConfirmationRequired, !!user.email_verified);
   db = guardedDocumentStore(db, configuration.emailConfirmationRequired, !!user.email_verified);
-  await rateLimit(db, user.uid, "api", 120);
+  await rateLimit(db, user.uid, "api", 300);
   return { db, storage, user };
 }
 

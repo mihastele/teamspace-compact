@@ -146,7 +146,7 @@ function broadcastLocalChange() {
 
 let activeSyncPromise: Promise<void> | null = null;
 
-function scheduleSync(delayMs = 250) {
+function scheduleSync(delayMs = 1200) {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     syncTimer = null;
@@ -161,7 +161,7 @@ function markDirty(blockId: string) {
   syncOutbox.add(blockId);
   saveOutbox(syncOutbox);
   broadcastLocalChange();
-  scheduleSync(250);
+  scheduleSync(1200);
 }
 
 function recordTombstone(blockId: string, timestamp = Date.now()) {
@@ -333,6 +333,9 @@ if (typeof window !== "undefined") {
   });
   window.addEventListener("focus", () => {
     scheduleSync(0);
+  });
+  window.addEventListener("pagehide", () => {
+    if (syncOutbox.size > 0) void workspaceStore.flushSync();
   });
 }
 
@@ -1479,7 +1482,7 @@ export const workspaceStore = {
             void workspaceStore.flushSync();
           }
         }
-      }, 4000);
+      }, 20000);
       if (pollInterval && typeof (pollInterval as unknown as { unref?: () => void }).unref === "function") {
         (pollInterval as unknown as { unref: () => void }).unref();
       }

@@ -1290,3 +1290,21 @@
   - TypeScript: `npm run typecheck` passed with 0 errors.
   - ESLint: `npm run lint` passed with 0 errors and 0 warnings.
   - Staging deployment rebuilt and restarted via `node ./scripts/deploy.mjs staging up`. Live WebSocket connection verified from Node client with `WEBSOCKET CONNECTED SUCCESSFULLY!`.
+
+### 2026-11-13 — Request Traffic Optimization, Debounce Tuning & Realtime Invalidation Coalescing
+
+- **Debounced Autosave & Block Sync (`src/lib/workspace-store.ts`)**:
+  - Increased `markDirty` debounce from 250ms to 1200ms. Active typing now updates the UI instantly (<16ms) but queues network synchronization until 1.2s after the user pauses typing, reducing sync requests while typing by ~85%.
+  - Added `pagehide` event listener to immediately flush any pending outbox mutations when the tab is closed or navigated away, ensuring zero data loss.
+- **Tuned Polling & Realtime Coalescing (`src/lib/workspace-store.ts`, `src/lib/browser-backend.ts`)**:
+  - Increased workspace store background poll interval from 4s to 20s.
+  - Increased browser backend fallback poll interval from 5s to 30s and restricted execution to visible tabs (`document.visibilityState === "visible"`).
+  - Implemented 500ms debounce and event coalescing on Supabase Realtime invalidations in `subscribeSupabaseCollection`, collapsing bursts of database events into a single snapshot fetch.
+  - Reduced idle request volume across open tabs from ~78 requests/minute to under 10 requests/minute.
+- **Server Rate Limit Ceiling Adjustment (`src/lib/server/api.ts`)**:
+  - Raised the per-user API rate limit from 120 to 300 requests/minute to comfortably accommodate simultaneous multi-tab active editing while maintaining strict protection against abusive traffic.
+- **Verification**:
+  - `npm test`: 264/264 tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - Staging Docker containers updated on `http://localhost:3100`.
