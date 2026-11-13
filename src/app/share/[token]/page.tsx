@@ -240,7 +240,7 @@ export default function SharedPage() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
+      <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 0" }}>
         {sharedBlock.type === "database" ? (
           <DatabaseView block={sharedBlock} readOnly={isReadOnly} />
         ) : (

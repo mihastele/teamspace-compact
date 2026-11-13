@@ -53,6 +53,13 @@ export default function HomePage() {
   const appearanceMenuRef = useRef<HTMLDivElement>(null);
   const shareMenuRef = useRef<HTMLDivElement>(null);
 
+  // Auto-collapse sidebar on mobile screen widths to give maximum canvas space
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSidebarCollapsed(true);
+    }
+  }, [setSidebarCollapsed]);
+
   // Sync workspace and server items into workspace-store whenever api data updates
   useEffect(() => {
     if (api.workspace) {

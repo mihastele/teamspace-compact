@@ -329,3 +329,29 @@
   display: flex;
   align-items: center;
 }
+
+@media (max-width: 768px) {
+  .canvasContainer {
+    padding: 16px 14px 60px;
+    max-width: 100%;
+  }
+
+  .canvasFullWidth {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .coverContainer {
+    height: 140px;
+    margin-bottom: 16px;
+  }
+
+  .titleInput {
+    font-size: 26px;
+  }
+
+  .pageIcon {
+    font-size: 42px;
+    margin-bottom: 10px;
+  }
+}

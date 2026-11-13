@@ -1154,3 +1154,17 @@
   - `npm run typecheck` (0 errors), `npm run lint` (0 warnings), `npm test` (257/257 pass).
   - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
   - Tested unauthenticated incognito access via browser subagent at `http://localhost:3100/share/[token]`: page rendered title, icon, content, and `Read-only` badge with 200 OK (evidence screenshot: `browser_evidence/dde4882f-3f52-4d3d-b674-f531d651bb1e/final_step_12.png`).
+
+### 2026-11-13 - Mobile Responsive Layout: Hide Collapsed Sidebar & Expand Content Width
+
+- **Hidden Collapsed Sidebar Strip on Mobile**:
+  - In `src/app/components/Sidebar.module.css`, added `@media (max-width: 768px)` rule setting `.collapsedSidebar { display: none !important; }`, completely freeing the 44px left vertical strip on phone viewports.
+  - When expanded on mobile, `.sidebar` operates as an overlay drawer (`position: fixed; z-index: 1000; width: 280px; max-width: 85vw`) with `.mobileBackdrop` (`rgba(0,0,0,0.4)` blur) to dismiss on click outside or page selection.
+  - In `src/app/page.tsx`, auto-collapses the sidebar on mobile screen widths on initial mount (`window.innerWidth <= 768`), leaving full screen width for the canvas while retaining the `☰` hamburger menu button in the slim topbar.
+- **Maximized Content Space & Reduced Margins on Mobile**:
+  - In `src/app/components/TeamspaceEditor.module.css`, reduced desktop 60px left/right padding to 14px on mobile (`padding: 16px 14px 60px`), recovering ~92px of screen width for text, callouts, and media blocks.
+  - In `src/app/components/DatabaseView.module.css`, reduced desktop 48px padding to 12px on mobile (`padding: 16px 12px 60px`).
+  - Desktop layout (`> 768px`) is completely untouched and preserves the full standard Notion margins and desktop sidebar strip.
+- **Verification**:
+  - `npm run typecheck` (0 errors), `npm run lint` (0 warnings), `npm test` (257/257 pass), `npm run build` passed.
+  - Browser QA verified on mobile viewport (390px x 844px) at `http://localhost:3100/`: no sidebar strip on left, content blocks span ~85% of screen width with minimal 14px edge padding.

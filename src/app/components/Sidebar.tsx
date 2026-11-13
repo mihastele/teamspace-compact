@@ -204,6 +204,9 @@ export default function Sidebar({
           onClick={() => {
             if (!isRenaming) {
               setActiveBlock(block.id);
+              if (typeof window !== "undefined" && window.innerWidth <= 768) {
+                setSidebarCollapsed(true);
+              }
             }
           }}
           {...contextMenuProps(() => pageMenu(block.id))}
@@ -294,8 +297,13 @@ export default function Sidebar({
   const currentUser = api?.user;
 
   return (
-    <DragProvider onEnd={handleDragEnd}>
-    <aside className={styles.sidebar}>
+    <>
+      <div
+        className={styles.mobileBackdrop}
+        onClick={() => setSidebarCollapsed(true)}
+      />
+      <DragProvider onEnd={handleDragEnd}>
+        <aside className={styles.sidebar}>
       {/* Workspace Header Switcher */}
       <div className={styles.header}>
         <div
@@ -486,5 +494,6 @@ export default function Sidebar({
       )}
     </aside>
     </DragProvider>
+    </>
   );
 }

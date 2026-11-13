@@ -1107,3 +1107,13 @@
 .dropTargetRow { box-shadow: inset 0 2px 0 var(--accent, #2383e2); }
 .boardCard, .listItem, .calendarEventItem, .tr { cursor: pointer; }
 
+@media (max-width: 768px) {
+  .container {
+    padding: 16px 12px 60px;
+  }
+
+  .titleInput {
+    font-size: 24px;
+  }
+}
+
