@@ -10,7 +10,6 @@ import { useWorkspace } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
 import { uploadMediaFile } from "@/lib/attachments";
-import { noteContentToTiptapDoc } from "@/lib/collaboration-model";
 import { saveMediaFile, useMediaUrl } from "@/lib/media-store";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
@@ -139,7 +138,7 @@ export default function TeamspaceEditor({
   const resolvedCoverUrl = useMediaUrl(block.coverUrl);
 
   // Real-time CRDT Page Collaboration hook
-  const { view: collabView, presenceUsers, applyTiptapChange } = usePageCollaboration(block);
+  const { view: collabView, presenceUsers } = usePageCollaboration(block);
 
   const applyBlockChange = useCallback(
     (updates: Partial<Block>) => {
@@ -209,7 +208,6 @@ export default function TeamspaceEditor({
       if (readOnly) return;
       const json = ed.getJSON();
       applyBlockChange({ content: json });
-      applyTiptapChange(json);
 
       const { from } = ed.state.selection;
       const textBefore = ed.state.doc.textBetween(Math.max(0, from - 24), from);
@@ -652,16 +650,15 @@ export default function TeamspaceEditor({
     };
   }, [mentionMenuPosition, mentionablePages, selectedMentionIndex, insertPageMention]);
 
-  // Re-sync editor content only when unfocused and collaboration content externally differs
+  // Re-sync editor content only when unfocused and block content externally differs
   useEffect(() => {
-    if (editor && !editor.isFocused && collabView.content) {
-      const tiptapDoc = noteContentToTiptapDoc(collabView.content);
+    if (editor && !editor.isFocused && block.content) {
       const currentJson = editor.getJSON();
-      if (JSON.stringify(currentJson) !== JSON.stringify(tiptapDoc)) {
-        editor.commands.setContent(tiptapDoc as JSONContent, { emitUpdate: false });
+      if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
+        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
       }
     }
-  }, [collabView.content, editor]);
+  }, [block.content, editor]);
 
   // Click-outside listener to dismiss popovers
   useEffect(() => {

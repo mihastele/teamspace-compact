@@ -1246,3 +1246,29 @@
   - TypeScript Compilation: `npm run typecheck` passed with 0 errors.
   - ESLint Linter: `npm run lint` passed with 0 errors and 0 warnings.
   - Production Build: `npm run build` completed with 0 errors.
+
+### 2026-11-13 — Multi-Browser Sync Fix, 429 Throttling Elimination, Rich Tiptap Node Preservation & CI Test Stabilization
+
+- **Eliminated HTTP 429 Throttling Loop (`src/lib/client.ts`, `src/app/page.tsx`)**:
+  - Stabilized `fetchBlocks`, `syncBlocks`, and `deleteBlock` using `useCallback` in `src/lib/client.ts`.
+  - Scoped `useEffect` for `setServerSyncAdapter` in `src/app/page.tsx` strictly to authentication and workspace identity changes (`[isConfigured, syncUserId, syncWorkspaceId, fetchBlocks, syncBlocks, deleteBlock, setServerSyncAdapter]`).
+  - Completely broke the infinite re-render loop that was generating 50+ requests per second and causing HTTP 429 Too Many Requests.
+- **Fixed Multi-Browser Real-Time Block Sync (`src/lib/workspace-store.ts`, `src/app/components/TeamspaceEditor.tsx`)**:
+  - In `workspaceStore.flushSync()`, added an `else` branch when `blocksToPush.length === 0 && tombstoneCount === 0` to fetch remote updates from the server via `currentAdapter.fetchBlocks()` and reconcile them locally via `reconcileWithServerBlocks(remoteBlocks)`. Clean browser clients now automatically receive and display content created or updated in other browsers.
+  - In `TeamspaceEditor.tsx`, updated editor content synchronization to watch `block.content` directly when `!editor.isFocused`, allowing externally received updates to seamlessly update the editor.
+- **Preserved Rich Tiptap Formatting (Columns, Callouts, Video, Database Embeds)**:
+  - Eliminated the destructive effect in `TeamspaceEditor.tsx` that synced from `collabView.content` (which converted rich Tiptap JSON to legacy `NoteContent`, stripping callouts, columns, and video into plain paragraphs).
+  - Removed `applyTiptapChange(json)` from `onUpdate`, preserving full document fidelity in `block.content`.
+- **Fixed CI 500 Failures in `collaborationOperation` (`src/lib/server/api.ts`)**:
+  - Removed illegal `tx.get(blockRef)` calls executed after transaction writes (`tx.update`, `tx.set`), ensuring strict conformance with Firestore's read-before-write transactional rule.
+- **Stabilized Supabase Integration Tests (`tests/supabase-integration.test.cjs`)**:
+  - Applied migrations `021-storage-attachments-and-audio.sql`, `022-share-links.sql`, and `023-share-links-data.sql` in test container initialization.
+  - Updated bucket file size limit assertion on line 452 from 10 MiB to 25 MiB (`26214400`) to match migration 021.
+  - Increased connection startup timeout for PostgreSQL container on Docker Mac.
+- **Verification**:
+  - `npm test`: 264/264 tests pass with 0 failures.
+  - `npm run test:supabase`: 77/77 tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - `npm run build`: Production Next.js Turbopack build succeeds with 0 errors.
+  - `node ./scripts/deploy.mjs staging up`: Staging Docker containers successfully rebuilt and deployed on `http://localhost:3100`.

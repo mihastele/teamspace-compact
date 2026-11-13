@@ -1555,6 +1555,12 @@ export const workspaceStore = {
             saveOutbox(syncOutbox);
             reconcileWithServerBlocks(returnedBlocks);
           }
+        } else {
+          // No local pending mutations: fetch remote blocks to sync updates from other devices/browsers
+          const remoteBlocks = await currentAdapter.fetchBlocks();
+          if (Array.isArray(remoteBlocks) && remoteBlocks.length > 0) {
+            reconcileWithServerBlocks(remoteBlocks);
+          }
         }
       } catch (err) {
         console.warn("workspaceStore sync warning:", err);

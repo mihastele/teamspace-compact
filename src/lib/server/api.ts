@@ -830,30 +830,9 @@ async function collaborationOperation(
     : undefined;
   const saved = await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
-    let snapshot = await tx.get(ref);
-    if (!snapshot.exists) {
-      const blockRef = workspace.collection("blocks").doc(id);
-      const blockSnap = await tx.get(blockRef);
-      if (blockSnap.exists) {
-        const blockData = blockSnap.data()!;
-        const initialContent = { blocks: [{ id: `${id}_p`, type: "paragraph", text: "" }] };
-        const doc = initializeDocument(initialContent);
-        const initialNoteData = {
-          title: (blockData.title as string) || "Untitled",
-          parentId: (blockData.parentId as string) || null,
-          content: initialContent,
-          revision: 1,
-          createdAt: now(),
-          updatedAt: now(),
-          createdBy: user.uid,
-        };
-        doc.destroy();
-        tx.set(ref, initialNoteData);
-        snapshot = await tx.get(ref);
-      } else {
-        throw new ApiError(404, "not_found", "Note not found.");
-      }
-    }
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists)
+      throw new ApiError(404, "not_found", "Note not found.");
     const value = snapshot.data()!;
     if (value.deleting)
       throw new ApiError(409, "deleting", "This note is being deleted.");
@@ -973,16 +952,6 @@ async function collaborationOperation(
         updatedBy: user.uid,
         updatedAt: now(),
       });
-      const blockRef = workspace.collection("blocks").doc(id);
-      const blockSnap = await tx.get(blockRef);
-      if (blockSnap.exists) {
-        tx.update(blockRef, {
-          content,
-          revision: value.revision + 1,
-          updatedAt: Date.now(),
-          updatedBy: user.uid,
-        });
-      }
       tx.create(receipt!, {
         uid: user.uid,
         operationId,

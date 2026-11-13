@@ -55,24 +55,29 @@ export default function HomePage() {
   const shareMenuRef = useRef<HTMLDivElement>(null);
 
   // Connect workspaceStore to server sync adapter when authenticated and workspace is loaded
+  const syncWorkspaceId = api.workspace?.id;
+  const syncUserId = api.user?.uid;
+  const isConfigured = api.configured;
+  const { fetchBlocks, syncBlocks, deleteBlock } = api;
+
   useEffect(() => {
-    if (api.configured && api.user && api.workspace) {
+    if (isConfigured && syncUserId && syncWorkspaceId) {
       setServerSyncAdapter({
-        workspaceId: api.workspace.id,
-        fetchBlocks: api.fetchBlocks,
-        syncBlocks: api.syncBlocks,
-        deleteBlock: api.deleteBlock,
+        workspaceId: syncWorkspaceId,
+        fetchBlocks,
+        syncBlocks,
+        deleteBlock,
       });
     } else {
       setServerSyncAdapter(null);
     }
   }, [
-    api.configured,
-    api.user,
-    api.workspace,
-    api.fetchBlocks,
-    api.syncBlocks,
-    api.deleteBlock,
+    isConfigured,
+    syncUserId,
+    syncWorkspaceId,
+    fetchBlocks,
+    syncBlocks,
+    deleteBlock,
     setServerSyncAdapter,
   ]);
 
