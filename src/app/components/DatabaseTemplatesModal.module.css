@@ -295,3 +295,13 @@
   min-height: 380px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
+
+.editorContainer :global(.TeamspaceEditor_canvasContainer__p9e_8),
+.editorContainer > div > div {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 10px !important;
+  padding-bottom: 30px !important;
+}

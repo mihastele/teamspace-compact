@@ -952,31 +952,31 @@ export default function DatabaseView({
               )}
             </div>
 
-            {!readOnly && (
-              <>
-                <button
-                  type="button"
-                  className={styles.toolbarActionBtn}
-                  onClick={() => setShowTemplatesModal(true)}
-                  title="Page templates"
-                >
-                  <LayoutTemplate size={13} />
-                  <span>
-                    Templates{dbTemplates.length > 0 ? ` (${dbTemplates.length})` : ""}
-                  </span>
-                </button>
+            {!readOnly && !embedded && (
+              <button
+                type="button"
+                className={styles.toolbarActionBtn}
+                onClick={() => setShowTemplatesModal(true)}
+                title="Page templates"
+              >
+                <LayoutTemplate size={13} />
+                <span>
+                  Templates{dbTemplates.length > 0 ? ` (${dbTemplates.length})` : ""}
+                </span>
+              </button>
+            )}
 
-                <button
-                  className={styles.newBtn}
-                  onClick={() => {
-                    const newRow = createDatabaseRow(block.id);
-                    setSidePeekBlock(newRow.id);
-                  }}
-                >
-                  <Plus size={14} />
-                  <span>New</span>
-                </button>
-              </>
+            {!readOnly && (
+              <button
+                className={styles.newBtn}
+                onClick={() => {
+                  const newRow = createDatabaseRow(block.id);
+                  setSidePeekBlock(newRow.id);
+                }}
+              >
+                <Plus size={14} />
+                <span>New</span>
+              </button>
             )}
           </div>
         </div>

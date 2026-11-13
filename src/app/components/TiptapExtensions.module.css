@@ -341,7 +341,9 @@
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--bg-card);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
 }
 
 .embeddedDbHeader {
