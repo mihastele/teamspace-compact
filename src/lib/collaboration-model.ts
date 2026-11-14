@@ -32,6 +32,7 @@ const TYPES = new Set([
   "board",
   "synced",
   "image",
+  "video",
   "attachment",
   "audio",
 ]);
@@ -139,7 +140,8 @@ export function initializeDocument(content: NoteContent): Y.Doc {
         ? rawBlock.id
         : safeUUID();
       rank = rankBetween(rank, null, id);
-      blocks.set(id, makeBlock({ ...rawBlock, id }, rank));
+      const safeType = TYPES.has(rawBlock.type) ? rawBlock.type : "paragraph";
+      blocks.set(id, makeBlock({ ...rawBlock, id, type: safeType }, rank));
     }
   }, LOCAL_ORIGIN);
   validateDocument(doc);
@@ -244,6 +246,9 @@ function applyEditorIntent(
       block.id = safeUUID();
     }
     seenNextIds.add(block.id);
+    if (!TYPES.has(block.type)) {
+      block.type = "paragraph";
+    }
   }
   const nextIds = next.blocks.map((block) => block.id!);
   const old = new Map(before.blocks.map((block) => [block.id, block]));
@@ -466,7 +471,7 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
     }
     if (format.type === "synced" && !format.source) throw new Error("A synced block requires a source.");
     if (format.media !== undefined) {
-      if (!["image", "attachment", "audio"].includes(format.type))
+      if (!["image", "attachment", "audio", "video"].includes(format.type))
         throw new Error("Only media blocks have media settings.");
       if (typeof format.media !== "object" || format.media === null)
         throw new Error("Invalid media metadata.");

@@ -149,6 +149,17 @@ test("Yjs collaborative document initializes and decodes media blocks", () => {
           transcript: "Testing audio block",
         },
       },
+      {
+        id: "c4444444-4444-4444-8444-444444444444",
+        type: "video",
+        text: "",
+        media: {
+          attachmentId: "vid-789",
+          url: "https://example.com/video.mp4",
+          originalName: "video.mp4",
+          caption: "Demo video presentation",
+        },
+      },
     ],
   };
 
@@ -158,12 +169,15 @@ test("Yjs collaborative document initializes and decodes media blocks", () => {
     const decoded = decodeDocument(encoded);
     try {
       const readBack = readContent(decoded);
-      assert.equal(readBack.blocks.length, 3);
+      assert.equal(readBack.blocks.length, 4);
       assert.equal(readBack.blocks[1].type, "image");
       assert.equal(readBack.blocks[1].media?.caption, "A nice photo");
       assert.equal(readBack.blocks[2].type, "audio");
       assert.equal(readBack.blocks[2].media?.durationSeconds, 12);
       assert.equal(readBack.blocks[2].media?.transcript, "Testing audio block");
+      assert.equal(readBack.blocks[3].type, "video");
+      assert.equal(readBack.blocks[3].media?.caption, "Demo video presentation");
+      assert.equal(readBack.blocks[3].media?.attachmentId, "vid-789");
     } finally {
       decoded.destroy();
     }

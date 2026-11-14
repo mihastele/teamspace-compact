@@ -63,10 +63,18 @@ export function usePageCollaboration(block: Block, api: ReturnType<typeof useTea
     }
 
     // Prepare initial Note object for CollaborationController
-    const initialContent = tiptapDocToNoteContent(
-      block.content || { type: "doc", content: [{ type: "paragraph" }] }
-    );
-    const initialDoc = initializeDocument(initialContent);
+    let initialDoc: Y.Doc;
+    try {
+      const parsedContent = tiptapDocToNoteContent(
+        block.content || { type: "doc", content: [{ type: "paragraph" }] }
+      );
+      initialDoc = initializeDocument(parsedContent);
+    } catch (e) {
+      console.warn("Failed to initialize document from block content, falling back to empty doc:", e);
+      initialDoc = initializeDocument({ blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] });
+    }
+
+    const initialContent = readContent(initialDoc);
     const initialNote: Note = {
       id: block.id,
       parentId: block.parentId,
@@ -137,7 +145,24 @@ export function usePageCollaboration(block: Block, api: ReturnType<typeof useTea
       };
     }
 
-    const newController = new CollaborationController(initialNote, transport, store);
+    let newController: CollaborationController;
+    try {
+      newController = new CollaborationController(initialNote, transport, store);
+    } catch (err) {
+      console.warn("CollaborationController init failed, recreating fresh controller:", err);
+      const fallbackDoc = initializeDocument({ blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] });
+      const safeNote: Note = {
+        ...initialNote,
+        collab: {
+          version: 1,
+          generation: safeUUID(),
+          state: encodeDocument(fallbackDoc),
+          sequence: 0,
+        },
+      };
+      fallbackDoc.destroy();
+      newController = new CollaborationController(safeNote, transport, store);
+    }
     controllerRef.current = newController;
 
     newController.start().then(() => {

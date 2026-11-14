@@ -1435,14 +1435,27 @@
     - Updated `presenceOperation` (POST/DELETE) to initialize a stub block for active members rather than failing with 404.
   - **Safe Block Upserts (`src/lib/server/api.ts`)**:
     - Changed `POST .../blocks` to use `tx.set(ref, payload)` to safely handle both creations and updates without throwing `Document already exists` or `Document not found`.
-  - **Attachment Parent Auto-Provisioning & Client Flush Sync (`src/lib/server/api.ts`, `src/app/components/TeamspaceEditor.tsx`)**:
-    - In `reserveAttachment`, if an authenticated workspace member uploads to a new page block that hasn't synced yet, a stub block is automatically created in `blocks`, allowing immediate file/media uploads.
-    - In `TeamspaceEditor.tsx`, added `await workspaceStore.flushSync()` before initiating media uploads.
-    - Passed `api` from `TeamspaceEditor` to `usePageCollaboration`, eliminating redundant client hook instances.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
+
+### 2026-11-14 — Permanent Resolution of "Invalid collaborative block metadata" Exception
+
+- **Root Cause Analysis**:
+  - In `src/lib/collaboration-model.ts`, `validateDocument(doc)` asserted `!TYPES.has(format.type)` and `!["image", "attachment", "audio"].includes(format.type)` for media blocks.
+  - While Tiptap conversion (`tiptapDocToNoteContent`) and `src/lib/server/validation.ts` were previously updated to support `type: "video"` for `videoBlock` nodes, `"video"` was omitted from `TYPES` and from `validateDocument`'s media format checks in `src/lib/collaboration-model.ts`.
+  - Consequently, whenever a document containing a video block or video placeholder was hydrated into `usePageCollaboration`, `initializeDocument` threw `Error("Invalid collaborative block metadata.")`, crashing the page through Next.js's Client ErrorBoundary.
+- **Fixes Applied**:
+  - **CRDT Type Whitelist (`src/lib/collaboration-model.ts`)**:
+    - Added `"video"` to the `TYPES` whitelist.
+    - Updated `validateDocument` media format validation to include `"video"`.
+    - Added defensive type fallback in `initializeDocument` and `applyEditorIntent`: any unknown or unrecognized block type automatically normalizes to `"paragraph"` instead of producing an unhandled schema validation crash.
+  - **Graceful Error Recovery (`src/lib/use-page-collaboration.ts`)**:
+    - Wrapped document initialization and `CollaborationController` instantiation in resilient fallback handlers: if malformed legacy state is encountered, the editor gracefully resets to a clean document rather than unmounting the React tree.
+  - **Automated Verification (`tests/media-attachments.test.cjs`)**:
+    - Added test coverage verifying that collaborative documents with video blocks initialize, encode to Yjs binary, and decode cleanly.
 - **Verification**:
   - `npm test`: 264/264 unit tests pass with 0 failures.
   - `npm run test:api`: 70/70 API tests pass with 0 failures.
   - `npm run test:supabase`: 77/77 Supabase integration tests pass with 0 failures.
   - `npm run typecheck`: 0 errors.
   - `npm run lint`: 0 errors, 0 warnings.
-  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and healthy on `http://localhost:3100`.
