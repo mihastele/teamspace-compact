@@ -1480,3 +1480,26 @@
   - `npm run typecheck` & `npm run lint`: 0 errors.
   - Live API verification: `POST http://localhost:3100/api/workspaces/7f9fbac1-e80b-4624-9721-dd55b935837b/attachments` returned `201 Created` with signed Supabase upload URL.
   - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and running on `http://localhost:3100`.
+
+### 2026-11-14 — Resolution of "Upload transfer failed" on macOS Host Storage Mount (Extended Attributes Support)
+
+- **Root Cause Analysis**:
+  - In `src/lib/attachments.ts`, uploading an attachment executes `fetch(uploadUrl, { method: "PUT", body: preparedBlob })` to stream the file payload to Supabase Storage API (`supabase/storage-api:v1.74.0`).
+  - When saving uploaded files using its local `file` backend, `storage-api` relies on `fs-xattr` (`setAttributeSync`) to attach metadata (`user.*` extended filesystem attributes) to `/var/lib/storage`.
+  - In Docker Compose on macOS, `/var/lib/storage` was originally mounted as a host bind mount (`./volumes/storage:/var/lib/storage:z`). macOS VirtioFS/gRPC FUSE bridge does not support Linux user extended attributes, causing `fs-xattr` to throw `Error: The file system does not support extended attributes or has the feature disabled. code: ENOTSUP, errno: 95`.
+  - As a result, the signed upload `PUT` request failed with HTTP 500 (`InternalError`), and `attachments.ts` caught this, threw `Error("Upload transfer failed. Please try again.")`, and cleaned up the reservation.
+- **Fixes Applied**:
+  - In `deploy/supabase.override.yml`, `deployments/staging/supabase/docker-compose.yml`, and `.supabase/upstream/docker/docker-compose.yml`:
+    - Overrode `/var/lib/storage` in both `storage` and `imgproxy` services to use a shared Docker named volume (`storage-data:/var/lib/storage:z`).
+    - Added `storage-data:` under `volumes:`. Named volumes run on ext4 inside the Docker VM, fully supporting Linux `user_xattr` and persisting data across restarts.
+- **Verification**:
+  - Tested `xattr.setAttributeSync` inside `teamspace-staging-storage`: successfully executed without `ENOTSUP`.
+  - Executed end-to-end upload test:
+    1. `POST /api/workspaces/.../attachments` -> `201 Created` with signed URL.
+    2. `PUT` binary payload to `uploadUrl` -> `200 OK` (`{"Key":"..."}`).
+    3. `POST /api/workspaces/.../attachments/{id}/complete` -> `200 OK` (status: `ready`, thumbnail generated).
+    4. `GET /api/workspaces/.../attachments/{id}/inline` -> `200 OK`.
+  - `tests/deployment-compose.test.mjs`: passed.
+  - `npm test`: 264/264 unit tests pass.
+  - `npm run typecheck` & `npm run lint`: 0 errors.
+  - Live staging environment restarted with `storage-data` volume and active on `http://localhost:3100`.

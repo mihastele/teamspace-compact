@@ -31,9 +31,14 @@ services:
     environment:
       PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?Generate PG_META_CRYPTO_KEY before starting Supabase}
   storage:
+    volumes: !override
+      - storage-data:/var/lib/storage:z
     environment:
       S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID:?Generate S3_PROTOCOL_ACCESS_KEY_ID before starting Supabase}
       S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET:?Generate S3_PROTOCOL_ACCESS_KEY_SECRET before starting Supabase}
+  imgproxy:
+    volumes: !override
+      - storage-data:/var/lib/storage:z
   auth:
     environment:
       EMAIL_CONFIRMATION_REQUIRED: ${EMAIL_CONFIRMATION_REQUIRED:-true}
@@ -53,3 +58,6 @@ services:
           *) echo "EMAIL_CONFIRMATION_REQUIRED must be true or false" >&2; exit 1 ;;
         esac
         exec auth
+
+volumes:
+  storage-data:
