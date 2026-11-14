@@ -6,11 +6,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { useWorkspace } from "@/lib/workspace-store";
+import { useWorkspace, workspaceStore } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
 import { uploadMediaFile } from "@/lib/attachments";
 import { saveMediaFile, deleteMediaFile, useMediaUrl } from "@/lib/media-store";
+import { safeUUID } from "@/lib/collaboration-model";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
 import DatabaseView from "./DatabaseView";
@@ -138,7 +139,7 @@ export default function TeamspaceEditor({
   const resolvedCoverUrl = useMediaUrl(block.coverUrl);
 
   // Real-time CRDT Page Collaboration hook
-  const { view: collabView, presenceUsers } = usePageCollaboration(block);
+  const { view: collabView, presenceUsers } = usePageCollaboration(block, api);
 
   const applyBlockChange = useCallback(
     (updates: Partial<Block>) => {
@@ -358,7 +359,7 @@ export default function TeamspaceEditor({
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
       const isAudio = file.type.startsWith("audio/");
-      const tempId = `temp-${Date.now()}`;
+      const tempId = safeUUID();
       const tempUrl = URL.createObjectURL(file);
 
       if (isImage) {
@@ -440,6 +441,7 @@ export default function TeamspaceEditor({
           api.workspace &&
           (isImage || isAudio || isVideo || file.size <= 25 * 1024 * 1024)
         ) {
+          await workspaceStore.flushSync();
           const result = await uploadMediaFile(file, "page", block.id, api);
           const currentJson = editor.getJSON();
           const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
@@ -604,7 +606,7 @@ export default function TeamspaceEditor({
             .focus()
             .insertContent({
               type: "audioBlock",
-              attrs: { blockId: `audio-${Date.now()}` },
+              attrs: { blockId: safeUUID() },
             })
             .run();
           break;
@@ -770,6 +772,7 @@ export default function TeamspaceEditor({
           api.workspace &&
           file.size <= 25 * 1024 * 1024
         ) {
+          await workspaceStore.flushSync();
           const res = await uploadMediaFile(file, "page", block.id, api);
           return { url: res.url, attachmentId: res.attachmentId };
         }

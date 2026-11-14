@@ -134,12 +134,12 @@ export function initializeDocument(content: NoteContent): Y.Doc {
   doc.getMap("tombstones");
   let rank: string | null = null;
   doc.transact(() => {
-    for (const block of content.blocks) {
-      const id = block.id ?? safeUUID();
-      if (!UUID.test(id) || blocks.has(id))
-        throw new Error("Invalid or duplicate block identity.");
+    for (const rawBlock of content.blocks) {
+      const id = (rawBlock.id && UUID.test(rawBlock.id) && !blocks.has(rawBlock.id))
+        ? rawBlock.id
+        : safeUUID();
       rank = rankBetween(rank, null, id);
-      blocks.set(id, makeBlock(block, rank));
+      blocks.set(id, makeBlock({ ...rawBlock, id }, rank));
     }
   }, LOCAL_ORIGIN);
   validateDocument(doc);
@@ -238,14 +238,14 @@ function applyEditorIntent(
   next: NoteContent,
 ): void {
   if (next.blocks.length > 1000) throw new Error("Too many blocks.");
-  // IDs assigned here are immediately reflected in the caller's optimistic draft.
-  for (const block of next.blocks) block.id ??= safeUUID();
+  const seenNextIds = new Set<string>();
+  for (const block of next.blocks) {
+    if (!block.id || !UUID.test(block.id) || seenNextIds.has(block.id)) {
+      block.id = safeUUID();
+    }
+    seenNextIds.add(block.id);
+  }
   const nextIds = next.blocks.map((block) => block.id!);
-  if (
-    new Set(nextIds).size !== nextIds.length ||
-    nextIds.some((id) => !UUID.test(id))
-  )
-    throw new Error("Invalid or duplicate block identity.");
   const old = new Map(before.blocks.map((block) => [block.id, block]));
   const blocks = doc.getMap<Y.Map<unknown>>("blocks");
   const deleted = doc.getMap("tombstones");
@@ -537,11 +537,22 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   }
   const tiptap = doc as TiptapDoc;
   const blocks: NoteBlock[] = [];
+  const seenIds = new Set<string>();
+
+  const resolveId = (rawId: unknown): string => {
+    if (typeof rawId === "string" && UUID.test(rawId) && !seenIds.has(rawId)) {
+      seenIds.add(rawId);
+      return rawId;
+    }
+    const fresh = safeUUID();
+    seenIds.add(fresh);
+    return fresh;
+  };
 
   const rawNodes = Array.isArray(tiptap.content) ? tiptap.content : [];
 
   for (const node of rawNodes) {
-    const id = (node.attrs?.blockId as string) || safeUUID();
+    const id = resolveId(node.attrs?.blockId);
 
     if (node.type === "heading") {
       const level = Number(node.attrs?.level) || 1;
@@ -555,7 +566,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || safeUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "bullet",
           text: extractText(item.content),
         });
@@ -564,7 +575,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || safeUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "ordered",
           text: extractText(item.content),
         });
@@ -573,7 +584,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || safeUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "todo",
           checked: Boolean(item.attrs?.checked),
           text: extractText(item.content),

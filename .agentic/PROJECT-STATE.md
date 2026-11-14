@@ -1386,3 +1386,63 @@
   - `npm run typecheck`: 0 errors.
   - `npm run lint`: 0 errors, 0 warnings.
   - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
+
+
+### 2026-11-13 — Resolution of "Invalid or duplicate block identity" Exception
+
+- **Root Cause Analysis**:
+  - In `src/lib/collaboration-model.ts`, `initializeDocument` and `applyEditorIntent` asserted `UUID.test(id)` and `!blocks.has(id)` for all blocks, throwing `Error("Invalid or duplicate block identity.")` if either failed.
+  - When media files or nodes with temporary or legacy identifiers (e.g. `temp-${Date.now()}` or `audio-${Date.now()}` created during uploads in `TeamspaceEditor.tsx`) or duplicated blockIds were passed from Tiptap into `usePageCollaboration`, `UUID.test(id)` evaluated to false.
+  - This threw an uncaught error inside `initializeDocument` during editor mount.
+- **Fixes Applied**:
+  - In `src/lib/collaboration-model.ts`:
+    - Updated `tiptapDocToNoteContent` to use `resolveId()` with deduplication and UUID validation: if `node.attrs.blockId` is not a valid UUID or has already been seen in the document, a fresh `safeUUID()` is assigned.
+    - Updated `initializeDocument` to normalize missing, invalid, or duplicate block identities into fresh `safeUUID()` values without in-place mutation of the input objects.
+    - Updated `applyEditorIntent` to sanitize and deduplicate `next.blocks` IDs before applying mutations.
+  - In `src/app/components/TeamspaceEditor.tsx`:
+    - Replaced `temp-${Date.now()}` and `audio-${Date.now()}` with valid `safeUUID()` identifiers.
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.
+
+### 2026-11-14 — Elimination of 429 Too Many Requests, Presence 404s, and Excessive Polling Loops
+
+- **Root Cause Analysis (429 Rate Limiting, 404 Presence, 500 Blocks Error)**:
+  - **429 Rate Limiting / 600+ Requests**:
+    1. **Infinite Re-render and Re-sync Loop**: In `src/lib/workspace-store.ts`, `reconcileWithServerBlocks` previously set `stateChanged = true` whenever `sb.revision >= localBlock.revision` regardless of whether the block had actually changed. Every polling or snapshot fetch emitted changes, triggering component re-renders that re-invoked `setServerSyncAdapter()`, which set `isFirstSync = true` and immediately called `flushSync()`.
+    2. **Tombstone and Outbox Leakage**: Local deletions previously added the deleted block id into `syncOutbox`. Because the block was already removed locally, it was never purged from `syncOutbox`. Additionally, historical tombstones were kept in `tombstones` indefinitely and sent on every sync, keeping `tombstoneCount > 0` forever.
+    3. **Presence Route Wildcard Invalidation**: In `src/lib/browser-backend.ts`, any wildcard table invalidation triggered refreshes on all groups in `groups.values()`, including presence endpoints (`/presence`), exceeding the 10 presence requests/min rate limit.
+    4. **Duplicate Hook Instantiation**: `usePageCollaboration` previously called `useTeamspace()` internally, spinning up 8 separate collection subscriptions in addition to `TeamspaceEditor`'s own subscriptions.
+  - **404 Presence Errors**:
+    - Querying `/notes/{id}/presence` on freshly created or optimistic local blocks threw 404 if the block was not yet committed to Firestore/PostgreSQL `notes` or `blocks`.
+  - **500 Blocks Endpoint Error**:
+    - In `POST /api/workspaces/.../blocks`, using `tx.create` on blocks that already existed in PostgreSQL threw unhandled `Document already exists` errors.
+  - **Attachment Upload Failures on Optimistic Pages**:
+    - In `reserveAttachment`, attempting to upload an image or document to a page block that was still only in client memory returned 404 because `noteSnap` and `blockSnap` did not exist on the server yet.
+- **Fixes Applied**:
+  - **Structural Block Equality & Idempotent Reconciliation (`src/lib/workspace-store.ts`)**:
+    - Added `areBlocksEqual()` to verify true content/metadata changes before mutating state or emitting change events.
+    - Updated `reconcileWithServerBlocks` to delete confirmed tombstones and never add deleted block IDs to `syncOutbox`.
+    - Added `pendingTombstones` tracking: only unacknowledged tombstones are sent to `syncBlocks`, and cleared once acknowledged by the server.
+    - Added rate-limit exponential backoff (`rateLimitBackoffUntil = Date.now() + 60000`) on HTTP 429 responses to prevent hammering.
+    - Relaxed polling interval to 45 seconds and debounced dirty mark flushing to 2500ms.
+    - Prevented `setServerSyncAdapter` from re-triggering initial sync if already connected to the same workspace.
+  - **Targeted Presence Invalidation & Graceful Presence Fallbacks (`src/lib/browser-backend.ts`, `src/lib/server/api.ts`)**:
+    - Excluded `/presence` routes from general wildcard database invalidations.
+    - In `api.ts`, updated `GET .../presence` to return `{ presence: [] }` with HTTP 200 when the parent block is not found or is being initialized.
+    - Updated `presenceOperation` (POST/DELETE) to initialize a stub block for active members rather than failing with 404.
+  - **Safe Block Upserts (`src/lib/server/api.ts`)**:
+    - Changed `POST .../blocks` to use `tx.set(ref, payload)` to safely handle both creations and updates without throwing `Document already exists` or `Document not found`.
+  - **Attachment Parent Auto-Provisioning & Client Flush Sync (`src/lib/server/api.ts`, `src/app/components/TeamspaceEditor.tsx`)**:
+    - In `reserveAttachment`, if an authenticated workspace member uploads to a new page block that hasn't synced yet, a stub block is automatically created in `blocks`, allowing immediate file/media uploads.
+    - In `TeamspaceEditor.tsx`, added `await workspaceStore.flushSync()` before initiating media uploads.
+    - Passed `api` from `TeamspaceEditor` to `usePageCollaboration`, eliminating redundant client hook instances.
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass with 0 failures.
+  - `npm run test:api`: 70/70 API tests pass with 0 failures.
+  - `npm run test:supabase`: 77/77 Supabase integration tests pass with 0 failures.
+  - `npm run typecheck`: 0 errors.
+  - `npm run lint`: 0 errors, 0 warnings.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and verified on `http://localhost:3100`.

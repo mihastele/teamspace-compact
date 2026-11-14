@@ -35,8 +35,7 @@ export type PageCollaborationState = {
  * Hook bridging Tiptap editor and Teamspace page block to real-time CRDT collaboration.
  * Uses CollaborationController + IndexedDB RecoveryStore + BroadcastChannel cross-tab sync.
  */
-export function usePageCollaboration(block: Block): PageCollaborationState {
-  const api = useTeamspace();
+export function usePageCollaboration(block: Block, api: ReturnType<typeof useTeamspace>): PageCollaborationState {
   const [controller, setController] = useState<CollaborationController | null>(null);
   const [presenceUsers, setPresenceUsers] = useState<DocumentPresence[]>([]);
   const controllerRef = useRef<CollaborationController | null>(null);

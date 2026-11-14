@@ -451,7 +451,8 @@ function subscribeSupabaseCollection(
         const changes = new Set(pendingChanges);
         pendingChanges.clear();
         for (const group of groups.values()) {
-          if (wildcard || Array.from(changes).some((c) => group.paths.has(c))) {
+          const isPresence = group.route.includes("/presence");
+          if ((wildcard && !isPresence) || Array.from(changes).some((c) => group.paths.has(c))) {
             group.runner.invalidate(coalesce);
           }
         }

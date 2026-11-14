@@ -1006,8 +1006,20 @@ async function presenceOperation(
       tx.get(workspace.collection("members").doc(user.uid)),
     ]);
     const parent = snapshot.exists ? snapshot : blockSnap;
-    if (!parent.exists || parent.data()?.deleting || parent.data()?.isArchived)
+    if (parent.exists && (parent.data()?.deleting || parent.data()?.isArchived))
       throw new ApiError(404, "not_found", "Note not found.");
+    if (!parent.exists) {
+      if (method === "DELETE") return;
+      tx.set(workspace.collection("blocks").doc(id), {
+        id,
+        workspaceId: workspace.id,
+        type: "page",
+        title: "Untitled",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        createdBy: user.uid,
+      });
+    }
     if (method === "DELETE") tx.delete(ref);
     else
       tx.set(ref, {
@@ -1354,12 +1366,31 @@ async function attachmentOperation(
         ),
       ]);
       const parent = noteSnap.exists ? noteSnap : blockSnap;
-      if (!parent.exists || parent.data()?.deleting)
+      if (parent.exists && (parent.data()?.deleting || parent.data()?.isArchived))
         throw new ApiError(
           404,
           "not_found",
           "The attachment parent no longer exists.",
         );
+      if (!parent.exists) {
+        if (parentType === "note") {
+          tx.set(workspace.collection("blocks").doc(parentId), {
+            id: parentId,
+            workspaceId: workspace.id,
+            type: "page",
+            title: "Untitled",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            createdBy: user.uid,
+          });
+        } else {
+          throw new ApiError(
+            404,
+            "not_found",
+            "The attachment parent no longer exists.",
+          );
+        }
+      }
       if (attachments.size >= 50)
         throw new ApiError(
           409,
@@ -1793,7 +1824,7 @@ export async function handleTrustedApi(
                   updatedAt: incomingUpdatedAt,
                   createdBy: (b.createdBy as string) || user.uid,
                 };
-                tx.create(ref, payload);
+                tx.set(ref, payload);
                 finalMap.set(bId, payload);
               } else if (incomingUpdatedAt >= existingUpdatedAt) {
                 const payload = {
@@ -1802,7 +1833,7 @@ export async function handleTrustedApi(
                   updatedAt: incomingUpdatedAt,
                   updatedBy: user.uid,
                 };
-                tx.update(ref, payload);
+                tx.set(ref, payload);
                 finalMap.set(bId, payload);
               }
             }
@@ -1820,7 +1851,7 @@ export async function handleTrustedApi(
                     updatedAt: delTime,
                     updatedBy: user.uid,
                   };
-                  tx.update(ref, payload);
+                  tx.set(ref, payload);
                   finalMap.set(delId, payload);
                 }
               }
@@ -1963,7 +1994,7 @@ export async function handleTrustedApi(
             tx.get(workspace.collection("blocks").doc(itemId)),
           ]);
           const parent = parentSnap.exists ? parentSnap : blockSnap;
-          if (!parent.exists || parent.data()?.deleting || parent.data()?.isArchived) throw new ApiError(404,"not_found","This item no longer exists.");
+          if (!parent.exists || parent.data()?.deleting || parent.data()?.isArchived) return { presence: [] };
           const query = workspace.collection(resource).doc(itemId).collection(action);
           const items = await tx.get(query);
           return {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
