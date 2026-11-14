@@ -470,8 +470,11 @@ function subscribeSupabaseCollection(
           filter: `workspace_id=eq.${workspace}`,
         },
         (event) => {
-          const changed = (event.new as Record<string, unknown>)?.collection;
-          invalidate(typeof changed === "string" ? changed : undefined, true);
+          const row = ((event.new && Object.keys(event.new).length > 0 ? event.new : event.old) || {}) as Record<string, unknown>;
+          const path = (row.path as string) || "";
+          if (path.startsWith("rateLimits/") || path.includes("/blocks/")) return;
+          const changed = (row.collection as string) || (path ? path.replace(/\/[^/]+$/, "") : undefined);
+          invalidate(changed, true);
         },
       )
       .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_tasks",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
@@ -488,7 +491,7 @@ function subscribeSupabaseCollection(
       if (navigator.onLine && (typeof document === "undefined" || document.visibilityState === "visible")) {
         invalidate(undefined, true);
       }
-    }, 30000);
+    }, 60000);
     const reconnect = () => invalidate();
     window.addEventListener("online", reconnect);
     hub = {

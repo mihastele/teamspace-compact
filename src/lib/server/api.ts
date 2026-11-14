@@ -97,7 +97,21 @@ async function authenticate(request: Request) {
     try {
       const url = new URL(request.url);
       const queryToken = url.searchParams.get("token") || url.searchParams.get("auth");
-      if (queryToken) token = queryToken;
+      if (queryToken) {
+        token = queryToken;
+      } else {
+        const cookieHeader = request.headers.get("cookie") || "";
+        const cookieMatch = /(?:sb-[^=]+-auth-token|supabase-auth-token)=([^;]+)/.exec(cookieHeader);
+        if (cookieMatch) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(cookieMatch[1]));
+            const extracted = Array.isArray(parsed) ? parsed[0] : (parsed?.access_token || parsed);
+            if (typeof extracted === "string" && extracted.length > 0) token = extracted;
+          } catch {
+            token = decodeURIComponent(cookieMatch[1]);
+          }
+        }
+      }
     } catch {}
   }
   if (!token)
@@ -995,7 +1009,7 @@ async function presenceOperation(
 ) {
   const data = object(input, ["sessionId"]);
   const sessionId = uuid(data.sessionId);
-  await rateLimit(db, user.uid, "presence", 10);
+  await rateLimit(db, user.uid, "presence", 60);
   const note = workspace.collection("notes").doc(id);
   const ref = note.collection("presence").doc(hash(`${user.uid}:${sessionId}`));
   await db.runTransaction(async (tx) => {
@@ -1312,7 +1326,7 @@ async function attachmentOperation(
   id: string | undefined,
   action: string | undefined,
 ) {
-  await rateLimit(db, user.uid, "attachments", 30);
+  await rateLimit(db, user.uid, "attachments", 100);
   const files = bucket(storage);
   if (request.method === "POST" && !id && !action) {
     const data = object(await body(request), [

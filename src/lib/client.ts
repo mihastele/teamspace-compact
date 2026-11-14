@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   browserConfigured as configured,
   browserProvider,
@@ -520,6 +520,12 @@ export function useTeamspace() {
       return (data.blocks || []) as Block[];
     } catch (err) {
       console.warn("fetchBlocks notice:", err);
+      if (
+        (err as { status?: number })?.status === 429 ||
+        (err instanceof Error && /429|rate|too many/i.test(err.message))
+      ) {
+        throw err;
+      }
       return [] as Block[];
     }
   }, [api, user, workspace]);
@@ -536,6 +542,12 @@ export function useTeamspace() {
       return (data.blocks || []) as Block[];
     } catch (err) {
       console.warn("syncBlocks notice:", err);
+      if (
+        (err as { status?: number })?.status === 429 ||
+        (err instanceof Error && /429|rate|too many/i.test(err.message))
+      ) {
+        throw err;
+      }
       return [] as Block[];
     }
   }, [api, user, workspace]);
@@ -1315,3 +1327,19 @@ export function useTeamspace() {
     deleteBlock,
   };
 }
+
+export type TeamspaceApi = ReturnType<typeof useTeamspace>;
+const TeamspaceContext = createContext<TeamspaceApi | null>(null);
+
+export function TeamspaceProvider({ children, value }: { children: ReactNode; value: TeamspaceApi }) {
+  return createElement(TeamspaceContext.Provider, { value }, children);
+}
+
+export function useTeamspaceApi(): TeamspaceApi {
+  const context = useContext(TeamspaceContext);
+  if (!context) {
+    throw new Error("useTeamspaceApi must be used within a TeamspaceProvider");
+  }
+  return context;
+}
+

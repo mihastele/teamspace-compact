@@ -22,6 +22,7 @@ import {
 import styles from "./MediaNodes.module.css";
 import { getLocalMedia } from "@/lib/attachments";
 import { useMediaUrl } from "@/lib/media-store";
+import { useWorkspace } from "@/lib/workspace-store";
 
 // Helper to format byte sizes cleanly
 export function formatBytes(bytes?: number): string {
@@ -36,12 +37,21 @@ export function formatBytes(bytes?: number): string {
 // --------------------------------------------------------------------------
 
 function ImageBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
+  const { workspace } = useWorkspace();
   const { url, attachmentId, originalName, caption, width, src } = node.attrs;
   const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
-  const resolvedUrl = useMediaUrl(rawUrl);
+  const isStaleBlob = rawUrl.startsWith("blob:") && typeof attachmentId === "string" && !attachmentId.startsWith("local-");
+  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : "";
+  const resolvedUrl = useMediaUrl(isStaleBlob ? fallbackServerUrl : rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
   const [captionText, setCaptionText] = useState(caption || "");
-  const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
+  const effectiveUrl = resolvedUrl || localBlobUrl || (isStaleBlob ? fallbackServerUrl : rawUrl);
+
+  useEffect(() => {
+    if (isStaleBlob && fallbackServerUrl) {
+      updateAttributes({ url: fallbackServerUrl, src: fallbackServerUrl });
+    }
+  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   useEffect(() => {
     if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
@@ -160,12 +170,21 @@ export const ImageBlockExtension = Node.create({
 // 2. ATTACHMENT BLOCK
 // --------------------------------------------------------------------------
 
-function AttachmentBlockComponent({ node, deleteNode }: NodeViewProps) {
+function AttachmentBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
+  const { workspace } = useWorkspace();
   const { url, attachmentId, originalName, contentType, bytes, src } = node.attrs;
   const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
-  const resolvedUrl = useMediaUrl(rawUrl);
+  const isStaleBlob = rawUrl.startsWith("blob:") && typeof attachmentId === "string" && !attachmentId.startsWith("local-");
+  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : "";
+  const resolvedUrl = useMediaUrl(isStaleBlob ? fallbackServerUrl : rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
-  const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
+  const effectiveUrl = resolvedUrl || localBlobUrl || (isStaleBlob ? fallbackServerUrl : rawUrl);
+
+  useEffect(() => {
+    if (isStaleBlob && fallbackServerUrl && updateAttributes) {
+      updateAttributes({ url: fallbackServerUrl, src: fallbackServerUrl });
+    }
+  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   useEffect(() => {
     if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
@@ -279,11 +298,20 @@ function formatTimer(seconds: number): string {
 }
 
 function AudioBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
+  const { workspace } = useWorkspace();
   const { url, attachmentId, originalName, durationSeconds, transcript, summary, transcriptionStatus, src } = node.attrs;
   const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
-  const resolvedUrl = useMediaUrl(rawUrl);
+  const isStaleBlob = rawUrl.startsWith("blob:") && typeof attachmentId === "string" && !attachmentId.startsWith("local-");
+  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : "";
+  const resolvedUrl = useMediaUrl(isStaleBlob ? fallbackServerUrl : rawUrl);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
-  const effectiveUrl = resolvedUrl || localBlobUrl || rawUrl;
+  const effectiveUrl = resolvedUrl || localBlobUrl || (isStaleBlob ? fallbackServerUrl : rawUrl);
+
+  useEffect(() => {
+    if (isStaleBlob && fallbackServerUrl) {
+      updateAttributes({ url: fallbackServerUrl, src: fallbackServerUrl });
+    }
+  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   // Recording State
   const [isRecording, setIsRecording] = useState(false);

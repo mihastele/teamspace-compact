@@ -1503,3 +1503,29 @@
   - `npm test`: 264/264 unit tests pass.
   - `npm run typecheck` & `npm run lint`: 0 errors.
   - Live staging environment restarted with `storage-data` volume and active on `http://localhost:3100`.
+
+### 2026-11-14 — Optimization of Synchronization Requests and Elimination of 429 Too Many Requests
+
+- **Root Cause Analysis**:
+  - The client was making hundreds of rapid API requests within 1–2 minutes, exceeding the server-side distributed rate limit of 300 requests/minute (`rateLimit(db, user.uid, "api", 300)` in `api.ts`), leading to widespread `429 Too Many Requests` on `/snapshot`, `/presence`, and `/blocks`.
+  - **Duplicate Hook & Subscriptions**: `TeamspaceEditor` was directly calling `const api = useTeamspace()`. Because `HomePage` already invoked `useTeamspace()`, every page mount duplicated the entire client lifecycle (8 collection subscriptions to `subscribeBrowserCollection`, `/workspaces` listing, presence watchers). Switching pages caused repeated unmount/remount cascades.
+  - **Realtime Postgres Invalidation Cascades**: In `src/lib/browser-backend.ts`, `postgres_changes` on `teamspace_documents` fired on every block write and presence heartbeat. Because `event.new.collection` was absent on DELETE or block updates, it fell back to wildcard invalidation, repeatedly pulling `GET /api/workspaces/.../snapshot` and `presence`.
+  - **Reconciliation Outbox Re-Add Loop**: In `src/lib/workspace-store.ts` (`reconcileWithServerBlocks`), when server returned blocks after a push, any minor client-server clock skew (`localTime > serverTime`) re-added identical blocks to `syncOutbox`, continuously pushing them back to the server in an infinite sync loop.
+  - **Unthrottled Window Focus Event**: In `workspace-store.ts`, `window.addEventListener("focus", () => scheduleSync(0))` triggered immediate server syncs on every focus shift when the user switched between two open browsers.
+  - **Swallowed 429 Errors**: In `client.ts`, `syncBlocks` and `fetchBlocks` caught 429 errors and returned `[]`, preventing `workspaceStore.flushSync` from detecting the 429 status and activating its 60-second backoff (`rateLimitBackoffUntil`).
+  - **Stale Blob URL Syncing Across Browsers**: Temporary in-memory `blob:` preview URLs created in `handleFileUpload` were saved into collaborative document content and synced via CRDT. A remote browser receiving `blob:http://localhost:3100/...` could not resolve another browser's memory blob and failed to display images.
+- **Fixes Applied**:
+  - **TeamspaceApi Context**: Exported `TeamspaceProvider` and `useTeamspaceApi` from `src/lib/client.ts`. Wrapped `HomePage` with `<TeamspaceProvider value={api}>` and changed `TeamspaceEditor` to `useTeamspaceApi()`. The client lifecycle, subscriptions, and timers run strictly once per browser tab.
+  - **Realtime Event Filtering**: In `browser-backend.ts`, filtered out `rateLimits/` and `/blocks/` paths from triggering workspace snapshots, and extracted the exact collection path so presence changes only invalidate the specific presence route without wildcard cascades.
+  - **Snapshot Runner 429 Backoff**: In `src/lib/browser-sync.ts`, updated `createSnapshotRunner` to pause for 30 seconds when encountering HTTP 429.
+  - **Reconciliation Deduping**: In `workspace-store.ts`, updated `reconcileWithServerBlocks` so that if `areBlocksEqual(localBlock, sb)` is true, it strictly removes the block from `syncOutbox` instead of re-adding it on clock skew.
+  - **Focus & Poll Throttling**: Throttled window `focus` sync to only check every 30 seconds if outbox is empty, and increased background poll interval from 30s/45s to 60s.
+  - **Surfaced 429 in Client Store**: In `client.ts`, `fetchBlocks` and `syncBlocks` re-throw 429 errors so `flushSync()` activates `rateLimitBackoffUntil = Date.now() + 60000`.
+  - **Automatic Stale Blob Recovery**: In `MediaNodes.tsx` and `TiptapExtensions.tsx`, detect when `src`/`url` is a `blob:` URL with a valid `attachmentId`. Remote browsers automatically resolve the image through `/api/workspaces/${workspaceId}/attachments/${attachmentId}/inline` and heal the node attributes. In `TeamspaceEditor.tsx`, replace uploaded nodes via ProseMirror transaction (`setNodeMarkup`) and flush sync immediately.
+  - **Relaxed Presence & Attachment Rate Limits**: In `api.ts`, increased presence rate limit from 10 to 60/min and attachment rate limit from 30 to 100/min. Added auth cookie parsing in `authenticate()` for direct browser media subresource requests.
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass.
+  - `npm run test:api`: 70/70 API tests pass.
+  - `npm run test:supabase`: 77/77 Supabase integration tests pass.
+  - `npm run typecheck` & `npm run lint`: 0 errors, 0 warnings.
+  - Staging environment redeployed (`node ./scripts/deploy.mjs staging up`) and healthy on `http://localhost:3100`.

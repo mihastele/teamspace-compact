@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/workspace-store";
-import { useTeamspace } from "@/lib/client";
+import { useTeamspace, TeamspaceProvider } from "@/lib/client";
 import Sidebar from "./components/Sidebar";
 import TeamspaceEditor from "./components/TeamspaceEditor";
 import DatabaseView from "./components/DatabaseView";
@@ -191,7 +191,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className={styles.appShell} data-theme={theme}>
+    <TeamspaceProvider value={api}>
+      <div className={styles.appShell} data-theme={theme}>
       {/* Collapsible Notion-like Sidebar */}
       <ContextMenuHost />
       <Sidebar api={api} onOpenSearch={() => setSearchOpen(true)} />
@@ -510,5 +511,6 @@ export default function HomePage() {
       {/* Global Command Palette / Search Modal */}
       <CommandPalette isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
+  </TeamspaceProvider>
   );
 }

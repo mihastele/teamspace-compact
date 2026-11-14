@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, { createContext, useContext, useRef, useState, useEffect } from "react";
 import { Node, mergeAttributes } from "@tiptap/core";
 import {
   NodeViewWrapper,
@@ -231,13 +231,24 @@ export const ColumnsExtension = Node.create({
 });
 
 function ImageBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
+  const { workspace } = useWorkspace();
   const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
-  const src = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const rawSrc = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const attachmentId = node.attrs.attachmentId as string | undefined;
+  const isStaleBlob = Boolean(rawSrc?.startsWith("blob:") && attachmentId && !attachmentId.startsWith("local-"));
+  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : null;
+  const src = isStaleBlob ? fallbackServerUrl : rawSrc;
   const caption = (node.attrs.caption as string) || "";
   const width = (node.attrs.width as string) || "100%";
   const resolvedUrl = useMediaUrl(src);
   const [urlInput, setUrlInput] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isStaleBlob && fallbackServerUrl) {
+      updateAttributes({ src: fallbackServerUrl, url: fallbackServerUrl });
+    }
+  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   const handleUpload = async (file: File) => {
     if (onUploadMediaFile) {
@@ -394,13 +405,24 @@ export const ImageBlockExtension = Node.create({
 });
 
 function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps) {
+  const { workspace } = useWorkspace();
   const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
-  const src = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const rawSrc = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
+  const attachmentId = node.attrs.attachmentId as string | undefined;
+  const isStaleBlob = Boolean(rawSrc?.startsWith("blob:") && attachmentId && !attachmentId.startsWith("local-"));
+  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : null;
+  const src = isStaleBlob ? fallbackServerUrl : rawSrc;
   const fileName = (node.attrs.fileName as string) || (node.attrs.originalName as string) || "";
   const caption = (node.attrs.caption as string) || "";
   const resolvedUrl = useMediaUrl(src);
   const [urlInput, setUrlInput] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isStaleBlob && fallbackServerUrl) {
+      updateAttributes({ src: fallbackServerUrl, url: fallbackServerUrl });
+    }
+  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   const handleUpload = async (file: File) => {
     if (onUploadMediaFile) {

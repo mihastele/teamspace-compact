@@ -161,8 +161,11 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
   // Server attachment endpoint (e.g. /api/workspaces/.../attachments/.../inline)
   if (cleanUrl.startsWith("/api/") && cleanUrl.includes("/attachments/")) {
     try {
-      const token = await browserAccessToken();
-      const res = await fetch(cleanUrl, {
+      const token = await browserAccessToken().catch(() => null);
+      const urlWithToken = token && !cleanUrl.includes("token=")
+        ? `${cleanUrl}${cleanUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`
+        : cleanUrl;
+      const res = await fetch(urlWithToken, {
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

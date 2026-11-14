@@ -181,7 +181,7 @@ export function usePageCollaboration(block: Block, api: ReturnType<typeof useTea
       api.heartbeatPresence(block.id, sessionId).catch(() => {});
       const interval = setInterval(() => {
         api.heartbeatPresence(block.id, sessionId).catch(() => {});
-      }, 45000);
+      }, 60000);
 
       presenceCleanup = api.subscribePresence(
         block.id,

@@ -7,7 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { useWorkspace, workspaceStore } from "@/lib/workspace-store";
-import { useTeamspace } from "@/lib/client";
+import { useTeamspaceApi } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
 import { uploadMediaFile } from "@/lib/attachments";
 import { saveMediaFile, deleteMediaFile, useMediaUrl } from "@/lib/media-store";
@@ -108,7 +108,7 @@ export default function TeamspaceEditor({
   hideProperties = false,
   onNavigatePage,
 }: TeamspaceEditorProps) {
-  const api = useTeamspace();
+  const api = useTeamspaceApi();
   const { blocks, updateBlock, setActiveBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
@@ -441,26 +441,51 @@ export default function TeamspaceEditor({
           api.workspace &&
           (isImage || isAudio || isVideo || file.size <= 25 * 1024 * 1024)
         ) {
-          await workspaceStore.flushSync();
           const result = await uploadMediaFile(file, "page", block.id, api);
-          const currentJson = editor.getJSON();
-          const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
-            if (!nodes) return false;
-            for (const n of nodes) {
-              if (n.attrs?.blockId === tempId || n.attrs?.src === tempUrl) {
-                n.attrs.attachmentId = result.attachmentId;
-                n.attrs.url = result.url;
-                n.attrs.src = result.url;
-                return true;
-              }
-              if (n.content && updateNodeAttrs(n.content)) return true;
+          let replaced = false;
+          editor.state.doc.descendants((node, pos) => {
+            if (
+              node.attrs?.blockId === tempId ||
+              node.attrs?.src === tempUrl ||
+              node.attrs?.url === tempUrl
+            ) {
+              editor.view.dispatch(
+                editor.state.tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  attachmentId: result.attachmentId,
+                  url: result.url,
+                  src: result.url,
+                })
+              );
+              replaced = true;
+              return false;
             }
-            return false;
-          };
+            return true;
+          });
 
-          if (updateNodeAttrs(currentJson.content)) {
-            editor.commands.setContent(currentJson, { emitUpdate: true });
+          if (!replaced) {
+            const currentJson = editor.getJSON();
+            const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+              if (!nodes) return false;
+              for (const n of nodes) {
+                if (n.attrs?.blockId === tempId || n.attrs?.src === tempUrl) {
+                  n.attrs.attachmentId = result.attachmentId;
+                  n.attrs.url = result.url;
+                  n.attrs.src = result.url;
+                  return true;
+                }
+                if (n.content && updateNodeAttrs(n.content)) return true;
+              }
+              return false;
+            };
+
+            if (updateNodeAttrs(currentJson.content)) {
+              editor.commands.setContent(currentJson, { emitUpdate: true });
+            }
           }
+
+          applyBlockChange({ content: editor.getJSON() });
+          void workspaceStore.flushSync();
 
           // Documents and videos are NOT kept permanently in browser storage once uploaded
           if (!isImage) {
@@ -493,7 +518,7 @@ export default function TeamspaceEditor({
         console.warn("Media upload background sync notice", err);
       }
     },
-    [editor, readOnly, block.id, api]
+    [editor, readOnly, block.id, api, applyBlockChange]
   );
 
   useEffect(() => {

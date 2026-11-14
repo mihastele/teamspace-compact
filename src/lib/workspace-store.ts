@@ -335,8 +335,12 @@ function reconcileWithServerBlocks(serverBlocks: Block[]) {
         }
         syncOutbox.delete(sb.id);
       } else if (localTime > serverTime) {
-        // Local block is newer: keep local block and keep in outbox to push
-        syncOutbox.add(sb.id);
+        // Local block is newer: keep local block and only push if content/metadata actually differs
+        if (!areBlocksEqual(localBlock, sb)) {
+          syncOutbox.add(sb.id);
+        } else {
+          syncOutbox.delete(sb.id);
+        }
       } else {
         if ((sb.revision || 0) >= (localBlock.revision || 0)) {
           if (!areBlocksEqual(localBlock, sb)) {
@@ -384,12 +388,19 @@ function reconcileWithServerBlocks(serverBlocks: Block[]) {
   }
 }
 
+let lastFocusSyncTime = 0;
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
-    scheduleSync(0);
+    scheduleSync(1000);
   });
   window.addEventListener("focus", () => {
-    scheduleSync(0);
+    const now = Date.now();
+    if (syncOutbox.size > 0 || pendingTombstones.size > 0) {
+      scheduleSync(1000);
+    } else if (now - lastFocusSyncTime >= 30000) {
+      lastFocusSyncTime = now;
+      scheduleSync(1500);
+    }
   });
   window.addEventListener("pagehide", () => {
     if (syncOutbox.size > 0) void workspaceStore.flushSync();
@@ -1582,7 +1593,7 @@ export const workspaceStore = {
           void workspaceStore.flushSync();
         }
       }
-    }, 45000);
+    }, 60000);
     if (pollInterval && typeof (pollInterval as unknown as { unref?: () => void }).unref === "function") {
       (pollInterval as unknown as { unref: () => void }).unref();
     }
