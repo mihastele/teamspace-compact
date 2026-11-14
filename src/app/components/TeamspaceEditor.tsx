@@ -6,13 +6,27 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { useWorkspace } from "@/lib/workspace-store";
+import { useWorkspace, workspaceStore } from "@/lib/workspace-store";
 import { useTeamspace } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
 import { uploadMediaFile } from "@/lib/attachments";
-import { noteContentToTiptapDoc } from "@/lib/collaboration-model";
+import { saveMediaFile, deleteMediaFile, useMediaUrl } from "@/lib/media-store";
+import { safeUUID } from "@/lib/collaboration-model";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
+import DatabaseView from "./DatabaseView";
+import { EmojiPicker } from "./EmojiPicker";
+import {
+  CalloutExtension,
+  ColumnExtension,
+  ColumnsExtension,
+  DatabaseViewExtension,
+  EditorNodeContext,
+  FileBlockExtension,
+  PageMentionExtension,
+  VideoBlockExtension,
+  type EmbeddedDbRenderProps,
+} from "./TiptapExtensions";
 import {
   ImageBlockExtension,
   AttachmentBlockExtension,
@@ -30,12 +44,16 @@ import {
   Minus,
   Smile,
   Image as ImageIcon,
+  MessageSquareQuote,
+  Columns2,
+  Columns3,
+  Film,
+  Table2,
+  Link2,
   Paperclip,
   Mic,
 } from "lucide-react";
 import styles from "./TeamspaceEditor.module.css";
-
-const emojiOptions = ["📄", "📝", "💡", "🎯", "🚀", "🔥", "📚", "🎨", "⚡", "🌟", "📌", "🛠️", "💬", "✅"];
 
 const COVER_PRESETS = [
   "linear-gradient(135deg, #f6d365 0%, #fda085 100%)",
@@ -61,36 +79,79 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   { id: "todo", title: "To-do List", icon: <CheckSquare size={15} /> },
   { id: "bullet", title: "Bullet List", icon: <List size={15} /> },
   { id: "numbered", title: "Numbered List", icon: <ListOrdered size={15} /> },
+  { id: "callout", title: "Callout", icon: <MessageSquareQuote size={15} /> },
+  { id: "columns2", title: "2 Columns", icon: <Columns2 size={15} /> },
+  { id: "columns3", title: "3 Columns", icon: <Columns3 size={15} /> },
+  { id: "databaseView", title: "Database View", icon: <Table2 size={15} /> },
+  { id: "image", title: "Image", icon: <ImageIcon size={15} /> },
+  { id: "video", title: "Video", icon: <Film size={15} /> },
+  { id: "file", title: "File / Attachment", icon: <Paperclip size={15} /> },
+  { id: "audio", title: "Record Audio", icon: <Mic size={15} /> },
+  { id: "pageMention", title: "Page Reference", icon: <Link2 size={15} /> },
   { id: "quote", title: "Quote", icon: <Quote size={15} /> },
   { id: "code", title: "Code Block", icon: <Code size={15} /> },
   { id: "divider", title: "Divider", icon: <Minus size={15} /> },
-  { id: "image", title: "Image", icon: <ImageIcon size={15} /> },
-  { id: "file", title: "File / Attachment", icon: <Paperclip size={15} /> },
-  { id: "audio", title: "Record Audio", icon: <Mic size={15} /> },
 ];
 
-export default function TeamspaceEditor({ block }: { block: Block }) {
+export type TeamspaceEditorProps = {
+  block: Block;
+  readOnly?: boolean;
+  onBlockChange?: (updates: Partial<Block>) => void;
+  hideProperties?: boolean;
+  onNavigatePage?: (pageId: string) => void;
+};
+
+export default function TeamspaceEditor({
+  block,
+  readOnly = false,
+  onBlockChange,
+  hideProperties = false,
+  onNavigatePage,
+}: TeamspaceEditorProps) {
   const api = useTeamspace();
-  const { blocks, updateBlock } = useWorkspace();
+  const { blocks, updateBlock, setActiveBlock } = useWorkspace();
   const [title, setTitle] = useState(block.title);
   const [prevBlockTitle, setPrevBlockTitle] = useState(block.title);
   const [prevBlockId, setPrevBlockId] = useState(block.id);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCoverPicker, setShowCoverPicker] = useState(false);
+  const [coverTab, setCoverTab] = useState<"gallery" | "upload" | "link">("gallery");
+  const [coverUrlInput, setCoverUrlInput] = useState("");
   const [slashMenuPosition, setSlashMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  const [mentionMenuPosition, setMentionMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [mentionFilter, setMentionFilter] = useState("");
+  const [mentionTriggerChar, setMentionTriggerChar] = useState<"@" | "/">("@");
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+
   const titleInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const coverPickerRef = useRef<HTMLDivElement>(null);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const resolvedCoverUrl = useMediaUrl(block.coverUrl);
+
   // Real-time CRDT Page Collaboration hook
-  const { view: collabView, presenceUsers, applyTiptapChange } = usePageCollaboration(block);
+  const { view: collabView, presenceUsers } = usePageCollaboration(block, api);
+
+  const applyBlockChange = useCallback(
+    (updates: Partial<Block>) => {
+      if (readOnly) return;
+      if (onBlockChange) {
+        onBlockChange(updates);
+      } else {
+        updateBlock(block.id, updates);
+      }
+    },
+    [readOnly, onBlockChange, updateBlock, block.id]
+  );
 
   // Sync title during render when block changes externally without triggering an effect setState
   if (block.id !== prevBlockId || block.title !== prevBlockTitle) {
@@ -99,9 +160,23 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     setTitle(block.title);
   }
 
+  const mentionablePages = useMemo(() => {
+    const q = mentionFilter.trim().toLowerCase();
+    return Object.values(blocks)
+      .filter(
+        (b) =>
+          !b.isArchived &&
+          b.id !== block.id &&
+          (b.type === "page" || b.type === "database") &&
+          (!q || (b.title || "Untitled").toLowerCase().includes(q))
+      )
+      .slice(0, 12);
+  }, [blocks, block.id, mentionFilter]);
+
   const handleFileUploadRef = useRef<(file: File) => Promise<void>>(() => Promise.resolve());
 
   const editor = useEditor({
+    editable: !readOnly,
     extensions: [
       StarterKit.configure({
         heading: {
@@ -109,12 +184,19 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
         },
       }),
       Placeholder.configure({
-        placeholder: "Type '/' for commands, or drop images and files here…",
+        placeholder: readOnly ? "" : "Type '/' for commands, '@' to link a page…",
       }),
       TaskList,
       TaskItem.configure({
         nested: true,
       }),
+      CalloutExtension,
+      ColumnExtension,
+      ColumnsExtension,
+      VideoBlockExtension,
+      FileBlockExtension,
+      PageMentionExtension,
+      DatabaseViewExtension,
       ImageBlockExtension,
       AttachmentBlockExtension,
       AudioBlockExtension,
@@ -124,51 +206,88 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
       content: [{ type: "paragraph" }],
     },
     onUpdate: ({ editor: ed }) => {
+      if (readOnly) return;
       const json = ed.getJSON();
-      updateBlock(block.id, { content: json });
-      applyTiptapChange(json);
+      applyBlockChange({ content: json });
 
-      // Check if user typed slash at cursor
       const { from } = ed.state.selection;
-      const textBefore = ed.state.doc.textBetween(Math.max(0, from - 20), from);
-      const match = textBefore.match(/\/([a-zA-Z0-9]*)$/);
+      const textBefore = ed.state.doc.textBetween(Math.max(0, from - 24), from);
+      const slashMatch = textBefore.match(/\/([a-zA-Z0-9 ]*)$/);
+      const mentionMatch = textBefore.match(/@([a-zA-Z0-9 _-]*)$/);
 
-      if (match) {
-        setSlashFilter(match[1]);
+      if (slashMatch) {
+        setSlashFilter(slashMatch[1]);
         setSelectedSlashIndex(0);
-        const view = ed.view;
-        const coords = view.coordsAtPos(from);
+        const coords = ed.view.coordsAtPos(from);
         setSlashMenuPosition({ x: coords.left, y: coords.bottom + 6 });
+        setMentionMenuPosition(null);
+      } else if (mentionMatch) {
+        setMentionFilter(mentionMatch[1]);
+        setMentionTriggerChar("@");
+        setSelectedMentionIndex(0);
+        const coords = ed.view.coordsAtPos(from);
+        setMentionMenuPosition({ x: coords.left, y: coords.bottom + 6 });
+        setSlashMenuPosition(null);
       } else {
         setSlashMenuPosition(null);
+        setMentionMenuPosition(null);
       }
     },
     editorProps: {
-      handleDrop: (view, event) => {
+      handleDrop: (_view, event) => {
+        if (readOnly) return false;
         const files = event.dataTransfer?.files;
         if (files && files.length > 0) {
           event.preventDefault();
           setIsDragOver(false);
           for (let i = 0; i < files.length; i++) {
-            handleFileUploadRef.current(files[i]);
+            void handleFileUploadRef.current(files[i]);
           }
           return true;
         }
         setIsDragOver(false);
         return false;
       },
-      handlePaste: (view, event) => {
+      handlePaste: (_view, event) => {
+        if (readOnly) return false;
         const files = event.clipboardData?.files;
         if (files && files.length > 0) {
           event.preventDefault();
           for (let i = 0; i < files.length; i++) {
-            handleFileUploadRef.current(files[i]);
+            void handleFileUploadRef.current(files[i]);
           }
           return true;
         }
         return false;
       },
-      handleKeyDown: (view, event) => {
+      handleKeyDown: (_view, event) => {
+        const mentionState = mentionStateRef.current;
+        if (mentionState.isOpen && mentionState.pages.length > 0) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setSelectedMentionIndex((prev) => (prev + 1) % mentionState.pages.length);
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setSelectedMentionIndex(
+              (prev) => (prev - 1 + mentionState.pages.length) % mentionState.pages.length
+            );
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const target = mentionState.pages[mentionState.selectedIndex] || mentionState.pages[0];
+            if (target) mentionState.select(target);
+            return true;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setMentionMenuPosition(null);
+            return true;
+          }
+        }
+
         const state = slashStateRef.current;
         if (state.isOpen && state.commands.length > 0) {
           if (event.key === "ArrowDown") {
@@ -200,15 +319,49 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     },
   });
 
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!readOnly);
+    }
+  }, [editor, readOnly]);
+
+  const insertPageMention = useCallback(
+    (target: Block) => {
+      if (!editor || readOnly) return;
+      const { from } = editor.state.selection;
+      if (mentionTriggerChar === "@") {
+        const deleteCount = mentionFilter.length + 1;
+        editor.commands.deleteRange({ from: Math.max(0, from - deleteCount), to: from });
+      }
+      editor
+        .chain()
+        .focus()
+        .insertContent([
+          {
+            type: "pageMention",
+            attrs: {
+              pageId: target.id,
+              fallbackTitle: target.title || "Untitled",
+              fallbackIcon: target.icon || "📄",
+            },
+          },
+          { type: "text", text: " " },
+        ])
+        .run();
+      setMentionMenuPosition(null);
+    },
+    [editor, readOnly, mentionFilter, mentionTriggerChar]
+  );
+
   const handleFileUpload = useCallback(
     async (file: File) => {
-      if (!editor) return;
+      if (!editor || readOnly) return;
       const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
       const isAudio = file.type.startsWith("audio/");
-      const tempId = `temp-${Date.now()}`;
+      const tempId = safeUUID();
       const tempUrl = URL.createObjectURL(file);
 
-      // 1. Insert optimistic node immediately (<16ms frame budget)
       if (isImage) {
         editor
           .chain()
@@ -219,7 +372,26 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
               blockId: tempId,
               attachmentId: tempId,
               url: tempUrl,
+              src: tempUrl,
               originalName: file.name,
+              contentType: file.type,
+              bytes: file.size,
+              width: 100,
+            },
+          })
+          .run();
+      } else if (isVideo) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "videoBlock",
+            attrs: {
+              blockId: tempId,
+              attachmentId: tempId,
+              url: tempUrl,
+              src: tempUrl,
+              fileName: file.name,
               contentType: file.type,
               bytes: file.size,
             },
@@ -235,6 +407,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
               blockId: tempId,
               attachmentId: tempId,
               url: tempUrl,
+              src: tempUrl,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -251,6 +424,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
               blockId: tempId,
               attachmentId: tempId,
               url: tempUrl,
+              src: tempUrl,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -259,32 +433,67 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
           .run();
       }
 
-      // 2. Upload file in background and update node attributes when complete
+      // Background persistence: Supabase Storage when configured, local media store otherwise
       try {
-        const result = await uploadMediaFile(file, "page", block.id, api);
-        // Find and update node attrs in editor
-        const currentJson = editor.getJSON();
-        const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
-          if (!nodes) return false;
-          for (const n of nodes) {
-            if (n.attrs?.blockId === tempId) {
-              n.attrs.attachmentId = result.attachmentId;
-              n.attrs.url = result.url;
-              return true;
+        if (
+          api.configured &&
+          api.user &&
+          api.workspace &&
+          (isImage || isAudio || isVideo || file.size <= 25 * 1024 * 1024)
+        ) {
+          await workspaceStore.flushSync();
+          const result = await uploadMediaFile(file, "page", block.id, api);
+          const currentJson = editor.getJSON();
+          const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+            if (!nodes) return false;
+            for (const n of nodes) {
+              if (n.attrs?.blockId === tempId || n.attrs?.src === tempUrl) {
+                n.attrs.attachmentId = result.attachmentId;
+                n.attrs.url = result.url;
+                n.attrs.src = result.url;
+                return true;
+              }
+              if (n.content && updateNodeAttrs(n.content)) return true;
             }
-            if (n.content && updateNodeAttrs(n.content)) return true;
-          }
-          return false;
-        };
+            return false;
+          };
 
-        if (updateNodeAttrs(currentJson.content)) {
-          editor.commands.setContent(currentJson, { emitUpdate: true });
+          if (updateNodeAttrs(currentJson.content)) {
+            editor.commands.setContent(currentJson, { emitUpdate: true });
+          }
+
+          // Documents and videos are NOT kept permanently in browser storage once uploaded
+          if (!isImage) {
+            void deleteMediaFile(tempId);
+          }
+        } else {
+          const saved = await saveMediaFile(file, file.name);
+          const currentJson = editor.getJSON();
+          const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
+            if (!nodes) return false;
+            for (const n of nodes) {
+              if (
+                n.attrs?.blockId === tempId ||
+                n.attrs?.src === tempUrl
+              ) {
+                n.attrs.url = saved.url;
+                n.attrs.src = saved.url;
+                return true;
+              }
+              if (n.content && updateNodeAttrs(n.content)) return true;
+            }
+            return false;
+          };
+
+          if (updateNodeAttrs(currentJson.content)) {
+            editor.commands.setContent(currentJson, { emitUpdate: true });
+          }
         }
       } catch (err) {
         console.warn("Media upload background sync notice", err);
       }
     },
-    [editor, block.id, api]
+    [editor, readOnly, block.id, api]
   );
 
   useEffect(() => {
@@ -292,16 +501,19 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
   }, [handleFileUpload]);
 
   const slashCommands = useMemo(
-    () => ALL_SLASH_COMMANDS.filter((c) => c.title.toLowerCase().includes(slashFilter.toLowerCase())),
+    () =>
+      ALL_SLASH_COMMANDS.filter((c) =>
+        c.title.toLowerCase().includes(slashFilter.toLowerCase())
+      ),
     [slashFilter]
   );
 
   const executeSlashCommand = useCallback(
     (cmdId: string) => {
-      if (!editor) return;
+      if (!editor || readOnly) return;
       const { from } = editor.state.selection;
       const deleteCount = slashFilter.length + 1;
-      editor.commands.deleteRange({ from: from - deleteCount, to: from });
+      editor.commands.deleteRange({ from: Math.max(0, from - deleteCount), to: from });
       setSlashMenuPosition(null);
       editor.commands.focus();
 
@@ -324,17 +536,66 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
         case "numbered":
           editor.chain().focus().toggleOrderedList().run();
           break;
-        case "quote":
-          editor.chain().focus().toggleBlockquote().run();
+        case "callout":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "callout",
+              attrs: { icon: "💡", color: "blue" },
+              content: [{ type: "paragraph" }],
+            })
+            .run();
           break;
-        case "code":
-          editor.chain().focus().toggleCodeBlock().run();
+        case "columns2":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "columns",
+              content: [
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+              ],
+            })
+            .run();
           break;
-        case "divider":
-          editor.chain().focus().setHorizontalRule().run();
+        case "columns3":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "columns",
+              content: [
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+                { type: "column", content: [{ type: "paragraph" }] },
+              ],
+            })
+            .run();
+          break;
+        case "databaseView":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "databaseView",
+              attrs: { databaseId: null, viewId: null, filterRules: null },
+            })
+            .run();
           break;
         case "image":
           imageInputRef.current?.click();
+          break;
+        case "video":
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "videoBlock",
+              attrs: { src: null },
+            })
+            .run();
           break;
         case "file":
           fileInputRef.current?.click();
@@ -345,16 +606,32 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
             .focus()
             .insertContent({
               type: "audioBlock",
-              attrs: { blockId: `audio-${Date.now()}` },
+              attrs: { blockId: safeUUID() },
             })
             .run();
           break;
+        case "pageMention": {
+          const coords = editor.view.coordsAtPos(editor.state.selection.from);
+          setMentionFilter("");
+          setMentionTriggerChar("/");
+          setSelectedMentionIndex(0);
+          setMentionMenuPosition({ x: coords.left, y: coords.bottom + 6 });
+          break;
+        }
+        case "quote":
+          editor.chain().focus().toggleBlockquote().run();
+          break;
+        case "code":
+          editor.chain().focus().toggleCodeBlock().run();
+          break;
+        case "divider":
+          editor.chain().focus().setHorizontalRule().run();
+          break;
       }
     },
-    [editor, slashFilter]
+    [editor, readOnly, slashFilter]
   );
 
-  // Keep ref for current slash menu state so Tiptap handleKeyDown always has current state
   const slashStateRef = useRef({
     isOpen: false,
     commands: slashCommands,
@@ -371,40 +648,47 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     };
   }, [slashMenuPosition, slashCommands, selectedSlashIndex, executeSlashCommand]);
 
-  // Re-sync editor content only when unfocused and collaboration content externally differs
+  const mentionStateRef = useRef({
+    isOpen: false,
+    pages: mentionablePages,
+    selectedIndex: 0,
+    select: insertPageMention,
+  });
+
   useEffect(() => {
-    if (editor && !editor.isFocused && collabView.content) {
-      const tiptapDoc = noteContentToTiptapDoc(collabView.content);
+    mentionStateRef.current = {
+      isOpen: mentionMenuPosition !== null,
+      pages: mentionablePages,
+      selectedIndex: selectedMentionIndex,
+      select: insertPageMention,
+    };
+  }, [mentionMenuPosition, mentionablePages, selectedMentionIndex, insertPageMention]);
+
+  // Re-sync editor content only when unfocused and block content externally differs
+  useEffect(() => {
+    if (editor && !editor.isFocused && block.content) {
       const currentJson = editor.getJSON();
-      if (JSON.stringify(currentJson) !== JSON.stringify(tiptapDoc)) {
-        editor.commands.setContent(tiptapDoc as JSONContent, { emitUpdate: false });
+      if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
+        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
       }
     }
-  }, [collabView.content, editor]);
+  }, [block.content, editor]);
 
-  // Click-outside listener to dismiss emoji picker and slash menu
+  // Click-outside listener to dismiss popovers
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (
-        showCoverPicker &&
-        coverPickerRef.current &&
-        !coverPickerRef.current.contains(e.target as Node)
-      ) {
+      const target = e.target as Node;
+      if (showCoverPicker && coverPickerRef.current && !coverPickerRef.current.contains(target)) {
         setShowCoverPicker(false);
       }
-      if (
-        showEmojiPicker &&
-        emojiPickerRef.current &&
-        !emojiPickerRef.current.contains(e.target as Node)
-      ) {
+      if (showEmojiPicker && emojiPickerRef.current && !emojiPickerRef.current.contains(target)) {
         setShowEmojiPicker(false);
       }
-      if (
-        slashMenuPosition &&
-        slashMenuRef.current &&
-        !slashMenuRef.current.contains(e.target as Node)
-      ) {
+      if (slashMenuPosition && slashMenuRef.current && !slashMenuRef.current.contains(target)) {
         setSlashMenuPosition(null);
+      }
+      if (mentionMenuPosition && mentionMenuRef.current && !mentionMenuRef.current.contains(target)) {
+        setMentionMenuPosition(null);
       }
     };
 
@@ -413,6 +697,7 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
         setShowEmojiPicker(false);
         setShowCoverPicker(false);
         setSlashMenuPosition(null);
+        setMentionMenuPosition(null);
       }
     };
 
@@ -422,12 +707,13 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
       window.removeEventListener("mousedown", handleOutsideClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [showEmojiPicker, showCoverPicker, slashMenuPosition]);
+  }, [showEmojiPicker, showCoverPicker, slashMenuPosition, mentionMenuPosition]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     const nextTitle = e.target.value;
     setTitle(nextTitle);
-    updateBlock(block.id, { title: nextTitle });
+    applyBlockChange({ title: nextTitle });
   };
 
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
@@ -437,205 +723,404 @@ export default function TeamspaceEditor({ block }: { block: Block }) {
     }
   };
 
-  const isDatabaseEntry = block.parentId && blocks[block.parentId]?.type === "database";
+  const handleCoverUpload = async (file: File) => {
+    const saved = await saveMediaFile(file, file.name);
+    applyBlockChange({ coverUrl: saved.url });
+    setShowCoverPicker(false);
+  };
+
+  const isDatabaseEntry =
+    !hideProperties && Boolean(block.parentId && blocks[block.parentId]?.type === "database");
+
+  const renderEmbeddedDatabase = useCallback(
+    (props: EmbeddedDbRenderProps) => {
+      const dbBlock = blocks[props.databaseId];
+      if (!dbBlock) return null;
+      return (
+        <DatabaseView
+          block={dbBlock}
+          embedded
+          readOnly={props.readOnly}
+          initialViewId={props.viewId || undefined}
+          overrideFilters={props.filterRules || undefined}
+          currentPageId={props.currentPageId}
+          onOverrideFiltersChange={(nextRules) =>
+            props.onUpdateNodeAttrs({ filterRules: nextRules })
+          }
+        />
+      );
+    },
+    [blocks]
+  );
+
+  const editorContextValue = useMemo(
+    () => ({
+      readOnly,
+      currentBlockId: block.id,
+      onNavigatePage: (pageId: string) => {
+        if (onNavigatePage) {
+          onNavigatePage(pageId);
+        } else {
+          setActiveBlock(pageId);
+        }
+      },
+      renderEmbeddedDatabase,
+      onUploadMediaFile: async (file: File) => {
+        if (
+          api.configured &&
+          api.user &&
+          api.workspace &&
+          file.size <= 25 * 1024 * 1024
+        ) {
+          await workspaceStore.flushSync();
+          const res = await uploadMediaFile(file, "page", block.id, api);
+          return { url: res.url, attachmentId: res.attachmentId };
+        }
+        const saved = await saveMediaFile(file, file.name);
+        return { url: saved.url, attachmentId: saved.meta.id };
+      },
+    }),
+    [readOnly, block.id, onNavigatePage, setActiveBlock, renderEmbeddedDatabase, api]
+  );
+
+  const coverBackground = useMemo(() => {
+    if (!block.coverUrl) return undefined;
+    if (block.coverUrl.startsWith("linear-gradient")) return block.coverUrl;
+    if (resolvedCoverUrl) return `url("${resolvedCoverUrl}") center/cover no-repeat`;
+    return undefined;
+  }, [block.coverUrl, resolvedCoverUrl]);
 
   return (
-    <div
-      className={`${styles.canvasContainer} ${block.isFullWidth ? styles.canvasFullWidth : ""} ${styles[`font_${block.fontStyle || "sans"}`]}`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setIsDragOver(true);
-      }}
-      onDragLeave={() => setIsDragOver(false)}
-      onDrop={() => setIsDragOver(false)}
-    >
-      {/* Hidden file pickers for slash commands */}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
-          e.target.value = "";
+    <EditorNodeContext.Provider value={editorContextValue}>
+      <div
+        className={`${styles.canvasContainer} ${block.isFullWidth ? styles.canvasFullWidth : ""} ${styles[`font_${block.fontStyle || "sans"}`]}`}
+        onDragOver={(e) => {
+          if (readOnly) return;
+          e.preventDefault();
+          setIsDragOver(true);
         }}
-      />
-      <input
-        ref={fileInputRef}
-        type="file"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
-          e.target.value = "";
-        }}
-      />
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={() => setIsDragOver(false)}
+      >
+        {/* Hidden file pickers for slash commands */}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) void handleFileUpload(e.target.files[0]);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files?.[0]) void handleFileUpload(e.target.files[0]);
+            e.target.value = "";
+          }}
+        />
 
-      {/* Collaboration Sync & Live Presence Bar */}
-      <div className={styles.collaborationBar}>
-        <div className={styles.collabStatusBadge}>
-          <div
-            className={`${styles.collabStatusDot} ${
-              collabView.status === "Saving…"
-                ? styles.collabStatusDotSaving
-                : collabView.status === "Offline"
-                ? styles.collabStatusDotOffline
-                : ""
-            }`}
-          />
-          <span>{collabView.status}</span>
-        </div>
-
-        {presenceUsers.length > 0 && (
-          <div className={styles.presenceAvatars}>
-            {presenceUsers.map((user) => (
+        {/* Collaboration Sync & Live Presence Bar */}
+        {!readOnly && (collabView.status || presenceUsers.length > 0) && (
+          <div className={styles.collaborationBar}>
+            <div className={styles.collabStatusBadge}>
               <div
-                key={user.id}
-                className={styles.presenceAvatar}
-                title={user.displayName || "Collaborator"}
-              >
-                {(user.displayName || "U")[0].toUpperCase()}
+                className={`${styles.collabStatusDot} ${
+                  collabView.status === "Saving…"
+                    ? styles.collabStatusDotSaving
+                    : collabView.status === "Offline"
+                    ? styles.collabStatusDotOffline
+                    : ""
+                }`}
+              />
+              <span>{collabView.status}</span>
+            </div>
+
+            {presenceUsers.length > 0 && (
+              <div className={styles.presenceAvatars}>
+                {presenceUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className={styles.presenceAvatar}
+                    title={user.displayName || "Collaborator"}
+                  >
+                    {(user.displayName || "U")[0].toUpperCase()}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
-      </div>
 
-      {/* Cover Image Banner */}
-      {block.coverUrl && (
-        <div className={styles.coverContainer}>
-          <div
-            className={styles.coverImage}
-            style={{
-              background: block.coverUrl.startsWith("linear-gradient")
-                ? block.coverUrl
-                : `url(${block.coverUrl}) center/cover no-repeat`,
-            }}
-          />
-          <div className={styles.coverActions}>
-            <button
-              className={styles.coverBtn}
-              onClick={() => setShowCoverPicker(!showCoverPicker)}
-            >
-              Change cover
-            </button>
-            <button
-              className={styles.coverBtn}
-              onClick={() => updateBlock(block.id, { coverUrl: null })}
-            >
-              Remove
-            </button>
+        {/* Cover Image Banner */}
+        {block.coverUrl && (
+          <div className={styles.coverContainer}>
+            <div
+              className={styles.coverImage}
+              style={{ background: coverBackground }}
+            />
+            {!readOnly && (
+              <div className={styles.coverActions}>
+                <button
+                  type="button"
+                  className={styles.coverBtn}
+                  onClick={() => setShowCoverPicker((prev) => !prev)}
+                >
+                  Change cover
+                </button>
+                <button
+                  type="button"
+                  className={styles.coverBtn}
+                  onClick={() => applyBlockChange({ coverUrl: null })}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            {showCoverPicker && !readOnly && (
+              <div ref={coverPickerRef} className={styles.coverGalleryPopover}>
+                <div className={styles.coverTabs}>
+                  <button
+                    type="button"
+                    className={`${styles.coverTab} ${coverTab === "gallery" ? styles.coverTabActive : ""}`}
+                    onClick={() => setCoverTab("gallery")}
+                  >
+                    Gallery
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.coverTab} ${coverTab === "upload" ? styles.coverTabActive : ""}`}
+                    onClick={() => setCoverTab("upload")}
+                  >
+                    Upload
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.coverTab} ${coverTab === "link" ? styles.coverTabActive : ""}`}
+                    onClick={() => setCoverTab("link")}
+                  >
+                    Link
+                  </button>
+                </div>
+
+                {coverTab === "gallery" && (
+                  <div className={styles.coverPresetGrid}>
+                    {COVER_PRESETS.map((preset, idx) => (
+                      <div
+                        key={idx}
+                        className={styles.coverPreset}
+                        style={{ background: preset }}
+                        onClick={() => {
+                          applyBlockChange({ coverUrl: preset });
+                          setShowCoverPicker(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {coverTab === "upload" && (
+                  <div className={styles.coverUploadArea}>
+                    <input
+                      ref={coverFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleCoverUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.coverUploadBtn}
+                      onClick={() => coverFileInputRef.current?.click()}
+                    >
+                      Choose cover image
+                    </button>
+                  </div>
+                )}
+
+                {coverTab === "link" && (
+                  <div className={styles.coverUploadArea}>
+                    <input
+                      className={styles.coverUrlInput}
+                      placeholder="Paste image URL (https://...)"
+                      value={coverUrlInput}
+                      onChange={(e) => setCoverUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && coverUrlInput.trim()) {
+                          applyBlockChange({ coverUrl: coverUrlInput.trim() });
+                          setShowCoverPicker(false);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.coverUploadBtn}
+                      onClick={() => {
+                        if (coverUrlInput.trim()) {
+                          applyBlockChange({ coverUrl: coverUrlInput.trim() });
+                          setShowCoverPicker(false);
+                        }
+                      }}
+                    >
+                      Apply cover URL
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {showCoverPicker && (
-            <div ref={coverPickerRef} className={styles.coverGalleryPopover}>
-              {COVER_PRESETS.map((preset, idx) => (
-                <div
-                  key={idx}
-                  className={styles.coverPreset}
-                  style={{ background: preset }}
-                  onClick={() => {
-                    updateBlock(block.id, { coverUrl: preset });
-                    setShowCoverPicker(false);
-                  }}
-                />
-              ))}
+        )}
+
+        {/* Page Header */}
+        <div className={styles.header}>
+          {!readOnly && (
+            <div className={styles.pageMetadataActions}>
+              <button
+                type="button"
+                className={styles.metaBtn}
+                onClick={() => setShowEmojiPicker((prev) => !prev)}
+              >
+                <Smile size={14} />
+                <span>{block.icon ? "Change icon" : "Add icon"}</span>
+              </button>
+              {!block.coverUrl && (
+                <button
+                  type="button"
+                  className={styles.metaBtn}
+                  onClick={() => applyBlockChange({ coverUrl: COVER_PRESETS[0] })}
+                >
+                  <ImageIcon size={14} />
+                  <span>Add cover</span>
+                </button>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Page Header */}
-      <div className={styles.header}>
-        {/* Hover trigger to add icon or cover if none exists */}
-        <div className={styles.pageMetadataActions}>
-          <button
-            className={styles.metaBtn}
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          >
-            <Smile size={14} />
-            <span>{block.icon ? "Change icon" : "Add icon"}</span>
-          </button>
-          {!block.coverUrl && (
-            <button
-              className={styles.metaBtn}
-              onClick={() => updateBlock(block.id, { coverUrl: COVER_PRESETS[0] })}
-            >
-              <ImageIcon size={14} />
-              <span>Add cover</span>
-            </button>
-          )}
-        </div>
-
-        {/* Page Icon Display */}
-        {block.icon && (
-          <div
-            className={styles.pageIcon}
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            title="Change icon"
-          >
-            {block.icon}
-          </div>
-        )}
-
-        {showEmojiPicker && (
-          <div ref={emojiPickerRef} className={styles.emojiPicker}>
-            {emojiOptions.map((emoji) => (
-              <button
-                key={emoji}
-                className={styles.emojiOption}
+          {/* Page Icon Display */}
+          {block.icon && (
+            <div className={styles.pageIconContainer}>
+              <div
+                className={styles.pageIcon}
                 onClick={() => {
-                  updateBlock(block.id, { icon: emoji });
+                  if (!readOnly) setShowEmojiPicker((prev) => !prev);
+                }}
+                title={readOnly ? undefined : "Change icon"}
+              >
+                {block.icon}
+              </div>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className={styles.removeIconBtn}
+                  onClick={() => applyBlockChange({ icon: null })}
+                  title="Remove icon"
+                >
+                  Remove icon
+                </button>
+              )}
+            </div>
+          )}
+
+          {showEmojiPicker && !readOnly && (
+            <div ref={emojiPickerRef} style={{ position: "absolute", zIndex: 70 }}>
+              <EmojiPicker
+                onSelect={(emoji) => {
+                  applyBlockChange({ icon: emoji });
                   setShowEmojiPicker(false);
                 }}
+                onRemove={() => {
+                  applyBlockChange({ icon: null });
+                  setShowEmojiPicker(false);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Title Input */}
+          <input
+            ref={titleInputRef}
+            className={styles.titleInput}
+            placeholder="Untitled"
+            value={title}
+            readOnly={readOnly}
+            onChange={handleTitleChange}
+            onKeyDown={handleTitleKeyDown}
+          />
+        </div>
+
+        {/* If this page is a database entry, show rich properties section */}
+        {isDatabaseEntry && <DatabaseEntryProperties row={block} readOnly={readOnly} />}
+
+        {/* Tiptap Block Editor Content */}
+        <div className={`${styles.editorArea} ${isDragOver ? styles.editorAreaDropActive : ""}`}>
+          <EditorContent editor={editor} />
+        </div>
+
+        {/* Floating Slash Command Menu */}
+        {!readOnly && slashMenuPosition && slashCommands.length > 0 && (
+          <div
+            ref={slashMenuRef}
+            className={styles.slashMenu}
+            style={{
+              top: `${slashMenuPosition.y}px`,
+              left: `${slashMenuPosition.x}px`,
+            }}
+          >
+            <div className={styles.slashMenuHeader}>Basic blocks & Media</div>
+            {slashCommands.map((cmd, idx) => (
+              <button
+                key={cmd.title}
+                type="button"
+                className={`${styles.slashMenuItem} ${idx === selectedSlashIndex ? styles.slashMenuItemActive : ""}`}
+                onMouseEnter={() => setSelectedSlashIndex(idx)}
+                onClick={() => executeSlashCommand(cmd.id)}
               >
-                {emoji}
+                <span className={styles.slashMenuIcon}>{cmd.icon}</span>
+                <span>{cmd.title}</span>
               </button>
             ))}
           </div>
         )}
 
-        {/* Title Input */}
-        <input
-          ref={titleInputRef}
-          className={styles.titleInput}
-          placeholder="Untitled"
-          value={title}
-          onChange={handleTitleChange}
-          onKeyDown={handleTitleKeyDown}
-        />
+        {/* Floating @ Page Mention Menu */}
+        {!readOnly && mentionMenuPosition && (
+          <div
+            ref={mentionMenuRef}
+            className={styles.slashMenu}
+            style={{
+              top: `${mentionMenuPosition.y}px`,
+              left: `${mentionMenuPosition.x}px`,
+            }}
+          >
+            <div className={styles.slashMenuHeader}>Link to page</div>
+            {mentionablePages.length === 0 ? (
+              <div className={styles.slashMenuItem} style={{ opacity: 0.6 }}>
+                No matching pages
+              </div>
+            ) : (
+              mentionablePages.map((page, idx) => (
+                <button
+                  key={page.id}
+                  type="button"
+                  className={`${styles.slashMenuItem} ${idx === selectedMentionIndex ? styles.slashMenuItemActive : ""}`}
+                  onMouseEnter={() => setSelectedMentionIndex(idx)}
+                  onClick={() => insertPageMention(page)}
+                >
+                  <span className={styles.slashMenuIcon}>{page.icon || "📄"}</span>
+                  <span>{page.title || "Untitled"}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
-
-      {/* If this page is a database entry, show rich properties section */}
-      {isDatabaseEntry && <DatabaseEntryProperties row={block} />}
-
-      {/* Tiptap Block Editor Content */}
-      <div className={`${styles.editorArea} ${isDragOver ? styles.editorAreaDropActive : ""}`}>
-        <EditorContent editor={editor} />
-      </div>
-
-      {/* Floating Slash Command Menu */}
-      {slashMenuPosition && slashCommands.length > 0 && (
-        <div
-          ref={slashMenuRef}
-          className={styles.slashMenu}
-          style={{
-            top: `${slashMenuPosition.y}px`,
-            left: `${slashMenuPosition.x}px`,
-          }}
-        >
-          <div className={styles.slashMenuHeader}>Basic blocks</div>
-          {slashCommands.map((cmd, idx) => (
-            <button
-              key={cmd.title}
-              className={`${styles.slashMenuItem} ${idx === selectedSlashIndex ? styles.slashMenuItemActive : ""}`}
-              onMouseEnter={() => setSelectedSlashIndex(idx)}
-              onClick={() => executeSlashCommand(cmd.id)}
-            >
-              <span className={styles.slashMenuIcon}>{cmd.icon}</span>
-              <span>{cmd.title}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    </EditorNodeContext.Provider>
   );
 }

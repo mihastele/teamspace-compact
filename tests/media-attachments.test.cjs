@@ -68,12 +68,25 @@ test("tiptapDocToNoteContent and noteContentToTiptapDoc round-trip media blocks 
           transcriptionStatus: "completed",
         },
       },
+      {
+        type: "videoBlock",
+        attrs: {
+          blockId: "vid-1",
+          attachmentId: "att-vid",
+          url: "https://example.com/demo.mp4",
+          src: "https://example.com/demo.mp4",
+          fileName: "demo.mp4",
+          caption: "Demo video",
+          bytes: 543210,
+          contentType: "video/mp4",
+        },
+      },
     ],
   };
 
   // Convert to NoteContent
   const noteContent = tiptapDocToNoteContent(originalTiptap);
-  assert.equal(noteContent.blocks.length, 5);
+  assert.equal(noteContent.blocks.length, 6);
 
   assert.equal(noteContent.blocks[0].type, "heading");
   assert.equal(noteContent.blocks[0].level, 2);
@@ -90,14 +103,21 @@ test("tiptapDocToNoteContent and noteContentToTiptapDoc round-trip media blocks 
   assert.equal(noteContent.blocks[4].media?.durationSeconds, 45);
   assert.equal(noteContent.blocks[4].media?.transcript, "We agreed on the plan.");
 
+  assert.equal(noteContent.blocks[5].type, "video");
+  assert.equal(noteContent.blocks[5].media?.attachmentId, "att-vid");
+  assert.equal(noteContent.blocks[5].media?.originalName, "demo.mp4");
+  assert.equal(noteContent.blocks[5].media?.caption, "Demo video");
+
   // Convert back to Tiptap JSON
   const backToTiptap = noteContentToTiptapDoc(noteContent);
-  assert.equal(backToTiptap.content.length, 5);
+  assert.equal(backToTiptap.content.length, 6);
   assert.equal(backToTiptap.content[2].type, "imageBlock");
   assert.equal(backToTiptap.content[2].attrs?.attachmentId, "att-img");
   assert.equal(backToTiptap.content[3].type, "attachmentBlock");
   assert.equal(backToTiptap.content[4].type, "audioBlock");
   assert.equal(backToTiptap.content[4].attrs?.transcript, "We agreed on the plan.");
+  assert.equal(backToTiptap.content[5].type, "videoBlock");
+  assert.equal(backToTiptap.content[5].attrs?.fileName, "demo.mp4");
 });
 
 test("Yjs collaborative document initializes and decodes media blocks", () => {
@@ -129,6 +149,17 @@ test("Yjs collaborative document initializes and decodes media blocks", () => {
           transcript: "Testing audio block",
         },
       },
+      {
+        id: "c4444444-4444-4444-8444-444444444444",
+        type: "video",
+        text: "",
+        media: {
+          attachmentId: "vid-789",
+          url: "https://example.com/video.mp4",
+          originalName: "video.mp4",
+          caption: "Demo video presentation",
+        },
+      },
     ],
   };
 
@@ -138,12 +169,15 @@ test("Yjs collaborative document initializes and decodes media blocks", () => {
     const decoded = decodeDocument(encoded);
     try {
       const readBack = readContent(decoded);
-      assert.equal(readBack.blocks.length, 3);
+      assert.equal(readBack.blocks.length, 4);
       assert.equal(readBack.blocks[1].type, "image");
       assert.equal(readBack.blocks[1].media?.caption, "A nice photo");
       assert.equal(readBack.blocks[2].type, "audio");
       assert.equal(readBack.blocks[2].media?.durationSeconds, 12);
       assert.equal(readBack.blocks[2].media?.transcript, "Testing audio block");
+      assert.equal(readBack.blocks[3].type, "video");
+      assert.equal(readBack.blocks[3].media?.caption, "Demo video presentation");
+      assert.equal(readBack.blocks[3].media?.attachmentId, "vid-789");
     } finally {
       decoded.destroy();
     }

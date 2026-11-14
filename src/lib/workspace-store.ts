@@ -1,5 +1,13 @@
 import { useSyncExternalStore } from "react";
-import type { Block, DatabaseProperty, DatabaseView, Workspace } from "./model";
+import type {
+  Block,
+  DatabaseProperty,
+  DatabaseTemplate,
+  DatabaseView,
+  ShareLink,
+  SharePermission,
+  Workspace,
+} from "./model";
 import { createDefaultWorkspace, generateSeedData } from "./seed-workspace";
 
 export type WorkspaceState = {
@@ -8,6 +16,8 @@ export type WorkspaceState = {
   childrenIndex: Record<string, string[]>; // parentId (or 'root') -> blockIds in order
   properties: Record<string, DatabaseProperty[]>; // databaseId -> properties
   views: Record<string, DatabaseView[]>; // databaseId -> views
+  templates: Record<string, DatabaseTemplate[]>; // databaseId -> page templates
+  shareLinks: Record<string, ShareLink>; // token -> share link
   activeBlockId: string | null;
   sidePeekBlockId: string | null;
   activeViewIdByDatabase: Record<string, string>; // databaseId -> viewId
@@ -51,6 +61,340 @@ export const CORE_PROPERTY_DEFINITIONS: Record<string, Omit<DatabaseProperty, "p
 const STORAGE_KEY = "teamspace_workspace_state_v1";
 // Pre-rebrand key; read once so existing local edits are not lost.
 const LEGACY_STORAGE_KEY = "opennotion_workspace_state_v1";
+const OUTBOX_STORAGE_KEY = "teamspace_sync_outbox_v1";
+const TOMBSTONES_STORAGE_KEY = "teamspace_sync_tombstones_v1";
+const PENDING_TOMBSTONES_KEY = "teamspace_sync_pending_tombstones_v1";
+const SYNC_CHANNEL_NAME = "teamspace_workspace_sync";
+
+export type ServerSyncAdapter = {
+  workspaceId: string;
+  fetchBlocks: () => Promise<Block[]>;
+  syncBlocks: (blocks: Block[], tombstones?: Record<string, number>) => Promise<Block[]>;
+  deleteBlock: (blockId: string) => Promise<void>;
+};
+
+let currentAdapter: ServerSyncAdapter | null = null;
+let isFirstSync = true;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+let rateLimitBackoffUntil = 0;
+
+function loadPendingTombstones(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(PENDING_TOMBSTONES_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function savePendingTombstones(set: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PENDING_TOMBSTONES_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+function loadOutbox(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function saveOutbox(outbox: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(Array.from(outbox)));
+  } catch {}
+}
+
+function loadTombstones(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(TOMBSTONES_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveTombstones(records: Record<string, number>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TOMBSTONES_STORAGE_KEY, JSON.stringify(records));
+  } catch {}
+}
+
+const syncOutbox: Set<string> = loadOutbox();
+const tombstones: Record<string, number> = loadTombstones();
+const pendingTombstones: Set<string> = loadPendingTombstones();
+
+let syncChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+  try {
+    syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+    syncChannel.onmessage = (event) => {
+      if (event.data?.type === "workspace_reload") {
+        const stored = readStoredState();
+        if (stored) {
+          const parsed = stored.state as Partial<WorkspaceState>;
+          if (parsed.workspace && parsed.blocks) {
+            currentState = {
+              ...currentState,
+              ...parsed,
+              childrenIndex: parsed.childrenIndex || currentState.childrenIndex || { root: [] },
+              properties: parsed.properties || currentState.properties || {},
+              views: parsed.views || currentState.views || {},
+              templates: parsed.templates || currentState.templates || {},
+              shareLinks: parsed.shareLinks || currentState.shareLinks || {},
+              activeViewIdByDatabase: parsed.activeViewIdByDatabase || currentState.activeViewIdByDatabase || {},
+            };
+            for (const listener of listeners) {
+              listener();
+            }
+          }
+        }
+      }
+    };
+  } catch {}
+}
+
+function broadcastLocalChange() {
+  if (syncChannel) {
+    try {
+      syncChannel.postMessage({ type: "workspace_reload" });
+    } catch {}
+  }
+}
+
+let activeSyncPromise: Promise<void> | null = null;
+
+function scheduleSync(delayMs = 2500) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    void workspaceStore.flushSync();
+  }, delayMs);
+  if (syncTimer && typeof (syncTimer as unknown as { unref?: () => void }).unref === "function") {
+    (syncTimer as unknown as { unref: () => void }).unref();
+  }
+}
+
+function markDirty(blockId: string) {
+  syncOutbox.add(blockId);
+  saveOutbox(syncOutbox);
+  broadcastLocalChange();
+  scheduleSync(2500);
+}
+
+function recordTombstone(blockId: string, timestamp = Date.now()) {
+  tombstones[blockId] = Math.max(tombstones[blockId] || 0, timestamp);
+  pendingTombstones.add(blockId);
+  saveTombstones(tombstones);
+  savePendingTombstones(pendingTombstones);
+  syncOutbox.delete(blockId);
+  saveOutbox(syncOutbox);
+  broadcastLocalChange();
+  scheduleSync(1000);
+}
+
+function unpackDatabaseBlock(
+  dbBlock: Block,
+  targetProperties: Record<string, DatabaseProperty[]>,
+  targetViews: Record<string, DatabaseView[]>,
+  targetTemplates: Record<string, DatabaseTemplate[]>
+) {
+  const customProps = dbBlock.properties?.databaseProperties as DatabaseProperty[] | undefined;
+  if (Array.isArray(customProps)) {
+    targetProperties[dbBlock.id] = customProps;
+  }
+  const customViews = dbBlock.properties?.databaseViews as DatabaseView[] | undefined;
+  if (Array.isArray(customViews)) {
+    targetViews[dbBlock.id] = customViews;
+    if (!currentState.activeViewIdByDatabase) {
+      currentState.activeViewIdByDatabase = {};
+    }
+    if (!currentState.activeViewIdByDatabase[dbBlock.id] && customViews[0]) {
+      currentState.activeViewIdByDatabase[dbBlock.id] = customViews[0].id;
+    }
+  }
+  const customTemplates = dbBlock.properties?.databaseTemplates as DatabaseTemplate[] | undefined;
+  if (Array.isArray(customTemplates)) {
+    targetTemplates[dbBlock.id] = customTemplates;
+  }
+}
+
+function packDatabaseBlock(databaseId: string) {
+  const db = currentState.blocks[databaseId];
+  if (!db || db.type !== "database") return;
+  const now = Date.now();
+  currentState = {
+    ...currentState,
+    blocks: {
+      ...currentState.blocks,
+      [databaseId]: {
+        ...db,
+        updatedAt: now,
+        revision: (db.revision || 1) + 1,
+        properties: {
+          ...(db.properties || {}),
+          databaseProperties: currentState.properties[databaseId] || [],
+          databaseViews: currentState.views[databaseId] || [],
+          databaseTemplates: currentState.templates?.[databaseId] || [],
+        },
+      },
+    },
+  };
+  markDirty(databaseId);
+}
+
+function areBlocksEqual(a: Block, b: Block): boolean {
+  if (a === b) return true;
+  if (
+    a.id !== b.id ||
+    a.type !== b.type ||
+    a.title !== b.title ||
+    a.parentId !== b.parentId ||
+    a.icon !== b.icon ||
+    a.coverUrl !== b.coverUrl ||
+    a.position !== b.position ||
+    a.revision !== b.revision ||
+    Boolean(a.isArchived) !== Boolean(b.isArchived) ||
+    a.isFavorite !== b.isFavorite ||
+    (a.updatedAt || 0) !== (b.updatedAt || 0)
+  ) {
+    return false;
+  }
+  return (
+    JSON.stringify(a.content) === JSON.stringify(b.content) &&
+    JSON.stringify(a.properties) === JSON.stringify(b.properties)
+  );
+}
+
+function reconcileWithServerBlocks(serverBlocks: Block[]) {
+  const nextBlocks = { ...currentState.blocks };
+  const nextProps = { ...currentState.properties };
+  const nextViews = { ...currentState.views };
+  const nextTemplates = { ...(currentState.templates || {}) };
+  let stateChanged = false;
+
+  for (const sb of serverBlocks) {
+    const isDeleted = Boolean(sb.isArchived || typeof sb.deletedAt === "number");
+    const localTombstone = tombstones[sb.id];
+    const localBlock = nextBlocks[sb.id];
+
+    if (isDeleted) {
+      const serverDelTime = typeof sb.deletedAt === "number" ? sb.deletedAt : (sb.updatedAt || 0);
+      if (localBlock && (localBlock.updatedAt || 0) > serverDelTime) {
+        // Local edit occurred after server deletion: local edit wins
+        syncOutbox.add(sb.id);
+        continue;
+      }
+      // Server deletion wins
+      tombstones[sb.id] = Math.max(tombstones[sb.id] || 0, serverDelTime);
+      pendingTombstones.delete(sb.id);
+      if (localBlock) {
+        delete nextBlocks[sb.id];
+        syncOutbox.delete(sb.id);
+        stateChanged = true;
+      }
+      continue;
+    }
+
+    // Server block is active
+    if (localTombstone && localTombstone >= (sb.updatedAt || 0)) {
+      // Local deletion wins over older server block
+      if (localBlock) {
+        delete nextBlocks[sb.id];
+        stateChanged = true;
+      }
+      continue;
+    }
+
+    if (!localBlock) {
+      nextBlocks[sb.id] = sb;
+      syncOutbox.delete(sb.id);
+      stateChanged = true;
+      if (sb.type === "database") {
+        unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+      }
+    } else {
+      const serverTime = (sb.updatedAt || 0) as number;
+      const localTime = (localBlock.updatedAt || 0) as number;
+
+      if (serverTime > localTime) {
+        // Server block is newer
+        if (!areBlocksEqual(localBlock, sb)) {
+          nextBlocks[sb.id] = sb;
+          stateChanged = true;
+          if (sb.type === "database") {
+            unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+          }
+        }
+        syncOutbox.delete(sb.id);
+      } else if (localTime > serverTime) {
+        // Local block is newer: keep local block and keep in outbox to push
+        syncOutbox.add(sb.id);
+      } else {
+        if ((sb.revision || 0) >= (localBlock.revision || 0)) {
+          if (!areBlocksEqual(localBlock, sb)) {
+            nextBlocks[sb.id] = sb;
+            stateChanged = true;
+            if (sb.type === "database") {
+              unpackDatabaseBlock(sb, nextProps, nextViews, nextTemplates);
+            }
+          }
+          syncOutbox.delete(sb.id);
+        }
+      }
+    }
+  }
+
+  if (stateChanged) {
+    const nextChildren: Record<string, string[]> = { root: [] };
+    for (const b of Object.values(nextBlocks)) {
+      if (b.isArchived) continue;
+      const parentKey = b.parentId || "root";
+      if (!nextChildren[parentKey]) nextChildren[parentKey] = [];
+      if (!nextChildren[parentKey].includes(b.id)) {
+        nextChildren[parentKey].push(b.id);
+      }
+    }
+
+    let nextActive = currentState.activeBlockId;
+    if (nextActive && !nextBlocks[nextActive]) {
+      const rootIds = nextChildren["root"] || [];
+      nextActive = rootIds[0] || null;
+    }
+
+    currentState = {
+      ...currentState,
+      blocks: nextBlocks,
+      childrenIndex: nextChildren,
+      properties: nextProps,
+      views: nextViews,
+      templates: nextTemplates,
+      activeBlockId: nextActive,
+    };
+    saveOutbox(syncOutbox);
+    saveTombstones(tombstones);
+    emitChange();
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    scheduleSync(0);
+  });
+  window.addEventListener("focus", () => {
+    scheduleSync(0);
+  });
+  window.addEventListener("pagehide", () => {
+    if (syncOutbox.size > 0) void workspaceStore.flushSync();
+  });
+}
 
 function readStoredState(): { state: unknown; legacy: boolean } | null {
   if (typeof window === "undefined") return null;
@@ -78,7 +422,42 @@ function buildInitialState(): WorkspaceState {
           // Keep the legacy key if the migration cannot be persisted.
         }
       }
-      return parsed as WorkspaceState;
+      const ws = parsed as Partial<WorkspaceState>;
+      const blocks = (ws.blocks as Record<string, Block>) || {};
+      const workspace = (ws.workspace as Workspace) || createDefaultWorkspace();
+
+      let childrenIndex = ws.childrenIndex;
+      if (!childrenIndex || typeof childrenIndex !== "object" || !childrenIndex["root"]) {
+        childrenIndex = { root: [] };
+        for (const b of Object.values(blocks)) {
+          if (!b || b.isArchived) continue;
+          const parentKey = b.parentId || "root";
+          if (!childrenIndex[parentKey]) childrenIndex[parentKey] = [];
+          if (!childrenIndex[parentKey].includes(b.id)) {
+            childrenIndex[parentKey].push(b.id);
+          }
+        }
+      }
+
+      const activeViewIdByDatabase = ws.activeViewIdByDatabase || {};
+      const properties = ws.properties || {};
+      const views = ws.views || {};
+
+      return {
+        workspace,
+        blocks,
+        childrenIndex,
+        properties,
+        views,
+        templates: ws.templates || {},
+        shareLinks: ws.shareLinks || {},
+        activeBlockId: ws.activeBlockId ?? (childrenIndex["root"]?.[0] || null),
+        sidePeekBlockId: ws.sidePeekBlockId ?? null,
+        activeViewIdByDatabase,
+        searchQuery: ws.searchQuery || "",
+        theme: ws.theme === "dark" ? "dark" : "light",
+        sidebarCollapsed: Boolean(ws.sidebarCollapsed),
+      };
     }
   }
 
@@ -120,6 +499,8 @@ function buildInitialState(): WorkspaceState {
     childrenIndex,
     properties,
     views,
+    templates: {},
+    shareLinks: {},
     activeBlockId: "page-getting-started",
     sidePeekBlockId: null,
     activeViewIdByDatabase,
@@ -143,6 +524,39 @@ function emitChange() {
   for (const listener of listeners) {
     listener();
   }
+}
+
+function syncShareLinkAsync(link: ShareLink, block?: Block) {
+  if (typeof window === "undefined" || typeof fetch !== "function") return;
+  const targetBlock = block || currentState.blocks[link.blockId];
+  void fetch(`/api/share/${encodeURIComponent(link.token)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspaceId: link.workspaceId,
+      blockId: link.blockId,
+      permission: link.permission,
+      enabled: link.enabled,
+      document: targetBlock
+        ? {
+            title: targetBlock.title,
+            icon: targetBlock.icon,
+            coverUrl: targetBlock.coverUrl,
+            content: targetBlock.content,
+            revision: targetBlock.revision,
+            createdAt: targetBlock.createdAt,
+            updatedAt: targetBlock.updatedAt,
+          }
+        : {},
+    }),
+  }).catch(() => {});
+}
+
+function revokeShareLinkAsync(token: string) {
+  if (typeof window === "undefined" || typeof fetch !== "function") return;
+  void fetch(`/api/share/${encodeURIComponent(token)}`, {
+    method: "DELETE",
+  }).catch(() => {});
 }
 
 export const workspaceStore = {
@@ -245,24 +659,13 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(id);
     return newPage;
   },
 
   createDatabase(parentId: string | null = null, title: string = "Untitled Database"): Block {
     const now = Date.now();
     const id = `database-${now}-${Math.random().toString(36).slice(2, 7)}`;
-    const newDb: Block = {
-      id,
-      workspaceId: currentState.workspace.id,
-      parentId,
-      type: "database",
-      title,
-      icon: "🗂️",
-      position: `z${now}`,
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
 
     const defaultProps: DatabaseProperty[] = [
       { id: "prop-title", name: "Name", type: "title", position: "a0" },
@@ -299,6 +702,24 @@ export const workspaceStore = {
       },
     ];
 
+    const newDb: Block = {
+      id,
+      workspaceId: currentState.workspace.id,
+      parentId,
+      type: "database",
+      title,
+      icon: "🗂️",
+      position: `z${now}`,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+      properties: {
+        databaseProperties: defaultProps,
+        databaseViews: defaultViews,
+        databaseTemplates: [],
+      },
+    };
+
     const parentKey = parentId || "root";
     const existingChildren = currentState.childrenIndex[parentKey] || [];
 
@@ -328,6 +749,7 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(id);
     return newDb;
   },
 
@@ -357,6 +779,14 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    markDirty(id);
+
+    const matchingLink = Object.values(currentState.shareLinks || {}).find(
+      (l) => l.blockId === id && l.enabled
+    );
+    if (matchingLink) {
+      syncShareLinkAsync(matchingLink, currentState.blocks[id]);
+    }
   },
 
   toggleFavorite(id: string) {
@@ -369,20 +799,38 @@ export const workspaceStore = {
   archiveBlock(id: string) {
     const block = currentState.blocks[id];
     if (block) {
-      workspaceStore.updateBlock(id, { isArchived: true });
-      if (currentState.sidePeekBlockId === id) {
-        workspaceStore.setSidePeekBlock(null);
+      recordTombstone(id);
+      const nextBlocks = { ...currentState.blocks };
+      delete nextBlocks[id];
+
+      const parentKey = block.parentId || "root";
+      const existingChildren = currentState.childrenIndex[parentKey] || [];
+      const nextChildren = {
+        ...currentState.childrenIndex,
+        [parentKey]: existingChildren.filter((bid) => bid !== id),
+      };
+
+      let nextActive = currentState.activeBlockId;
+      if (nextActive === id) {
+        const rootIds = nextChildren["root"] || [];
+        const nextId = rootIds.find((bid) => bid !== id && !nextBlocks[bid]?.isArchived);
+        nextActive = nextId || null;
       }
-      if (currentState.activeBlockId === id) {
-        // Find another root page to switch to
-        const rootIds = currentState.childrenIndex["root"] || [];
-        const nextId = rootIds.find((bid) => bid !== id && !currentState.blocks[bid]?.isArchived);
-        workspaceStore.setActiveBlock(nextId || null);
-      }
+
+      currentState = {
+        ...currentState,
+        blocks: nextBlocks,
+        childrenIndex: nextChildren,
+        activeBlockId: nextActive,
+        sidePeekBlockId: currentState.sidePeekBlockId === id ? null : currentState.sidePeekBlockId,
+      };
+      emitChange();
     }
   },
 
   restoreBlock(id: string) {
+    delete tombstones[id];
+    saveTombstones(tombstones);
     workspaceStore.updateBlock(id, { isArchived: false });
   },
 
@@ -426,43 +874,87 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(newId);
     return duplicate;
   },
 
   // Database Rows
   createDatabaseRow(
     databaseId: string,
-    title: string = "New entry",
-    initialProperties: Record<string, unknown> = {}
+    title?: string,
+    initialProperties: Record<string, unknown> = {},
+    templateId?: string | null
   ): Block {
     const now = Date.now();
     const id = `row-${now}-${Math.random().toString(36).slice(2, 7)}`;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const dbTemplates = currentState.templates?.[databaseId] || [];
+    const selectedTemplate =
+      templateId === null
+        ? undefined
+        : templateId
+          ? dbTemplates.find((t) => t.id === templateId)
+          : dbTemplates.find((t) => t.isDefault);
+
+    const resolveDynamicValue = (val: unknown): unknown => {
+      if (val === "$today") return todayStr;
+      if (val === "$this") return id;
+      if (Array.isArray(val)) return val.map(resolveDynamicValue);
+      if (val && typeof val === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+          out[k] = resolveDynamicValue(v);
+        }
+        return out;
+      }
+      return val;
+    };
+
+    const resolvedTemplateProps: Record<string, unknown> = {};
+    if (selectedTemplate?.defaultProperties) {
+      for (const [k, v] of Object.entries(selectedTemplate.defaultProperties)) {
+        resolvedTemplateProps[k] = resolveDynamicValue(v);
+      }
+    }
+
+    const finalTitle =
+      title !== undefined
+        ? title
+        : selectedTemplate?.name
+          ? selectedTemplate.name
+          : "New entry";
 
     // Resolve default status property if not provided in initialProperties
     const dbProps = currentState.properties[databaseId] || [];
     const statusProp = dbProps.find((p) => p.type === "status");
     const mergedProperties: Record<string, unknown> = {
-      "prop-title": title,
+      ...resolvedTemplateProps,
       ...initialProperties,
+      "prop-title": finalTitle,
     };
 
     if (statusProp && !mergedProperties[statusProp.id] && statusProp.options?.[0]) {
       mergedProperties[statusProp.id] = statusProp.options[0].id;
     }
 
+    const resolvedContent = selectedTemplate?.content
+      ? (resolveDynamicValue(selectedTemplate.content) as Block["content"])
+      : {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        };
+
     const newRow: Block = {
       id,
       workspaceId: currentState.workspace.id,
       parentId: databaseId,
       type: "page",
-      title,
-      icon: "📄",
+      title: finalTitle,
+      icon: selectedTemplate?.icon || "📄",
       position: `z${now}`,
       properties: mergedProperties,
-      content: {
-        type: "doc",
-        content: [{ type: "paragraph" }],
-      },
+      content: resolvedContent,
       revision: 1,
       createdAt: now,
       updatedAt: now,
@@ -483,6 +975,7 @@ export const workspaceStore = {
     };
 
     emitChange();
+    markDirty(newRow.id);
     return newRow;
   },
 
@@ -538,6 +1031,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
     return newView;
   },
 
@@ -560,6 +1054,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   moveDatabaseView(databaseId: string, activeViewId: string, overViewId: string) {
@@ -575,6 +1070,7 @@ export const workspaceStore = {
       views: { ...currentState.views, [databaseId]: next },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   /** Custom manual ordering: place blockId at the position currently held by overId (same parent). */
@@ -591,6 +1087,7 @@ export const workspaceStore = {
       childrenIndex: { ...currentState.childrenIndex, [parentId]: next },
     };
     emitChange();
+    markDirty(parentId);
   },
 
   updateDatabaseView(
@@ -607,6 +1104,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   createDatabaseProperty(
@@ -650,6 +1148,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
     return newProp;
   },
 
@@ -669,6 +1168,7 @@ export const workspaceStore = {
       },
     };
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   deleteDatabaseProperty(databaseId: string, propertyId: string) {
@@ -697,6 +1197,7 @@ export const workspaceStore = {
       };
     }
     emitChange();
+    packDatabaseBlock(databaseId);
   },
 
   restoreDatabaseProperty(databaseId: string, propertyId: string) {
@@ -730,6 +1231,176 @@ export const workspaceStore = {
       };
     }
     emitChange();
+    packDatabaseBlock(databaseId);
+  },
+
+  // Database Templates
+  createDatabaseTemplate(
+    databaseId: string,
+    data: {
+      name: string;
+      icon?: string | null;
+      defaultProperties?: Record<string, unknown>;
+      content?: DatabaseTemplate["content"];
+      isDefault?: boolean;
+    }
+  ): DatabaseTemplate {
+    const now = Date.now();
+    const id = `tpl-${now}-${Math.random().toString(36).slice(2, 7)}`;
+    const existing = currentState.templates?.[databaseId] || [];
+    const shouldBeDefault = data.isDefault ?? existing.length === 0;
+    const newTemplate: DatabaseTemplate = {
+      id,
+      databaseId,
+      name: data.name || "Untitled template",
+      icon: data.icon || "📄",
+      defaultProperties: data.defaultProperties || {},
+      content: data.content || { type: "doc", content: [{ type: "paragraph" }] },
+      isDefault: shouldBeDefault,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextList: DatabaseTemplate[] = shouldBeDefault
+      ? [...existing.map((t) => ({ ...t, isDefault: false })), newTemplate]
+      : [...existing, newTemplate];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: nextList,
+      },
+    };
+    emitChange();
+    packDatabaseBlock(databaseId);
+    return newTemplate;
+  },
+
+  updateDatabaseTemplate(
+    databaseId: string,
+    templateId: string,
+    updates: Partial<DatabaseTemplate>
+  ) {
+    const existing = currentState.templates?.[databaseId] || [];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: existing.map((t) => {
+          if (t.id === templateId) {
+            return { ...t, ...updates, updatedAt: Date.now() };
+          }
+          if (updates.isDefault) {
+            return { ...t, isDefault: false };
+          }
+          return t;
+        }),
+      },
+    };
+    emitChange();
+    packDatabaseBlock(databaseId);
+  },
+
+  deleteDatabaseTemplate(databaseId: string, templateId: string) {
+    const existing = currentState.templates?.[databaseId] || [];
+    currentState = {
+      ...currentState,
+      templates: {
+        ...(currentState.templates || {}),
+        [databaseId]: existing.filter((t) => t.id !== templateId),
+      },
+    };
+    emitChange();
+    packDatabaseBlock(databaseId);
+  },
+
+  // Share Links
+  syncShareLink(link: ShareLink, block?: Block) {
+    syncShareLinkAsync(link, block);
+  },
+
+  createOrGetShareLink(
+    blockId: string,
+    permission: SharePermission = "read"
+  ): ShareLink {
+    const existingMap = currentState.shareLinks || {};
+    const existing = Object.values(existingMap).find(
+      (link) => link.blockId === blockId
+    );
+    if (existing) {
+      if (!existing.enabled) {
+        const updated: ShareLink = {
+          ...existing,
+          enabled: true,
+          updatedAt: Date.now(),
+        };
+        currentState = {
+          ...currentState,
+          shareLinks: { ...existingMap, [existing.token]: updated },
+        };
+        emitChange();
+        syncShareLinkAsync(updated);
+        return updated;
+      }
+      syncShareLinkAsync(existing);
+      return existing;
+    }
+
+    const token =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+        : `sh${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const link: ShareLink = {
+      token,
+      blockId,
+      workspaceId: currentState.workspace.id,
+      permission,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    currentState = {
+      ...currentState,
+      shareLinks: {
+        ...existingMap,
+        [token]: link,
+      },
+    };
+    emitChange();
+    syncShareLinkAsync(link);
+    return link;
+  },
+
+  updateShareLink(token: string, updates: Partial<Pick<ShareLink, "permission" | "enabled">>) {
+    const existingMap = currentState.shareLinks || {};
+    const existing = existingMap[token];
+    if (!existing) return;
+    const updated = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now(),
+    };
+    currentState = {
+      ...currentState,
+      shareLinks: {
+        ...existingMap,
+        [token]: updated,
+      },
+    };
+    emitChange();
+    syncShareLinkAsync(updated);
+  },
+
+  revokeShareLink(token: string) {
+    const existingMap = { ...(currentState.shareLinks || {}) };
+    if (!(token in existingMap)) return;
+    delete existingMap[token];
+    currentState = {
+      ...currentState,
+      shareLinks: existingMap,
+    };
+    emitChange();
+    revokeShareLinkAsync(token);
   },
 
   setWorkspace(workspace: Workspace) {
@@ -887,11 +1558,149 @@ export const workspaceStore = {
     emitChange();
   },
 
+  setServerSyncAdapter(adapter: ServerSyncAdapter | null) {
+    if (!adapter) {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      currentAdapter = null;
+      return;
+    }
+
+    if (currentAdapter && currentAdapter.workspaceId === adapter.workspaceId) {
+      currentAdapter = adapter;
+      return;
+    }
+
+    currentAdapter = adapter;
+    isFirstSync = true;
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(() => {
+      if (currentAdapter && !activeSyncPromise && !syncTimer && Date.now() >= rateLimitBackoffUntil) {
+        if (typeof document === "undefined" || document.visibilityState === "visible") {
+          void workspaceStore.flushSync();
+        }
+      }
+    }, 45000);
+    if (pollInterval && typeof (pollInterval as unknown as { unref?: () => void }).unref === "function") {
+      (pollInterval as unknown as { unref: () => void }).unref();
+    }
+    void workspaceStore.flushSync();
+  },
+
+  getServerSyncAdapter(): ServerSyncAdapter | null {
+    return currentAdapter;
+  },
+
+  async flushSync() {
+    if (!currentAdapter) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (Date.now() < rateLimitBackoffUntil) return;
+    if (activeSyncPromise) return activeSyncPromise;
+
+    activeSyncPromise = (async () => {
+      try {
+        let blocksToPush: Block[] = [];
+        const dirtyIds = Array.from(syncOutbox);
+
+        if (isFirstSync) {
+          isFirstSync = false;
+          const serverBlocks = await currentAdapter.fetchBlocks();
+          if (serverBlocks.length === 0) {
+            // Server has no blocks yet: push all local non-archived blocks
+            blocksToPush = Object.values(currentState.blocks).filter((b) => !b.isArchived);
+          } else {
+            // Check if local was only initial seed with no local modifications
+            const localOnlySeed =
+              dirtyIds.length === 0 &&
+              Object.keys(tombstones).length === 0 &&
+              Object.keys(currentState.blocks).every((id) =>
+                id.startsWith("page-getting-started") ||
+                id.startsWith("database-tasks") ||
+                id.startsWith("task-")
+              );
+
+            if (localOnlySeed) {
+              // Replace local seed state with server blocks cleanly
+              currentState = {
+                ...currentState,
+                blocks: {},
+                childrenIndex: { root: [] },
+                properties: {},
+                views: {},
+                templates: {},
+              };
+            }
+            reconcileWithServerBlocks(serverBlocks);
+            blocksToPush = Array.from(syncOutbox)
+              .map((id) => currentState.blocks[id])
+              .filter(Boolean) as Block[];
+          }
+        } else if (dirtyIds.length > 0) {
+          blocksToPush = dirtyIds
+            .map((id) => currentState.blocks[id])
+            .filter(Boolean) as Block[];
+        }
+
+        const tombstoneMap: Record<string, number> = {};
+        for (const id of pendingTombstones) {
+          if (tombstones[id]) tombstoneMap[id] = tombstones[id];
+        }
+        const tombstoneCount = Object.keys(tombstoneMap).length;
+
+        if (blocksToPush.length > 0 || tombstoneCount > 0) {
+          const returnedBlocks = await currentAdapter.syncBlocks(blocksToPush, tombstoneMap);
+          if (Array.isArray(returnedBlocks)) {
+            for (const b of blocksToPush) {
+              syncOutbox.delete(b.id);
+            }
+            saveOutbox(syncOutbox);
+            for (const id of Object.keys(tombstoneMap)) {
+              pendingTombstones.delete(id);
+            }
+            savePendingTombstones(pendingTombstones);
+            reconcileWithServerBlocks(returnedBlocks);
+          }
+        } else {
+          // No local pending mutations: fetch remote blocks to sync updates from other devices/browsers
+          const remoteBlocks = await currentAdapter.fetchBlocks();
+          if (Array.isArray(remoteBlocks) && remoteBlocks.length > 0) {
+            reconcileWithServerBlocks(remoteBlocks);
+          }
+        }
+      } catch (err: unknown) {
+        console.warn("workspaceStore sync warning:", err);
+        const is429 = (err as { status?: number })?.status === 429 ||
+          (err instanceof Error && /429|rate|too many/i.test(err.message));
+        if (is429) {
+          rateLimitBackoffUntil = Date.now() + 60000;
+        }
+      }
+    })().finally(() => {
+      activeSyncPromise = null;
+    });
+
+    return activeSyncPromise;
+  },
+
+  reconcileWithServer(blocks: Block[]) {
+    reconcileWithServerBlocks(blocks);
+  },
+
   // Reset to default seed
   resetToDefaultSeed() {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(LEGACY_STORAGE_KEY);
+      localStorage.removeItem(OUTBOX_STORAGE_KEY);
+      localStorage.removeItem(TOMBSTONES_STORAGE_KEY);
+      localStorage.removeItem(PENDING_TOMBSTONES_KEY);
+    }
+    syncOutbox.clear();
+    pendingTombstones.clear();
+    for (const key of Object.keys(tombstones)) {
+      delete tombstones[key];
     }
     currentState = buildInitialState();
     emitChange();
@@ -931,8 +1740,18 @@ export function useWorkspace() {
     updateDatabaseProperty: workspaceStore.updateDatabaseProperty,
     deleteDatabaseProperty: workspaceStore.deleteDatabaseProperty,
     restoreDatabaseProperty: workspaceStore.restoreDatabaseProperty,
+    createDatabaseTemplate: workspaceStore.createDatabaseTemplate,
+    updateDatabaseTemplate: workspaceStore.updateDatabaseTemplate,
+    deleteDatabaseTemplate: workspaceStore.deleteDatabaseTemplate,
+    createOrGetShareLink: workspaceStore.createOrGetShareLink,
+    updateShareLink: workspaceStore.updateShareLink,
+    revokeShareLink: workspaceStore.revokeShareLink,
+    syncShareLink: workspaceStore.syncShareLink,
     resetToDefaultSeed: workspaceStore.resetToDefaultSeed,
     setWorkspace: workspaceStore.setWorkspace,
     syncFromApi: workspaceStore.syncFromApi,
+    setServerSyncAdapter: workspaceStore.setServerSyncAdapter,
+    flushSync: workspaceStore.flushSync,
+    reconcileWithServer: workspaceStore.reconcileWithServer,
   };
 }

@@ -1,0 +1,376 @@
+.calloutWrapper {
+  margin: 8px 0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.callout_gray {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+}
+
+.callout_blue {
+  background: rgba(35, 131, 226, 0.1);
+  border-color: rgba(35, 131, 226, 0.25);
+}
+
+.callout_green {
+  background: rgba(15, 123, 108, 0.1);
+  border-color: rgba(15, 123, 108, 0.25);
+}
+
+.callout_yellow {
+  background: rgba(223, 171, 1, 0.12);
+  border-color: rgba(223, 171, 1, 0.3);
+}
+
+.callout_red {
+  background: rgba(224, 62, 62, 0.1);
+  border-color: rgba(224, 62, 62, 0.25);
+}
+
+.callout_purple {
+  background: rgba(144, 101, 176, 0.12);
+  border-color: rgba(144, 101, 176, 0.28);
+}
+
+.calloutIconBtn {
+  font-size: 20px;
+  line-height: 1.2;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.calloutIconBtn:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.calloutBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.calloutControls {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.calloutWrapper:hover .calloutControls {
+  opacity: 1;
+}
+
+.colorDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.calloutEmojiPopover {
+  position: absolute;
+  top: 40px;
+  left: 8px;
+  z-index: 90;
+}
+
+/* Columns */
+.columnsWrapper {
+  margin: 10px 0;
+  position: relative;
+  border-radius: 6px;
+  padding: 4px 0;
+}
+
+.columnsControls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.columnsWrapper:hover .columnsControls {
+  opacity: 1;
+}
+
+.smallActionBtn {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.smallActionBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.columnsGrid {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.columnsGrid > div {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+}
+
+@media (max-width: 680px) {
+  .columnsGrid,
+  .columnsGrid > div {
+    flex-direction: column;
+  }
+}
+
+.columnCell {
+  flex: 1;
+  min-width: 0;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  transition: border-color 0.12s ease;
+}
+
+.columnsWrapper:hover .columnCell {
+  border-color: var(--border-subtle);
+}
+
+/* Media Blocks (Image, Video, File) */
+.mediaCard {
+  margin: 10px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-card);
+  padding: 12px;
+  position: relative;
+}
+
+.mediaUploadBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 16px;
+  border: 1.5px dashed var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.mediaUploadActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.uploadBtn {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent-blue);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.urlInputRow {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.urlInput {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.mediaToolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 10;
+}
+
+.mediaCard:hover .mediaToolbar {
+  opacity: 1;
+}
+
+.imagePreview {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 0 auto;
+}
+
+.videoPreview {
+  display: block;
+  width: 100%;
+  max-height: 460px;
+  border-radius: 6px;
+  background: #000000;
+}
+
+.captionInput {
+  width: 100%;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fileInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fileName {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileMeta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.downloadLink {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.downloadLink:hover {
+  background: var(--bg-hover);
+}
+
+/* Inline Page Mention */
+.pageMention {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 0.94em;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-subtle);
+  text-underline-offset: 2px;
+  vertical-align: baseline;
+}
+
+.pageMention:hover {
+  background: var(--bg-active, rgba(35, 131, 226, 0.12));
+  border-color: var(--accent-blue);
+}
+
+/* Embedded Database View */
+.embeddedDbWrapper {
+  margin: 14px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-card);
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.embeddedDbHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.embeddedDbPicker {
+  padding: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dbSelect {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-main);
+  color: var(--text-primary);
+}

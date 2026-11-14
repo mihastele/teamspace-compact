@@ -1,5 +1,7 @@
 "use client";
 
+import { browserAccessToken } from "./browser-backend";
+
 // Allowed MIME types up to 25 MB
 export const ALLOWED_MIME_TYPES = new Set([
   // Images
@@ -7,6 +9,11 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/webp",
   "image/gif",
+  // Video
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
   // Audio
   "audio/webm",
   "audio/ogg",
@@ -116,6 +123,18 @@ export async function getLocalMedia(id: string): Promise<string | null> {
   return null;
 }
 
+export async function deleteLocalMedia(id: string): Promise<void> {
+  try {
+    const db = await getMediaDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("media", "readwrite");
+      tx.objectStore("media").delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
 export type UploadResult = {
   attachmentId: string;
   url: string;
@@ -124,7 +143,7 @@ export type UploadResult = {
   bytes: number;
 };
 
-/** Unified uploader for images, audio and general files. */
+/** Unified uploader for images, videos, audio and general files. */
 export async function uploadMediaFile(
   file: File,
   parentType: "page" | "task" | "note",
@@ -151,11 +170,15 @@ export async function uploadMediaFile(
   // 1. If running against configured backend with signed-in user
   if (api.configured && api.user && api.workspace) {
     const path = `workspaces/${api.workspace.id}`;
+    const token = await browserAccessToken(api.user.uid);
+    const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
     // Register upload
     const initRes = await fetch(`/api/${path}/attachments`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...authHeader,
       },
       body: JSON.stringify({
         parentType: parentType === "page" ? "note" : parentType,
@@ -181,19 +204,30 @@ export async function uploadMediaFile(
     });
 
     if (!uploadRes.ok) {
-      await fetch(`/api/${path}/attachments/${attachmentId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`/api/${path}/attachments/${attachmentId}`, {
+        method: "DELETE",
+        headers: authHeader,
+      }).catch(() => {});
       throw new Error("Upload transfer failed. Please try again.");
     }
 
     // Complete upload
     const completeRes = await fetch(`/api/${path}/attachments/${attachmentId}/complete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader,
+      },
       body: "{}",
     });
 
     if (!completeRes.ok) {
       throw new Error("Could not verify completed attachment.");
+    }
+
+    // If it's an image, also cache it in local IndexedDB so it's available when viewed offline
+    if (file.type.startsWith("image/")) {
+      void storeLocalMedia(attachmentId, preparedBlob).catch(() => {});
     }
 
     // Authenticated inline streaming URL

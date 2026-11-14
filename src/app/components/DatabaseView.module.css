@@ -36,12 +36,15 @@
   justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 2px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .viewTabs {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .viewTab {
@@ -80,6 +83,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .searchBox {
@@ -1102,4 +1106,14 @@
 .dropTarget { box-shadow: inset 2px 0 0 var(--accent, #2383e2); }
 .dropTargetRow { box-shadow: inset 0 2px 0 var(--accent, #2383e2); }
 .boardCard, .listItem, .calendarEventItem, .tr { cursor: pointer; }
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px 12px 60px;
+  }
+
+  .titleInput {
+    font-size: 24px;
+  }
+}
 

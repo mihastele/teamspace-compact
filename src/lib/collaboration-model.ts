@@ -8,6 +8,17 @@ export const REMOTE_ORIGIN = Symbol("remote-server");
 export const MAX_STATE_BYTES = 350000;
 export const MAX_UPDATE_BYTES = 64000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function safeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 const TYPES = new Set([
   "paragraph",
   "heading",
@@ -21,6 +32,7 @@ const TYPES = new Set([
   "board",
   "synced",
   "image",
+  "video",
   "attachment",
   "audio",
 ]);
@@ -123,12 +135,13 @@ export function initializeDocument(content: NoteContent): Y.Doc {
   doc.getMap("tombstones");
   let rank: string | null = null;
   doc.transact(() => {
-    for (const block of content.blocks) {
-      const id = block.id ?? crypto.randomUUID();
-      if (!UUID.test(id) || blocks.has(id))
-        throw new Error("Invalid or duplicate block identity.");
+    for (const rawBlock of content.blocks) {
+      const id = (rawBlock.id && UUID.test(rawBlock.id) && !blocks.has(rawBlock.id))
+        ? rawBlock.id
+        : safeUUID();
       rank = rankBetween(rank, null, id);
-      blocks.set(id, makeBlock(block, rank));
+      const safeType = TYPES.has(rawBlock.type) ? rawBlock.type : "paragraph";
+      blocks.set(id, makeBlock({ ...rawBlock, id, type: safeType }, rank));
     }
   }, LOCAL_ORIGIN);
   validateDocument(doc);
@@ -227,14 +240,17 @@ function applyEditorIntent(
   next: NoteContent,
 ): void {
   if (next.blocks.length > 1000) throw new Error("Too many blocks.");
-  // IDs assigned here are immediately reflected in the caller's optimistic draft.
-  for (const block of next.blocks) block.id ??= crypto.randomUUID();
+  const seenNextIds = new Set<string>();
+  for (const block of next.blocks) {
+    if (!block.id || !UUID.test(block.id) || seenNextIds.has(block.id)) {
+      block.id = safeUUID();
+    }
+    seenNextIds.add(block.id);
+    if (!TYPES.has(block.type)) {
+      block.type = "paragraph";
+    }
+  }
   const nextIds = next.blocks.map((block) => block.id!);
-  if (
-    new Set(nextIds).size !== nextIds.length ||
-    nextIds.some((id) => !UUID.test(id))
-  )
-    throw new Error("Invalid or duplicate block identity.");
   const old = new Map(before.blocks.map((block) => [block.id, block]));
   const blocks = doc.getMap<Y.Map<unknown>>("blocks");
   const deleted = doc.getMap("tombstones");
@@ -455,7 +471,7 @@ export function validateDocument(doc: Y.Doc, previous?: Y.Doc): void {
     }
     if (format.type === "synced" && !format.source) throw new Error("A synced block requires a source.");
     if (format.media !== undefined) {
-      if (!["image", "attachment", "audio"].includes(format.type))
+      if (!["image", "attachment", "audio", "video"].includes(format.type))
         throw new Error("Only media blocks have media settings.");
       if (typeof format.media !== "object" || format.media === null)
         throw new Error("Invalid media metadata.");
@@ -522,15 +538,26 @@ function extractText(nodes?: TiptapNode[]): string {
 
 export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   if (!doc || typeof doc !== "object") {
-    return { blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }] };
+    return { blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] };
   }
   const tiptap = doc as TiptapDoc;
   const blocks: NoteBlock[] = [];
+  const seenIds = new Set<string>();
+
+  const resolveId = (rawId: unknown): string => {
+    if (typeof rawId === "string" && UUID.test(rawId) && !seenIds.has(rawId)) {
+      seenIds.add(rawId);
+      return rawId;
+    }
+    const fresh = safeUUID();
+    seenIds.add(fresh);
+    return fresh;
+  };
 
   const rawNodes = Array.isArray(tiptap.content) ? tiptap.content : [];
 
   for (const node of rawNodes) {
-    const id = (node.attrs?.blockId as string) || crypto.randomUUID();
+    const id = resolveId(node.attrs?.blockId);
 
     if (node.type === "heading") {
       const level = Number(node.attrs?.level) || 1;
@@ -544,7 +571,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "bullet",
           text: extractText(item.content),
         });
@@ -553,7 +580,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "ordered",
           text: extractText(item.content),
         });
@@ -562,7 +589,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
       const items = node.content || [];
       for (const item of items) {
         blocks.push({
-          id: (item.attrs?.blockId as string) || crypto.randomUUID(),
+          id: resolveId(item.attrs?.blockId),
           type: "todo",
           checked: Boolean(item.attrs?.checked),
           text: extractText(item.content),
@@ -601,17 +628,31 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
           caption: (node.attrs?.caption || node.attrs?.alt) as string | undefined,
         },
       });
-    } else if (node.type === "attachmentBlock") {
+    } else if (node.type === "videoBlock") {
+      blocks.push({
+        id,
+        type: "video",
+        text: "",
+        media: {
+          attachmentId: node.attrs?.attachmentId as string | undefined,
+          url: (node.attrs?.url || node.attrs?.src) as string | undefined,
+          originalName: (node.attrs?.fileName || node.attrs?.originalName) as string | undefined,
+          contentType: node.attrs?.contentType as string | undefined,
+          bytes: (node.attrs?.bytes || node.attrs?.fileSize) as number | undefined,
+          caption: node.attrs?.caption as string | undefined,
+        },
+      });
+    } else if (node.type === "attachmentBlock" || node.type === "fileBlock") {
       blocks.push({
         id,
         type: "attachment",
         text: "",
         media: {
           attachmentId: node.attrs?.attachmentId as string | undefined,
-          url: node.attrs?.url as string | undefined,
-          originalName: node.attrs?.originalName as string | undefined,
-          contentType: node.attrs?.contentType as string | undefined,
-          bytes: node.attrs?.bytes as number | undefined,
+          url: (node.attrs?.url || node.attrs?.src) as string | undefined,
+          originalName: (node.attrs?.originalName || node.attrs?.fileName) as string | undefined,
+          contentType: (node.attrs?.contentType || node.attrs?.mimeType) as string | undefined,
+          bytes: (node.attrs?.bytes || node.attrs?.fileSize) as number | undefined,
         },
       });
     } else if (node.type === "audioBlock") {
@@ -642,7 +683,7 @@ export function tiptapDocToNoteContent(doc: unknown): NoteContent {
   }
 
   if (blocks.length === 0) {
-    blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
+    blocks.push({ id: safeUUID(), type: "paragraph", text: "" });
   }
 
   return { blocks };
@@ -652,7 +693,7 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
   if (!content || !Array.isArray(content.blocks) || content.blocks.length === 0) {
     return {
       type: "doc",
-      content: [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+      content: [{ type: "paragraph", attrs: { blockId: safeUUID() }, content: [] }],
     };
   }
 
@@ -669,7 +710,7 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
   }
 
   for (const block of content.blocks) {
-    const blockId = block.id || crypto.randomUUID();
+    const blockId = block.id || safeUUID();
     const textNode = block.text ? [{ type: "text", text: block.text }] : [];
 
     if (block.type === "bullet") {
@@ -744,6 +785,20 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
           caption: block.media?.caption,
         },
       });
+    } else if (block.type === "video") {
+      nodes.push({
+        type: "videoBlock",
+        attrs: {
+          blockId,
+          attachmentId: block.media?.attachmentId,
+          url: block.media?.url,
+          src: block.media?.url,
+          fileName: block.media?.originalName,
+          caption: block.media?.caption,
+          bytes: block.media?.bytes,
+          contentType: block.media?.contentType,
+        },
+      });
     } else if (block.type === "attachment") {
       nodes.push({
         type: "attachmentBlock",
@@ -785,6 +840,6 @@ export function noteContentToTiptapDoc(content: NoteContent | null | undefined):
 
   return {
     type: "doc",
-    content: nodes.length ? nodes : [{ type: "paragraph", attrs: { blockId: crypto.randomUUID() }, content: [] }],
+    content: nodes.length ? nodes : [{ type: "paragraph", attrs: { blockId: safeUUID() }, content: [] }],
   };
 }

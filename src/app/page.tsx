@@ -19,6 +19,9 @@ import {
   Copy,
   Download,
   Trash2,
+  Share2,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import styles from "./page.module.css";
 
@@ -36,11 +39,54 @@ export default function HomePage() {
     sidebarCollapsed,
     setSidebarCollapsed,
     syncFromApi,
+    shareLinks,
+    createOrGetShareLink,
+    updateShareLink,
+    revokeShareLink,
+    syncShareLink,
+    setServerSyncAdapter,
   } = useWorkspace();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
   const appearanceMenuRef = useRef<HTMLDivElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+
+  // Connect workspaceStore to server sync adapter when authenticated and workspace is loaded
+  const syncWorkspaceId = api.workspace?.id;
+  const syncUserId = api.user?.uid;
+  const isConfigured = api.configured;
+  const { fetchBlocks, syncBlocks, deleteBlock } = api;
+
+  useEffect(() => {
+    if (isConfigured && syncUserId && syncWorkspaceId) {
+      setServerSyncAdapter({
+        workspaceId: syncWorkspaceId,
+        fetchBlocks,
+        syncBlocks,
+        deleteBlock,
+      });
+    } else {
+      setServerSyncAdapter(null);
+    }
+  }, [
+    isConfigured,
+    syncUserId,
+    syncWorkspaceId,
+    fetchBlocks,
+    syncBlocks,
+    deleteBlock,
+    setServerSyncAdapter,
+  ]);
+
+  // Auto-collapse sidebar on mobile screen widths to give maximum canvas space
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSidebarCollapsed(true);
+    }
+  }, [setSidebarCollapsed]);
 
   // Sync workspace and server items into workspace-store whenever api data updates
   useEffect(() => {
@@ -62,10 +108,17 @@ export default function HomePage() {
       ) {
         setShowAppearanceMenu(false);
       }
+      if (
+        shareMenuRef.current &&
+        !shareMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowShareMenu(false);
+      }
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowAppearanceMenu(false);
+        setShowShareMenu(false);
       }
     };
     window.addEventListener("mousedown", handleOutside);
@@ -129,8 +182,10 @@ export default function HomePage() {
 
   // Build breadcrumbs for nested pages
   const breadcrumbs: { id: string; title: string; icon?: string | null }[] = [];
+  const visitedBreadcrumbs = new Set<string>();
   let curr = activeBlock;
-  while (curr) {
+  while (curr && !visitedBreadcrumbs.has(curr.id) && visitedBreadcrumbs.size < 50) {
+    visitedBreadcrumbs.add(curr.id);
     breadcrumbs.unshift({ id: curr.id, title: curr.title || "Untitled", icon: curr.icon });
     curr = curr.parentId ? blocks[curr.parentId] : null;
   }
@@ -177,6 +232,148 @@ export default function HomePage() {
           <div className={styles.topbarActions}>
             {activeBlock && (
               <>
+                <div style={{ position: "relative" }} ref={shareMenuRef}>
+                  <button
+                    className={styles.topbarBtn}
+                    title="Share page via link"
+                    onClick={() => setShowShareMenu((prev) => !prev)}
+                  >
+                    <Share2 size={14} />
+                    <span>Share</span>
+                  </button>
+
+                  {showShareMenu && (() => {
+                    const activeShare = Object.values(shareLinks || {}).find(
+                      (s) => s.blockId === activeBlock.id
+                    );
+                    const sharePath = activeShare ? `/share/${activeShare.token}` : "";
+                    const shareUrl =
+                      typeof window !== "undefined" && sharePath
+                        ? `${window.location.origin}${sharePath}`
+                        : sharePath;
+
+                    return (
+                      <div className={styles.appearancePopover} style={{ width: 300, padding: 14 }}>
+                        <div className={styles.appearanceSectionHeader} style={{ marginBottom: 6 }}>
+                          Share via link
+                        </div>
+                        {!activeShare || !activeShare.enabled ? (
+                          <button
+                            className={styles.appearanceActionItem}
+                            style={{
+                              background: "var(--accent-blue)",
+                              color: "#fff",
+                              justifyContent: "center",
+                              marginTop: 4,
+                            }}
+                            onClick={() => createOrGetShareLink(activeBlock.id, "read")}
+                          >
+                            <Share2 size={13} />
+                            <span>Create public share link</span>
+                          </button>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                className={`${styles.fontOptionBtn} ${activeShare.permission === "read" ? styles.fontOptionBtnActive : ""}`}
+                                onClick={() => updateShareLink(activeShare.token, { permission: "read" })}
+                              >
+                                Read-only
+                              </button>
+                              <button
+                                className={`${styles.fontOptionBtn} ${activeShare.permission === "edit" ? styles.fontOptionBtnActive : ""}`}
+                                onClick={() => updateShareLink(activeShare.token, { permission: "edit" })}
+                              >
+                                Can edit
+                              </button>
+                            </div>
+
+                            <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                              <input
+                                readOnly
+                                value={shareUrl}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                                style={{
+                                  flex: 1,
+                                  fontSize: 12,
+                                  padding: "6px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid var(--border-subtle)",
+                                  background: "var(--bg-main)",
+                                  color: "var(--text-primary)",
+                                  minWidth: 0,
+                                }}
+                              />
+                              <button
+                                onClick={() => {
+                                  syncShareLink(activeShare, activeBlock);
+                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                    void navigator.clipboard.writeText(shareUrl);
+                                    setCopiedShare(true);
+                                    setTimeout(() => setCopiedShare(false), 1500);
+                                  }
+                                }}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  padding: "6px 12px",
+                                  borderRadius: 6,
+                                  background: "var(--accent-blue)",
+                                  color: "#fff",
+                                  border: "none",
+                                  fontSize: 12,
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {copiedShare ? <Check size={13} /> : <Copy size={13} />}
+                                <span>{copiedShare ? "Copied!" : "Copy"}</span>
+                              </button>
+                            </div>
+
+                            <a
+                              href={sharePath}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                                padding: "7px 10px",
+                                fontSize: 12,
+                                fontWeight: 500,
+                                borderRadius: 6,
+                                border: "1px solid var(--border-subtle)",
+                                background: "var(--bg-secondary)",
+                                color: "var(--text-primary)",
+                                textDecoration: "none",
+                              }}
+                              title="Open shared page in a new tab"
+                            >
+                              <ExternalLink size={13} />
+                              <span>Open in new tab</span>
+                            </a>
+
+                            <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "2px 0" }} />
+
+                            <button
+                              className={`${styles.appearanceActionItem} ${styles.appearanceActionDanger}`}
+                              style={{ justifyContent: "center" }}
+                              onClick={() => revokeShareLink(activeShare.token)}
+                            >
+                              <Trash2 size={13} />
+                              <span>Disable &amp; revoke link</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 <button
                   className={`${styles.topbarBtn} ${activeBlock.isFavorite ? styles.favorited : ""}`}
                   title={activeBlock.isFavorite ? "Remove from Favorites" : "Add to Favorites"}

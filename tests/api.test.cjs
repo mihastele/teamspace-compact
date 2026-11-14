@@ -1064,7 +1064,7 @@ test("signed upload policy binds exact length and create-only generation before 
           parentId: "task",
           originalName: "photo.png",
           contentType: "image/png",
-          bytes: 11 * 1024 * 1024,
+          bytes: 26 * 1024 * 1024,
         },
         files.backend,
       )
@@ -1160,6 +1160,49 @@ test("completion decodes image, generates a private 400px transparent thumbnail,
   );
   assert.equal(files.objects.size, 0);
   assert.equal((await ref.get()).exists, false);
+});
+
+test("video attachments are accepted, supported for streaming and bound to block pages", async () => {
+  process.env.FIREBASE_STORAGE_BUCKET = "test-private-bucket";
+  const files = fakeStorage();
+  const created = await api(
+    "member",
+    "POST",
+    `${prefix}/attachments`,
+    {
+      parentType: "page",
+      parentId: "note",
+      originalName: "clip.mp4",
+      contentType: "video/mp4",
+      bytes: 2048,
+    },
+    files.backend,
+  );
+  assert.equal(created.status, 201);
+  assert.ok(created.data.uploadUrl);
+  const attachmentId = created.data.attachmentId;
+  const ref = db.doc(`${prefix}/attachments/${attachmentId}`);
+  const pending = (await ref.get()).data();
+  const videoBytes = Buffer.alloc(2048);
+  videoBytes.write("....ftypisom", 0, "ascii");
+  files.objects.set(pending.stagingPath, { bytes: videoBytes, contentType: "video/mp4" });
+  const completed = await api(
+    "member",
+    "POST",
+    `${prefix}/attachments/${attachmentId}/complete`,
+    {},
+    files.backend,
+  );
+  assert.equal(completed.status, 200);
+  const inline = await api(
+    "member",
+    "GET",
+    `${prefix}/attachments/${attachmentId}/inline`,
+    undefined,
+    files.backend,
+  );
+  assert.equal(inline.status, 200);
+  assert.ok(inline.data.url);
 });
 
 test("header-only corrupt images are rejected and never promoted to ready metadata", async () => {
