@@ -1,6 +1,7 @@
 import type { StoragePort } from "./storage-port";
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 25 * 1024 * 1024;
+const ALLOWED_BUCKET_LIMITS = new Set([MAX_BYTES, 10 * 1024 * 1024]);
 type Configuration = { url: string; publicUrl?: string; key: string; bucket: string; fetch?: typeof fetch; now?: () => number };
 class StorageFailure extends Error {
   constructor(public code: number, message: string) { super(message); }
@@ -49,8 +50,8 @@ export function supabaseStorage(input?: Configuration): StoragePort {
   async function request(path: string, init?: RequestInit) {
     verifiedBucket ??= rawRequest(`bucket/${encodeURIComponent(config.bucket)}`).then(async response => {
       const bucket = await response.json();
-      if (bucket.public !== false || Number(bucket.file_size_limit) !== MAX_BYTES)
-        throw new StorageFailure(503, "The attachment bucket must be private with the configured 10 MiB limit. Apply the storage migration.");
+      if (bucket.public !== false || !ALLOWED_BUCKET_LIMITS.has(Number(bucket.file_size_limit)))
+        throw new StorageFailure(503, "The attachment bucket must be private with the configured limit. Apply the storage migration.");
     });
     await verifiedBucket;
     return rawRequest(path, init);

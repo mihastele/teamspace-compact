@@ -1459,3 +1459,24 @@
   - `npm run typecheck`: 0 errors.
   - `npm run lint`: 0 errors, 0 warnings.
   - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and healthy on `http://localhost:3100`.
+
+### 2026-11-14 — Resolution of 500 Error on Attachment Uploads (Supabase Storage Bucket Size Limit)
+
+- **Root Cause Analysis**:
+  - In `POST /api/workspaces/.../attachments`, `reserveAttachment()` delegates to `supabaseStorage(config).bucket().file(stagingPath).getSignedUrl({ action: "write", ... })`.
+  - Inside `src/lib/server/supabase-storage.ts`, `verifiedBucket` asserted:
+    `if (bucket.public !== false || Number(bucket.file_size_limit) !== MAX_BYTES) throw new StorageFailure(503, "The attachment bucket must be private with the configured 10 MiB limit. Apply the storage migration.");`
+  - In migrations `021` and `024`, `storage.buckets.file_size_limit` was upgraded to `26214400` (25 MiB) to support video and audio attachments. Furthermore, `api.ts` defines `MAX_BYTES = 25 * 1024 * 1024`.
+  - However, `supabase-storage.ts` still had `MAX_BYTES = 10 * 1024 * 1024`. Since `26214400 !== 10485760`, every call to `getSignedUrl` threw `StorageFailure(503)`, returning HTTP 500 on the `/attachments` endpoint.
+- **Fixes Applied**:
+  - In `src/lib/server/supabase-storage.ts`:
+    - Updated `MAX_BYTES` to `25 * 1024 * 1024` (25 MiB), matching `api.ts` and migrations `021`/`024`.
+    - Updated bucket validation to accept both `25 * 1024 * 1024` and `10 * 1024 * 1024` limits.
+  - In `tests/supabase-storage.test.cjs`:
+    - Updated oversized test buffers to test exceeding the 25 MiB bound (`26 * 1024 * 1024`).
+- **Verification**:
+  - `npm test`: 264/264 unit tests pass.
+  - `tests/supabase-storage.test.cjs`: 6/6 tests pass.
+  - `npm run typecheck` & `npm run lint`: 0 errors.
+  - Live API verification: `POST http://localhost:3100/api/workspaces/7f9fbac1-e80b-4624-9721-dd55b935837b/attachments` returned `201 Created` with signed Supabase upload URL.
+  - Staging deployment updated (`node ./scripts/deploy.mjs staging up`) and running on `http://localhost:3100`.

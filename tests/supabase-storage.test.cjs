@@ -49,11 +49,11 @@ test("Supabase writes and signed uploads are create-only", async () => {
   await file.save(Buffer.from("pdf"), settings);
   await assert.rejects(file.save(Buffer.from("bad"), settings), error => error.code === 412);
   assert.equal(h.objects.values().next().value.bytes.toString(), "pdf");
-  await assert.rejects(file.save(Buffer.alloc(11 * 1024 * 1024), settings), /bounded/);
+  await assert.rejects(file.save(Buffer.alloc(26 * 1024 * 1024), settings), /bounded/);
 });
 test("Supabase signing validates reservations and bounds download expiry", async () => {
   const h = harness(), file = h.storage.bucket().file("staging/ws/file");
-  await assert.rejects(file.getSignedUrl(signing(11 * 1024 * 1024)), /reservation/);
+  await assert.rejects(file.getSignedUrl(signing(26 * 1024 * 1024)), /reservation/);
   await assert.rejects(file.getSignedUrl({ ...signing(), extensionHeaders: {} }), /reservation/);
   assert.throws(() => h.storage.bucket("public"), /bucket/);
   assert.throws(() => h.storage.bucket().file("../secret"), /path/);
@@ -79,12 +79,12 @@ test("Supabase detects mid-read recreation and cancels oversized downloads", asy
   h.config.fetch = async (url, init) => { const response = await base(url, init); if (url.endsWith("object/private/staging/ws/file")) h.objects.get("staging/ws/file").id = "changed"; return response; };
   await assert.rejects(supabaseStorage(h.config).bucket().file("staging/ws/file").download(), /changed/);
   let cancelled = false;
-  h.config.fetch = async (url, init) => url.endsWith("object/private/staging/ws/file") ? new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(11 * 1024 * 1024)); }, cancel() { cancelled = true; } })) : base(url, init);
+  h.config.fetch = async (url, init) => url.endsWith("object/private/staging/ws/file") ? new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(26 * 1024 * 1024)); }, cancel() { cancelled = true; } })) : base(url, init);
   await assert.rejects(supabaseStorage(h.config).bucket().file("staging/ws/file").download(), /exceeds/);
   assert.equal(cancelled, true);
 });
 test('Supabase refuses public or unbounded buckets before issuing capabilities', async () => {
-  for(const metadata of [{public:true,file_size_limit:10485760},{public:false,file_size_limit:null}]) {
+  for(const metadata of [{public:true,file_size_limit:26214400},{public:false,file_size_limit:null}]) {
     const storage=supabaseStorage({url:'http://storage.test',key:'test-only',bucket:'private',fetch:async()=>Response.json(metadata)});
     await assert.rejects(storage.bucket().file('staging/w/id').getSignedUrl(signing()),/must be private/);
   }
