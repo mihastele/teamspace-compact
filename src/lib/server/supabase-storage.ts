@@ -1,7 +1,8 @@
 import type { StoragePort } from "./storage-port";
 
 const MAX_BYTES = 25 * 1024 * 1024;
-const ALLOWED_BUCKET_LIMITS = new Set([MAX_BYTES, 10 * 1024 * 1024]);
+const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+const ALLOWED_BUCKET_LIMITS = new Set([MAX_BYTES, MAX_VIDEO_BYTES, 500 * 1024 * 1024, 50 * 1024 * 1024, 10 * 1024 * 1024]);
 type Configuration = { url: string; publicUrl?: string; key: string; bucket: string; fetch?: typeof fetch; now?: () => number };
 class StorageFailure extends Error {
   constructor(public code: number, message: string) { super(message); }
@@ -66,7 +67,8 @@ export function supabaseStorage(input?: Configuration): StoragePort {
             const info = await (await request(`object/info/${encoded}`)).json();
             const size = Number(info.size ?? info.metadata?.size);
             const contentType = info.content_type ?? info.contentType ?? info.metadata?.mimetype;
-            if (!info.id || !Number.isSafeInteger(size) || size < 0 || size > MAX_BYTES || typeof contentType !== "string") throw new StorageFailure(409, "Invalid private object metadata.");
+            const maxAllowed = typeof contentType === "string" && contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+            if (!info.id || !Number.isSafeInteger(size) || size < 0 || size > maxAllowed || typeof contentType !== "string") throw new StorageFailure(409, "Invalid private object metadata.");
             const generation = `${info.id}:${info.version ?? ""}`;
             if (options?.generation !== undefined && String(options.generation) !== generation) throw new StorageFailure(412, "The private object changed.");
             return { size, contentType, generation };
@@ -75,10 +77,30 @@ export function supabaseStorage(input?: Configuration): StoragePort {
             async getMetadata() { return [await metadata()]; },
             async download() {
               const before = await metadata();
-              const bytes = await boundedBody(await request(`object/${encoded}`), MAX_BYTES, before.size);
+              const maxAllowed = before.contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+              const bytes = await boundedBody(await request(`object/${encoded}`), maxAllowed, before.size);
               const after = await metadata();
               if (before.generation !== after.generation) throw new StorageFailure(412, "The private object changed during download.");
               return [bytes];
+            },
+            async readHeader(maxBytes = 4096) {
+              const before = await metadata();
+              const readLen = Math.min(before.size, maxBytes);
+              const res = await request(`object/${encoded}`, { headers: { Range: `bytes=0-${Math.max(0, readLen - 1)}` } });
+              const bytes = await boundedBody(res, before.size);
+              const after = await metadata();
+              if (before.generation !== after.generation) throw new StorageFailure(412, "The private object changed during download.");
+              return [bytes.subarray(0, readLen)];
+            },
+            async copyTo(destinationPath: string) {
+              const before = await metadata();
+              await request("object/copy", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ bucketId: name, sourceKey: path, destinationKey: destinationPath }),
+              });
+              const after = await metadata();
+              if (before.generation !== after.generation) throw new StorageFailure(412, "The private object changed during copy.");
             },
             async delete({ ignoreNotFound }) {
               try {
@@ -87,21 +109,24 @@ export function supabaseStorage(input?: Configuration): StoragePort {
               } catch (error) { if (ignoreNotFound && error instanceof StorageFailure && error.code === 404) return; throw error; }
             },
             async save(bytes, settings) {
-              if (settings.preconditionOpts.ifGenerationMatch !== 0 || bytes.byteLength > MAX_BYTES) throw new StorageFailure(400, "Only bounded create-only writes are supported.");
+              const maxAllowed = settings.contentType?.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+              if (settings.preconditionOpts.ifGenerationMatch !== 0 || bytes.byteLength > maxAllowed) throw new StorageFailure(400, "Only bounded create-only writes are supported.");
               return await request(`object/${encoded}`, { method: "POST", headers: { "Content-Type": settings.contentType, "x-upsert": "false", "cache-control": "max-age=0" }, body: new Uint8Array(bytes) });
             },
             async getSignedUrl(settings) {
               if (settings.action === "write") {
                 const range = settings.extensionHeaders?.["x-goog-content-length-range"];
                 const [minimum, maximum] = (range ?? "").split(",").map(Number);
-                if (minimum !== maximum || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > MAX_BYTES || settings.extensionHeaders?.["x-goog-if-generation-match"] !== "0" || !settings.contentType) throw new StorageFailure(400, "An exact create-only upload reservation is required.");
+                const maxAllowed = settings.contentType?.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+                if (minimum !== maximum || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > maxAllowed || settings.extensionHeaders?.["x-goog-if-generation-match"] !== "0" || !settings.contentType) throw new StorageFailure(400, "An exact create-only upload reservation is required.");
                 // Supabase signs create-only uploads for two hours. Bucket policy enforces
                 // the absolute size/MIME cap; completion validates the exact reservation.
                 const result = await (await request(`object/upload/sign/${encoded}`, { method: "POST", headers: { "Content-Type": "application/json", "x-upsert": "false" }, body: "{}" })).json();
                 if (typeof result.url !== "string" || !result.url.startsWith("/object/upload/sign/")) throw new StorageFailure(503, "Upload signing failed.");
                 return [new URL(`${config.publicUrl}/storage/v1${result.url}`).toString()];
               }
-              const expiresIn = Math.min(60, Math.floor((settings.expires - config.now()) / 1000));
+              const maxExpiry = settings.responseDisposition === "inline" ? 3600 : 60;
+              const expiresIn = Math.min(maxExpiry, Math.floor((settings.expires - config.now()) / 1000));
               if (expiresIn < 1) throw new StorageFailure(400, "Download expiry is invalid.");
               const result = await (await request(`object/sign/${encoded}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn }) })).json();
               if (typeof result.signedURL !== "string" || !result.signedURL.startsWith("/object/sign/")) throw new StorageFailure(503, "Download signing failed.");

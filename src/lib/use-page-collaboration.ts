@@ -31,6 +31,35 @@ export type PageCollaborationState = {
   noteContent: NoteContent | null;
 };
 
+function getTabPresenceSessionId(): string {
+  if (typeof window === "undefined") return safeUUID();
+  try {
+    const key = "teamspace_presence_session_id";
+    let existing = window.sessionStorage.getItem(key);
+    if (!existing) {
+      existing = safeUUID();
+      window.sessionStorage.setItem(key, existing);
+    }
+    return existing;
+  } catch {
+    return safeUUID();
+  }
+}
+
+function normalizeActivePresence(users: DocumentPresence[]): DocumentPresence[] {
+  const now = Date.now();
+  const byUser = new Map<string, DocumentPresence>();
+  for (const u of users) {
+    if (u.expiresAt && u.expiresAt <= now) continue;
+    const key = u.uid || u.id;
+    const existing = byUser.get(key);
+    if (!existing || (u.expiresAt || 0) >= (existing.expiresAt || 0)) {
+      byUser.set(key, u);
+    }
+  }
+  return Array.from(byUser.values());
+}
+
 /**
  * Hook bridging Tiptap editor and Teamspace page block to real-time CRDT collaboration.
  * Uses CollaborationController + IndexedDB RecoveryStore + BroadcastChannel cross-tab sync.
@@ -174,7 +203,7 @@ export function usePageCollaboration(block: Block, api: ReturnType<typeof useTea
     });
 
     // Cross-tab / Server presence
-    const sessionId = safeUUID();
+    const sessionId = getTabPresenceSessionId();
     let presenceCleanup: (() => void) | undefined;
 
     if (isServerCollab) {
@@ -182,17 +211,23 @@ export function usePageCollaboration(block: Block, api: ReturnType<typeof useTea
       const interval = setInterval(() => {
         api.heartbeatPresence(block.id, sessionId).catch(() => {});
       }, 60000);
+      const pruneInterval = setInterval(() => {
+        if (active) {
+          setPresenceUsers((prev) => normalizeActivePresence(prev));
+        }
+      }, 15000);
 
       presenceCleanup = api.subscribePresence(
         block.id,
         (users) => {
-          if (active) setPresenceUsers(users);
+          if (active) setPresenceUsers(normalizeActivePresence(users));
         },
         () => {}
       );
 
       cleanupTransport = () => {
         clearInterval(interval);
+        clearInterval(pruneInterval);
         api.leavePresence(block.id, sessionId).catch(() => {});
         presenceCleanup?.();
       };

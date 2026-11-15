@@ -9,7 +9,23 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 import { useWorkspace } from "@/lib/workspace-store";
-import { formatFileSize, saveMediaFile, useMediaUrl } from "@/lib/media-store";
+import {
+  formatFileSize,
+  saveMediaFile,
+  deleteMediaFile,
+  useMediaUrl,
+  primeMediaUrlCache,
+  invalidateMediaUrlCache,
+} from "@/lib/media-store";
+import {
+  storeLocalMedia,
+  getLocalMediaBlob,
+  deleteLocalMedia,
+  markLocalUploadInFlight,
+  clearLocalUploadInFlight,
+  isLocalUploadInFlight,
+} from "@/lib/attachments";
+import { safeUUID } from "@/lib/collaboration-model";
 import type { ViewFilterRule } from "@/lib/model";
 import { EmojiPicker } from "./EmojiPicker";
 import {
@@ -384,7 +400,13 @@ export const ImageBlockExtension = Node.create({
 
   addAttributes() {
     return {
+      blockId: { default: null },
+      attachmentId: { default: null },
+      url: { default: null },
       src: { default: null },
+      originalName: { default: null },
+      contentType: { default: "image/png" },
+      bytes: { default: 0 },
       alt: { default: "" },
       caption: { default: "" },
       width: { default: "100%" },
@@ -408,36 +430,138 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
   const { workspace } = useWorkspace();
   const { readOnly, onUploadMediaFile } = useContext(EditorNodeContext);
   const rawSrc = (node.attrs.src as string | null) || (node.attrs.url as string | null) || null;
-  const attachmentId = node.attrs.attachmentId as string | undefined;
-  const isStaleBlob = Boolean(rawSrc?.startsWith("blob:") && attachmentId && !attachmentId.startsWith("local-"));
-  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : null;
-  const src = isStaleBlob ? fallbackServerUrl : rawSrc;
+  const attachmentId = (node.attrs.attachmentId as string | null) || undefined;
+  const isStaleBlobWithServerId = Boolean(
+    rawSrc?.startsWith("blob:") && attachmentId && !attachmentId.startsWith("local-")
+  );
+  const isOrphanBlob = Boolean(rawSrc?.startsWith("blob:") && !attachmentId);
+  const fallbackServerUrl =
+    isStaleBlobWithServerId && workspace?.id
+      ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline`
+      : null;
+  const src = isStaleBlobWithServerId
+    ? fallbackServerUrl
+    : rawSrc?.startsWith("blob:") && attachmentId?.startsWith("local-")
+    ? attachmentId
+    : rawSrc;
   const fileName = (node.attrs.fileName as string) || (node.attrs.originalName as string) || "";
   const caption = (node.attrs.caption as string) || "";
   const resolvedUrl = useMediaUrl(src);
   const [urlInput, setUrlInput] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [videoLoadError, setVideoLoadError] = useState(false);
+  const retriedSignedUrlRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isStaleBlob && fallbackServerUrl) {
+    if (isStaleBlobWithServerId && fallbackServerUrl) {
       updateAttributes({ src: fallbackServerUrl, url: fallbackServerUrl });
     }
-  }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
+  }, [isStaleBlobWithServerId, fallbackServerUrl, updateAttributes]);
+
+  // If the page was refreshed while a local video upload was pending, resume it automatically
+  useEffect(() => {
+    const localKey =
+      attachmentId?.startsWith("local-")
+        ? attachmentId
+        : rawSrc?.startsWith("local-")
+        ? rawSrc
+        : null;
+    if (!localKey || !onUploadMediaFile || isLocalUploadInFlight(localKey)) return;
+
+    let cancelled = false;
+    markLocalUploadInFlight(localKey);
+    void (async () => {
+      try {
+        const blob = await getLocalMediaBlob(localKey);
+        if (!blob || cancelled) return;
+        setIsUploading(true);
+        setUploadError(null);
+        const resumedFile = new File(
+          [blob],
+          fileName || "video.mp4",
+          { type: (node.attrs.contentType as string) || blob.type || "video/mp4" }
+        );
+        const res = await onUploadMediaFile(resumedFile);
+        if (cancelled) return;
+        updateAttributes({
+          src: res.url,
+          url: res.url,
+          attachmentId: res.attachmentId,
+          fileName: resumedFile.name,
+          originalName: resumedFile.name,
+          contentType: resumedFile.type,
+          bytes: resumedFile.size,
+        });
+        await deleteLocalMedia(localKey);
+        await deleteMediaFile(localKey);
+      } catch (err) {
+        if (!cancelled) {
+          setUploadError(err instanceof Error ? err.message : "Upload failed");
+        }
+      } finally {
+        clearLocalUploadInFlight(localKey);
+        if (!cancelled) setIsUploading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentId, rawSrc, onUploadMediaFile, fileName, node.attrs.contentType, updateAttributes]);
 
   const handleUpload = async (file: File) => {
+    setUploadError(null);
+    setVideoLoadError(false);
     if (onUploadMediaFile) {
-      const res = await onUploadMediaFile(file);
+      const tempId = `local-${safeUUID()}`;
+      const tempUrl = URL.createObjectURL(file);
+      primeMediaUrlCache(tempId, tempUrl);
+      markLocalUploadInFlight(tempId);
+      setIsUploading(true);
+      try {
+        await storeLocalMedia(tempId, file);
+        updateAttributes({
+          blockId: tempId,
+          attachmentId: tempId,
+          src: tempId,
+          url: tempId,
+          fileName: file.name,
+          originalName: file.name,
+          contentType: file.type,
+          bytes: file.size,
+        });
+        const res = await onUploadMediaFile(file);
+        updateAttributes({
+          src: res.url,
+          url: res.url,
+          attachmentId: res.attachmentId,
+          fileName: file.name,
+          originalName: file.name,
+          contentType: file.type,
+          bytes: file.size,
+        });
+        // Videos are not stored permanently in browser IndexedDB once uploaded to server
+        await deleteLocalMedia(tempId);
+        await deleteMediaFile(tempId);
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : "Video upload failed.");
+      } finally {
+        clearLocalUploadInFlight(tempId);
+        setIsUploading(false);
+      }
+    } else {
+      const saved = await saveMediaFile(file, file.name);
       updateAttributes({
-        src: res.url,
-        url: res.url,
-        attachmentId: res.attachmentId,
+        src: saved.url,
+        url: saved.url,
+        attachmentId: saved.meta.id,
         fileName: file.name,
+        originalName: file.name,
         contentType: file.type,
         bytes: file.size,
       });
-    } else {
-      const saved = await saveMediaFile(file, file.name);
-      updateAttributes({ src: saved.url, fileName: file.name });
     }
   };
 
@@ -457,10 +581,16 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
         />
       )}
 
-      {!src ? (
+      {!src || isOrphanBlob || videoLoadError ? (
         <div className={styles.mediaUploadBox}>
           <Film size={24} />
-          <div>Upload a video file (.mp4, .webm, .mov) or paste a video URL</div>
+          <div>
+            {uploadError
+              ? `Upload error: ${uploadError}`
+              : isOrphanBlob || videoLoadError
+              ? "Video file is unavailable or did not finish uploading. Please re-upload."
+              : "Upload a video file (.mp4, .webm, .mov) or paste a video URL"}
+          </div>
           {!readOnly && (
             <>
               <div className={styles.mediaUploadActions}>
@@ -488,7 +618,8 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
                   onChange={(e) => setUrlInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && urlInput.trim()) {
-                      updateAttributes({ src: urlInput.trim(), fileName: "Video" });
+                      setVideoLoadError(false);
+                      updateAttributes({ src: urlInput.trim(), url: urlInput.trim(), fileName: "Video" });
                     }
                   }}
                 />
@@ -497,7 +628,8 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
                   className={styles.smallActionBtn}
                   onClick={() => {
                     if (urlInput.trim()) {
-                      updateAttributes({ src: urlInput.trim(), fileName: "Video" });
+                      setVideoLoadError(false);
+                      updateAttributes({ src: urlInput.trim(), url: urlInput.trim(), fileName: "Video" });
                     }
                   }}
                 >
@@ -516,7 +648,7 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
                 className={styles.smallActionBtn}
                 onClick={() => fileInputRef.current?.click()}
               >
-                Replace video
+                {isUploading ? "Uploading..." : "Replace video"}
               </button>
               <button
                 type="button"
@@ -527,6 +659,11 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
               </button>
             </div>
           )}
+          {uploadError && (
+            <div className={styles.fileMeta} style={{ color: "#dc2626", marginBottom: 6 }}>
+              {uploadError}
+            </div>
+          )}
           {resolvedUrl ? (
             <video
               controls
@@ -534,9 +671,21 @@ function VideoBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProp
               preload="metadata"
               src={resolvedUrl}
               className={styles.videoPreview}
+              onError={() => {
+                if (src?.startsWith("/api/") && retriedSignedUrlRef.current !== src) {
+                  retriedSignedUrlRef.current = src;
+                  invalidateMediaUrlCache(src);
+                  return;
+                }
+                if (rawSrc?.startsWith("blob:")) {
+                  setVideoLoadError(true);
+                }
+              }}
             />
           ) : (
-            <div className={styles.fileMeta}>Loading video...</div>
+            <div className={styles.fileMeta}>
+              {isUploading ? "Uploading video to server..." : "Loading video..."}
+            </div>
           )}
           <input
             className={styles.captionInput}
@@ -558,8 +707,14 @@ export const VideoBlockExtension = Node.create({
 
   addAttributes() {
     return {
+      blockId: { default: null },
+      attachmentId: { default: null },
+      url: { default: null },
       src: { default: null },
       fileName: { default: "" },
+      originalName: { default: null },
+      contentType: { default: "video/mp4" },
+      bytes: { default: 0 },
       caption: { default: "" },
     };
   },
@@ -587,21 +742,47 @@ function FileBlockNodeView({ node, updateAttributes, deleteNode }: NodeViewProps
 
   const handleUpload = async (file: File) => {
     if (onUploadMediaFile) {
-      const res = await onUploadMediaFile(file);
-      updateAttributes({
-        src: res.url,
-        url: res.url,
-        attachmentId: res.attachmentId,
-        fileName: file.name,
-        fileSize: file.size,
-        bytes: file.size,
-        mimeType: file.type,
-        contentType: file.type,
-      });
+      const tempId = `local-${safeUUID()}`;
+      const tempUrl = URL.createObjectURL(file);
+      primeMediaUrlCache(tempId, tempUrl);
+      markLocalUploadInFlight(tempId);
+      try {
+        await storeLocalMedia(tempId, file);
+        updateAttributes({
+          blockId: tempId,
+          attachmentId: tempId,
+          src: tempId,
+          url: tempId,
+          fileName: file.name,
+          originalName: file.name,
+          fileSize: file.size,
+          bytes: file.size,
+          mimeType: file.type,
+          contentType: file.type,
+        });
+        const res = await onUploadMediaFile(file);
+        updateAttributes({
+          src: res.url,
+          url: res.url,
+          attachmentId: res.attachmentId,
+          fileName: file.name,
+          originalName: file.name,
+          fileSize: file.size,
+          bytes: file.size,
+          mimeType: file.type,
+          contentType: file.type,
+        });
+        // Documents are NOT kept permanently in browser storage once uploaded
+        await deleteLocalMedia(tempId);
+        await deleteMediaFile(tempId);
+      } finally {
+        clearLocalUploadInFlight(tempId);
+      }
     } else {
       const saved = await saveMediaFile(file, file.name);
       updateAttributes({
         src: saved.url,
+        url: saved.url,
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
@@ -692,10 +873,16 @@ export const FileBlockExtension = Node.create({
 
   addAttributes() {
     return {
+      blockId: { default: null },
+      attachmentId: { default: null },
+      url: { default: null },
       src: { default: null },
       fileName: { default: "Attachment" },
+      originalName: { default: null },
       fileSize: { default: 0 },
+      bytes: { default: 0 },
       mimeType: { default: "" },
+      contentType: { default: "" },
     };
   },
 

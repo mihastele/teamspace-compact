@@ -170,8 +170,10 @@ function broadcastLocalChange() {
 }
 
 let activeSyncPromise: Promise<void> | null = null;
+let pendingFollowUpSync = false;
+let lastPushCompletedAt = 0;
 
-function scheduleSync(delayMs = 2500) {
+function scheduleSync(delayMs = 500) {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     syncTimer = null;
@@ -186,7 +188,7 @@ function markDirty(blockId: string) {
   syncOutbox.add(blockId);
   saveOutbox(syncOutbox);
   broadcastLocalChange();
-  scheduleSync(2500);
+  scheduleSync(500);
 }
 
 function recordTombstone(blockId: string, timestamp = Date.now()) {
@@ -391,16 +393,41 @@ function reconcileWithServerBlocks(serverBlocks: Block[]) {
 let lastFocusSyncTime = 0;
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
-    scheduleSync(1000);
+    scheduleSync(500);
   });
   window.addEventListener("focus", () => {
     const now = Date.now();
     if (syncOutbox.size > 0 || pendingTombstones.size > 0) {
-      scheduleSync(1000);
-    } else if (now - lastFocusSyncTime >= 30000) {
+      scheduleSync(300);
+    } else if (now - lastFocusSyncTime >= 3000) {
       lastFocusSyncTime = now;
-      scheduleSync(1500);
+      scheduleSync(400);
     }
+  });
+  window.addEventListener("visibilitychange", () => {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      const now = Date.now();
+      if (syncOutbox.size > 0 || pendingTombstones.size > 0 || now - lastFocusSyncTime >= 3000) {
+        lastFocusSyncTime = now;
+        scheduleSync(300);
+      }
+    }
+  });
+  window.addEventListener("teamspace:remote-block-change", (event: Event) => {
+    const detail = (event as CustomEvent<Record<string, unknown> | undefined>).detail;
+    const data = detail?.data as Record<string, unknown> | undefined;
+    const path = (detail?.path as string) || "";
+    const blockId = (data?.id as string) || path.split("/").pop() || "";
+    const remoteUpdatedAt = typeof data?.updatedAt === "number" ? data.updatedAt : 0;
+    if (blockId && remoteUpdatedAt > 0) {
+      const localBlock = currentState.blocks[blockId];
+      if (localBlock && (localBlock.updatedAt || 0) >= remoteUpdatedAt) {
+        return;
+      }
+    } else if (Date.now() - lastPushCompletedAt < 400 && syncOutbox.size === 0) {
+      return;
+    }
+    scheduleSync(350);
   });
   window.addEventListener("pagehide", () => {
     if (syncOutbox.size > 0) void workspaceStore.flushSync();
@@ -1608,7 +1635,10 @@ export const workspaceStore = {
     if (!currentAdapter) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     if (Date.now() < rateLimitBackoffUntil) return;
-    if (activeSyncPromise) return activeSyncPromise;
+    if (activeSyncPromise) {
+      pendingFollowUpSync = true;
+      return activeSyncPromise;
+    }
 
     activeSyncPromise = (async () => {
       try {
@@ -1662,13 +1692,19 @@ export const workspaceStore = {
 
         if (blocksToPush.length > 0 || tombstoneCount > 0) {
           const returnedBlocks = await currentAdapter.syncBlocks(blocksToPush, tombstoneMap);
+          lastPushCompletedAt = Date.now();
           if (Array.isArray(returnedBlocks)) {
             for (const b of blocksToPush) {
-              syncOutbox.delete(b.id);
+              const currentLocal = currentState.blocks[b.id];
+              if (!currentLocal || (currentLocal.updatedAt || 0) <= (b.updatedAt || 0)) {
+                syncOutbox.delete(b.id);
+              }
             }
             saveOutbox(syncOutbox);
             for (const id of Object.keys(tombstoneMap)) {
-              pendingTombstones.delete(id);
+              if ((tombstones[id] || 0) <= tombstoneMap[id]) {
+                pendingTombstones.delete(id);
+              }
             }
             savePendingTombstones(pendingTombstones);
             reconcileWithServerBlocks(returnedBlocks);
@@ -1690,6 +1726,10 @@ export const workspaceStore = {
       }
     })().finally(() => {
       activeSyncPromise = null;
+      if (pendingFollowUpSync || syncOutbox.size > 0 || pendingTombstones.size > 0) {
+        pendingFollowUpSync = false;
+        scheduleSync(150);
+      }
     });
 
     return activeSyncPromise;

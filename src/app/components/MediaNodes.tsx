@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useContext } from "react";
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import {
@@ -20,9 +20,17 @@ import {
   FileArchive,
 } from "lucide-react";
 import styles from "./MediaNodes.module.css";
-import { getLocalMedia } from "@/lib/attachments";
-import { useMediaUrl } from "@/lib/media-store";
+import {
+  getLocalMedia,
+  getLocalMediaBlob,
+  deleteLocalMedia,
+  markLocalUploadInFlight,
+  clearLocalUploadInFlight,
+  isLocalUploadInFlight,
+} from "@/lib/attachments";
+import { useMediaUrl, deleteMediaFile, invalidateMediaUrlCache } from "@/lib/media-store";
 import { useWorkspace } from "@/lib/workspace-store";
+import { EditorNodeContext } from "./TiptapExtensions";
 
 // Helper to format byte sizes cleanly
 export function formatBytes(bytes?: number): string {
@@ -38,14 +46,39 @@ export function formatBytes(bytes?: number): string {
 
 function ImageBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const { workspace } = useWorkspace();
-  const { url, attachmentId, originalName, caption, width, src } = node.attrs;
+  const { onUploadMediaFile } = useContext(EditorNodeContext);
+  const { url, attachmentId, originalName, contentType, caption, width, src } = node.attrs;
   const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
-  const isStaleBlob = rawUrl.startsWith("blob:") && typeof attachmentId === "string" && !attachmentId.startsWith("local-");
-  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : "";
-  const resolvedUrl = useMediaUrl(isStaleBlob ? fallbackServerUrl : rawUrl);
+  const isStaleBlob =
+    rawUrl.startsWith("blob:") &&
+    typeof attachmentId === "string" &&
+    !attachmentId.startsWith("local-");
+  const isLocalRef =
+    (typeof attachmentId === "string" && attachmentId.startsWith("local-")) ||
+    rawUrl.startsWith("local-");
+  const localKey =
+    typeof attachmentId === "string" && attachmentId.startsWith("local-")
+      ? attachmentId
+      : rawUrl.startsWith("local-")
+      ? rawUrl
+      : null;
+  const fallbackServerUrl =
+    isStaleBlob && workspace?.id
+      ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline`
+      : "";
+  const mediaLookupKey = isStaleBlob
+    ? fallbackServerUrl
+    : rawUrl.startsWith("blob:") && localKey
+    ? localKey
+    : rawUrl;
+  const resolvedUrl = useMediaUrl(mediaLookupKey);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
   const [captionText, setCaptionText] = useState(caption || "");
-  const effectiveUrl = resolvedUrl || localBlobUrl || (isStaleBlob ? fallbackServerUrl : rawUrl);
+  const retriedSignedUrlRef = useRef<string | null>(null);
+  const effectiveUrl =
+    resolvedUrl ||
+    localBlobUrl ||
+    (isStaleBlob ? fallbackServerUrl : !isLocalRef ? rawUrl : "");
 
   useEffect(() => {
     if (isStaleBlob && fallbackServerUrl) {
@@ -54,17 +87,50 @@ function ImageBlockComponent({ node, updateAttributes, deleteNode }: NodeViewPro
   }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   useEffect(() => {
-    if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
+    if (!localKey) return;
     let active = true;
-    if (typeof attachmentId === "string" && attachmentId.startsWith("local-")) {
-      getLocalMedia(attachmentId).then((blobUrl) => {
-        if (active && blobUrl) setLocalBlobUrl(blobUrl);
-      });
-    }
+    getLocalMedia(localKey).then((blobUrl) => {
+      if (active && blobUrl) setLocalBlobUrl(blobUrl);
+    });
     return () => {
       active = false;
     };
-  }, [rawUrl, attachmentId]);
+  }, [localKey]);
+
+  // If the page was refreshed right after adding an image before its background upload finished,
+  // resume the upload from IndexedDB automatically so the image is persisted to the server.
+  useEffect(() => {
+    if (!localKey || !onUploadMediaFile || isLocalUploadInFlight(localKey)) return;
+    let cancelled = false;
+    markLocalUploadInFlight(localKey);
+    void (async () => {
+      try {
+        const blob = await getLocalMediaBlob(localKey);
+        if (!blob || cancelled) return;
+        const file = new File(
+          [blob],
+          typeof originalName === "string" && originalName ? originalName : "image.png",
+          { type: (typeof contentType === "string" && contentType) || blob.type || "image/png" }
+        );
+        const res = await onUploadMediaFile(file);
+        if (cancelled) return;
+        updateAttributes({
+          attachmentId: res.attachmentId,
+          url: res.url,
+          src: res.url,
+        });
+        await deleteLocalMedia(localKey);
+        await deleteMediaFile(localKey);
+      } catch {
+        // Keep local copy in IndexedDB so image remains visible locally
+      } finally {
+        clearLocalUploadInFlight(localKey);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [localKey, onUploadMediaFile, originalName, contentType, updateAttributes]);
 
   const handleCaptionBlur = () => {
     updateAttributes({ caption: captionText });
@@ -106,6 +172,15 @@ function ImageBlockComponent({ node, updateAttributes, deleteNode }: NodeViewPro
             alt={caption || originalName || "Uploaded image"}
             className={styles.imageElement}
             loading="lazy"
+            onError={() => {
+              if (
+                mediaLookupKey?.startsWith("/api/") &&
+                retriedSignedUrlRef.current !== mediaLookupKey
+              ) {
+                retriedSignedUrlRef.current = mediaLookupKey;
+                invalidateMediaUrlCache(mediaLookupKey);
+              }
+            }}
           />
         ) : (
           <div className={styles.uploadingOverlay}>
@@ -172,13 +247,37 @@ export const ImageBlockExtension = Node.create({
 
 function AttachmentBlockComponent({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const { workspace } = useWorkspace();
+  const { onUploadMediaFile } = useContext(EditorNodeContext);
   const { url, attachmentId, originalName, contentType, bytes, src } = node.attrs;
   const rawUrl = typeof url === "string" ? url : typeof src === "string" ? src : "";
-  const isStaleBlob = rawUrl.startsWith("blob:") && typeof attachmentId === "string" && !attachmentId.startsWith("local-");
-  const fallbackServerUrl = isStaleBlob && workspace?.id ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline` : "";
-  const resolvedUrl = useMediaUrl(isStaleBlob ? fallbackServerUrl : rawUrl);
+  const isStaleBlob =
+    rawUrl.startsWith("blob:") &&
+    typeof attachmentId === "string" &&
+    !attachmentId.startsWith("local-");
+  const isLocalRef =
+    (typeof attachmentId === "string" && attachmentId.startsWith("local-")) ||
+    rawUrl.startsWith("local-");
+  const localKey =
+    typeof attachmentId === "string" && attachmentId.startsWith("local-")
+      ? attachmentId
+      : rawUrl.startsWith("local-")
+      ? rawUrl
+      : null;
+  const fallbackServerUrl =
+    isStaleBlob && workspace?.id
+      ? `/api/workspaces/${workspace.id}/attachments/${attachmentId}/inline`
+      : "";
+  const mediaLookupKey = isStaleBlob
+    ? fallbackServerUrl
+    : rawUrl.startsWith("blob:") && localKey
+    ? localKey
+    : rawUrl;
+  const resolvedUrl = useMediaUrl(mediaLookupKey);
   const [localBlobUrl, setLocalBlobUrl] = useState<string>("");
-  const effectiveUrl = resolvedUrl || localBlobUrl || (isStaleBlob ? fallbackServerUrl : rawUrl);
+  const effectiveUrl =
+    resolvedUrl ||
+    localBlobUrl ||
+    (isStaleBlob ? fallbackServerUrl : !isLocalRef ? rawUrl : "");
 
   useEffect(() => {
     if (isStaleBlob && fallbackServerUrl && updateAttributes) {
@@ -187,17 +286,53 @@ function AttachmentBlockComponent({ node, updateAttributes, deleteNode }: NodeVi
   }, [isStaleBlob, fallbackServerUrl, updateAttributes]);
 
   useEffect(() => {
-    if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("local-") && !rawUrl.startsWith("idb://")) return;
+    if (!localKey) return;
     let active = true;
-    if (typeof attachmentId === "string" && attachmentId.startsWith("local-")) {
-      getLocalMedia(attachmentId).then((blobUrl) => {
-        if (active && blobUrl) setLocalBlobUrl(blobUrl);
-      });
-    }
+    getLocalMedia(localKey).then((blobUrl) => {
+      if (active && blobUrl) setLocalBlobUrl(blobUrl);
+    });
     return () => {
       active = false;
     };
-  }, [rawUrl, attachmentId]);
+  }, [localKey]);
+
+  useEffect(() => {
+    if (!localKey || !onUploadMediaFile || isLocalUploadInFlight(localKey)) return;
+    let cancelled = false;
+    markLocalUploadInFlight(localKey);
+    void (async () => {
+      try {
+        const blob = await getLocalMediaBlob(localKey);
+        if (!blob || cancelled) return;
+        const file = new File(
+          [blob],
+          typeof originalName === "string" && originalName ? originalName : "attachment",
+          {
+            type:
+              (typeof contentType === "string" && contentType) ||
+              blob.type ||
+              "application/octet-stream",
+          }
+        );
+        const res = await onUploadMediaFile(file);
+        if (cancelled) return;
+        updateAttributes({
+          attachmentId: res.attachmentId,
+          url: res.url,
+          src: res.url,
+        });
+        await deleteLocalMedia(localKey);
+        await deleteMediaFile(localKey);
+      } catch {
+        // ignore
+      } finally {
+        clearLocalUploadInFlight(localKey);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [localKey, onUploadMediaFile, originalName, contentType, updateAttributes]);
 
   const getFileIcon = () => {
     if (contentType?.includes("sheet") || contentType?.includes("csv")) {
@@ -268,6 +403,7 @@ export const AttachmentBlockExtension = Node.create({
       blockId: { default: null },
       attachmentId: { default: null },
       url: { default: null },
+      src: { default: null },
       originalName: { default: null },
       contentType: { default: "application/octet-stream" },
       bytes: { default: 0 },

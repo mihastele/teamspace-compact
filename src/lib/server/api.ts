@@ -50,6 +50,7 @@ import {
 } from "./validation";
 
 const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const now = () => FieldValue.serverTimestamp();
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -1267,7 +1268,7 @@ function validMagic(bytes: Buffer, contentType: string) {
       bytes.toString("ascii", 0, 3) === "ID3"
     );
   if (contentType === "audio/mp4" || contentType === "video/mp4" || contentType === "video/quicktime")
-    return bytes.toString("ascii", 4, 8) === "ftyp" || bytes.toString("ascii", 4, 8) === "moov";
+    return ["ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"].includes(bytes.toString("ascii", 4, 8));
   if (contentType === "video/webm")
     return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
   if (contentType === "video/ogg")
@@ -1349,7 +1350,8 @@ async function attachmentOperation(
       "",
     );
     const contentType = text(data.contentType, "Content type", 100);
-    const bytes = integer(data.bytes, "File size", 1, MAX_BYTES);
+    const maxBytes = contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+    const bytes = integer(data.bytes, "File size", 1, maxBytes);
     if (!Object.hasOwn(EXTENSION_MAP, contentType))
       throw new ApiError(
         400,
@@ -1474,7 +1476,7 @@ async function attachmentOperation(
       .getSignedUrl({
         version: "v4",
         action: "read",
-        expires: Date.now() + 60000,
+        expires: Date.now() + (isInlineMedia ? 3600000 : 60000),
         responseDisposition: isInlineMedia
           ? "inline"
           : `attachment; filename*=UTF-8''${encodeURIComponent(value.originalName)}`,
@@ -1525,9 +1527,10 @@ async function attachmentOperation(
   const staged = files.file(value.stagingPath);
   const [metadata] = await staged.getMetadata();
   const size = Number(metadata.size);
+  const maxBytes = String(value.contentType).startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
   if (
     size !== value.bytes ||
-    size > MAX_BYTES ||
+    size > maxBytes ||
     metadata.contentType !== value.contentType
   ) {
     await staged.delete({ ignoreNotFound: true });
@@ -1541,79 +1544,99 @@ async function attachmentOperation(
   const generation = metadata.generation;
   if (typeof generation !== "number" && typeof generation !== "string") throw new ApiError(409,"invalid_file","Uploaded file identity is unavailable. Retry the upload.");
   const source = files.file(value.stagingPath, { generation });
-  const [bytes] = await source.download();
-  if (!validMagic(bytes, value.contentType)) {
-    await staged.delete({ ignoreNotFound: true });
-    throw new ApiError(
-      400,
-      "invalid_file",
-      "The uploaded file does not match its declared format.",
-    );
-  }
-  let thumbnail: Buffer | null = null;
   const thumbnailType =
     value.contentType === "image/png" ? "image/png" : "image/webp";
   const thumbnailPath =
     ["image/jpeg", "image/png", "image/webp"].includes(value.contentType)
       ? `${value.storagePath}.thumbnail.${thumbnailType === "image/png" ? "png" : "webp"}`
       : null;
-  if (thumbnailPath) {
-    try {
-      const image = sharp(bytes, {
-        limitInputPixels: 40000000,
-        failOn: "error",
-        animated: false,
-      })
-        .rotate()
-        .resize({
-          width: 400,
-          height: 400,
-          fit: "inside",
-          withoutEnlargement: true,
-        });
-      thumbnail = await (
-        thumbnailType === "image/png"
-          ? image.png()
-          : image.webp({ quality: 82 })
-      ).toBuffer();
-    } catch {
-      await source.delete({ ignoreNotFound: true });
+  if (!thumbnailPath && size > MAX_BYTES && source.readHeader && source.copyTo) {
+    const [headerBytes] = await source.readHeader(4096);
+    if (!validMagic(headerBytes, value.contentType)) {
+      await staged.delete({ ignoreNotFound: true });
       throw new ApiError(
         400,
         "invalid_file",
-        "The image is corrupt or exceeds the 40-megapixel decoding limit.",
+        "The uploaded file does not match its declared format.",
       );
     }
-  }
-  if (thumbnail && thumbnailPath) {
     try {
-      await files.file(thumbnailPath).save(thumbnail, {
+      await source.copyTo(value.storagePath);
+    } catch (error) {
+      if ((error as { code?: number }).code !== 412) {
+        await files.file(value.storagePath).delete({ ignoreNotFound: true });
+        throw error;
+      }
+    }
+  } else {
+    const [bytes] = await source.download();
+    if (!validMagic(bytes, value.contentType)) {
+      await staged.delete({ ignoreNotFound: true });
+      throw new ApiError(
+        400,
+        "invalid_file",
+        "The uploaded file does not match its declared format.",
+      );
+    }
+    let thumbnail: Buffer | null = null;
+    if (thumbnailPath) {
+      try {
+        const image = sharp(bytes, {
+          limitInputPixels: 40000000,
+          failOn: "error",
+          animated: false,
+        })
+          .rotate()
+          .resize({
+            width: 400,
+            height: 400,
+            fit: "inside",
+            withoutEnlargement: true,
+          });
+        thumbnail = await (
+          thumbnailType === "image/png"
+            ? image.png()
+            : image.webp({ quality: 82 })
+        ).toBuffer();
+      } catch {
+        await source.delete({ ignoreNotFound: true });
+        throw new ApiError(
+          400,
+          "invalid_file",
+          "The image is corrupt or exceeds the 40-megapixel decoding limit.",
+        );
+      }
+    }
+    if (thumbnail && thumbnailPath) {
+      try {
+        await files.file(thumbnailPath).save(thumbnail, {
+          resumable: false,
+          contentType: thumbnailType,
+          preconditionOpts: { ifGenerationMatch: 0 },
+          metadata: { cacheControl: "private, no-store" },
+        });
+      } catch (error) {
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
+    }
+    // A create-only destination also makes concurrent completion safe.
+    try {
+      await files.file(value.storagePath).save(bytes, {
         resumable: false,
-        contentType: thumbnailType,
+        contentType: value.contentType,
         preconditionOpts: { ifGenerationMatch: 0 },
         metadata: { cacheControl: "private, no-store" },
       });
     } catch (error) {
-      if ((error as { code?: number }).code !== 412) throw error;
-    }
-  }
-  // A create-only destination also makes concurrent completion safe.
-  try {
-    await files.file(value.storagePath).save(bytes, {
-      resumable: false,
-      contentType: value.contentType,
-      preconditionOpts: { ifGenerationMatch: 0 },
-      metadata: { cacheControl: "private, no-store" },
-    });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 412) {
-      await Promise.all([
-        files.file(value.storagePath).delete({ ignoreNotFound: true }),
-        ...(thumbnailPath
-          ? [files.file(thumbnailPath).delete({ ignoreNotFound: true })]
-          : []),
-      ]);
-      throw error;
+      if ((error as { code?: number }).code !== 412) {
+        await Promise.all([
+          files.file(value.storagePath).delete({ ignoreNotFound: true }),
+          ...(thumbnailPath
+            ? [files.file(thumbnailPath).delete({ ignoreNotFound: true })]
+            : []),
+        ]);
+        throw error;
+      }
     }
   }
   try {
@@ -2011,7 +2034,13 @@ export async function handleTrustedApi(
           if (!parent.exists || parent.data()?.deleting || parent.data()?.isArchived) return { presence: [] };
           const query = workspace.collection(resource).doc(itemId).collection(action);
           const items = await tx.get(query);
-          return {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
+          const nowMs = Date.now();
+          const activeDocs = items.docs.filter((item) => {
+            const exp = item.data()?.expiresAt;
+            const expMs = typeof exp === "number" ? exp : exp && typeof exp.toMillis === "function" ? exp.toMillis() : 0;
+            return !expMs || expMs > nowMs;
+          });
+          return {presence:activeDocs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
         });
         return json(result);
       }

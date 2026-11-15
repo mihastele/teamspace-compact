@@ -22,7 +22,33 @@ type StoredMediaRecord = StoredMediaMeta & {
 };
 
 const objectUrlCache = new Map<string, string>();
+const signedUrlExpiry = new Map<string, number>();
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+export function primeMediaUrlCache(key: string, objectUrl: string): void {
+  if (!key || !objectUrl) return;
+  objectUrlCache.set(key, objectUrl);
+  signedUrlExpiry.delete(key);
+}
+
+export function invalidateMediaUrlCache(key: string | null | undefined): void {
+  if (!key) return;
+  const trimmed = key.trim();
+  objectUrlCache.delete(trimmed);
+  signedUrlExpiry.delete(trimmed);
+}
+
+function getValidCachedUrl(key: string): string | null {
+  const val = objectUrlCache.get(key);
+  if (!val) return null;
+  const exp = signedUrlExpiry.get(key);
+  if (typeof exp === "number" && Date.now() >= exp) {
+    objectUrlCache.delete(key);
+    signedUrlExpiry.delete(key);
+    return null;
+  }
+  return val;
+}
 
 function openMediaDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -115,12 +141,12 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
   if (typeof url !== "string" || !url.trim()) return null;
   const cleanUrl = url.trim();
 
-  const cached = objectUrlCache.get(cleanUrl);
+  const cached = getValidCachedUrl(cleanUrl);
   if (cached) return cached;
 
   if (isIdbMediaUrl(cleanUrl)) {
     const id = extractMediaId(cleanUrl);
-    const cachedById = objectUrlCache.get(id);
+    const cachedById = getValidCachedUrl(id);
     if (cachedById) return cachedById;
 
     if (typeof indexedDB === "undefined") return null;
@@ -156,10 +182,24 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
       objectUrlCache.set(cleanUrl, local);
       return local;
     }
+    return null;
   }
 
   // Server attachment endpoint (e.g. /api/workspaces/.../attachments/.../inline)
   if (cleanUrl.startsWith("/api/") && cleanUrl.includes("/attachments/")) {
+    const match = /\/attachments\/([^/?]+)/.exec(cleanUrl);
+    const attachmentId = match?.[1];
+
+    // Check if this attachment is an image already cached in local IndexedDB
+    if (attachmentId) {
+      const localCached = await getLocalMedia(attachmentId);
+      if (localCached) {
+        objectUrlCache.set(cleanUrl, localCached);
+        signedUrlExpiry.delete(cleanUrl);
+        return localCached;
+      }
+    }
+
     try {
       const token = await browserAccessToken().catch(() => null);
       const urlWithToken = token && !cleanUrl.includes("token=")
@@ -175,15 +215,20 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
         const data = await res.json().catch(() => null);
         if (data?.url && typeof data.url === "string") {
           objectUrlCache.set(cleanUrl, data.url);
+          signedUrlExpiry.set(cleanUrl, Date.now() + 45 * 60 * 1000);
 
-          // If this is an image attachment, cache the blob for offline usage
-          const match = /\/attachments\/([^/]+)/.exec(cleanUrl);
-          const attachmentId = match?.[1];
-          if (attachmentId && (cleanUrl.includes("image") || data.url.includes(".png") || data.url.includes(".jpg") || data.url.includes(".webp"))) {
+          // If this is an image attachment, cache the blob in IndexedDB for instant/offline usage
+          if (
+            attachmentId &&
+            (cleanUrl.includes("image") ||
+              /\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(data.url))
+          ) {
             void fetch(data.url)
-              .then((r) => r.blob())
+              .then((r) => (r.ok ? r.blob() : null))
               .then((blob) => {
-                void storeLocalMedia(attachmentId, blob);
+                if (blob && blob.type.startsWith("image/")) {
+                  void storeLocalMedia(attachmentId, blob);
+                }
               })
               .catch(() => {});
           }
@@ -193,12 +238,11 @@ export async function resolveMediaUrl(url: string | null | undefined): Promise<s
       }
     } catch {
       // Offline fallback: check if local cache has this image
-      const match = /\/attachments\/([^/]+)/.exec(cleanUrl);
-      const attachmentId = match?.[1];
       if (attachmentId) {
         const local = await getLocalMedia(attachmentId);
         if (local) {
           objectUrlCache.set(cleanUrl, local);
+          signedUrlExpiry.delete(cleanUrl);
           return local;
         }
       }
@@ -215,14 +259,17 @@ export function useMediaUrl(url: string | null | undefined): string | null {
   } | null>(null);
 
   const safeUrl = typeof url === "string" && url.trim().length > 0 ? url.trim() : null;
+  const cachedImmediate = safeUrl
+    ? getValidCachedUrl(safeUrl) ||
+      (isIdbMediaUrl(safeUrl) ? getValidCachedUrl(extractMediaId(safeUrl)) : null)
+    : null;
 
   const needsAsyncLookup =
     Boolean(safeUrl) &&
     (isIdbMediaUrl(safeUrl) ||
       safeUrl!.startsWith("local-") ||
       (safeUrl!.startsWith("/api/") && safeUrl!.includes("/attachments/"))) &&
-    !objectUrlCache.has(safeUrl!) &&
-    !(isIdbMediaUrl(safeUrl) && objectUrlCache.has(extractMediaId(safeUrl)));
+    !cachedImmediate;
 
   useEffect(() => {
     if (!needsAsyncLookup || !safeUrl) return;
@@ -236,8 +283,7 @@ export function useMediaUrl(url: string | null | undefined): string | null {
   }, [safeUrl, needsAsyncLookup]);
 
   if (!safeUrl) return null;
-  const cached = objectUrlCache.get(safeUrl) || (isIdbMediaUrl(safeUrl) ? objectUrlCache.get(extractMediaId(safeUrl)) : null);
-  if (cached) return cached;
+  if (cachedImmediate) return cachedImmediate;
   if (asyncResolved && asyncResolved.source === safeUrl) return asyncResolved.resolved;
   if (!isIdbMediaUrl(safeUrl) && !safeUrl.startsWith("local-") && !safeUrl.startsWith("/api/")) return safeUrl;
   return null;

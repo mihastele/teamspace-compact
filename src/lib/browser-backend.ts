@@ -472,7 +472,13 @@ function subscribeSupabaseCollection(
         (event) => {
           const row = ((event.new && Object.keys(event.new).length > 0 ? event.new : event.old) || {}) as Record<string, unknown>;
           const path = (row.path as string) || "";
-          if (path.startsWith("rateLimits/") || path.includes("/blocks/")) return;
+          if (path.startsWith("rateLimits/")) return;
+          if (path.includes("/blocks/")) {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("teamspace:remote-block-change", { detail: row }));
+            }
+            return;
+          }
           const changed = (row.collection as string) || (path ? path.replace(/\/[^/]+$/, "") : undefined);
           invalidate(changed, true);
         },

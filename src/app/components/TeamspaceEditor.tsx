@@ -9,8 +9,21 @@ import TaskItem from "@tiptap/extension-task-item";
 import { useWorkspace, workspaceStore } from "@/lib/workspace-store";
 import { useTeamspaceApi } from "@/lib/client";
 import { usePageCollaboration } from "@/lib/use-page-collaboration";
-import { uploadMediaFile } from "@/lib/attachments";
-import { saveMediaFile, deleteMediaFile, useMediaUrl } from "@/lib/media-store";
+import {
+  uploadMediaFile,
+  storeLocalMedia,
+  deleteLocalMedia,
+  markLocalUploadInFlight,
+  clearLocalUploadInFlight,
+  MAX_ATTACHMENT_BYTES,
+  MAX_VIDEO_ATTACHMENT_BYTES,
+} from "@/lib/attachments";
+import {
+  saveMediaFile,
+  deleteMediaFile,
+  useMediaUrl,
+  primeMediaUrlCache,
+} from "@/lib/media-store";
 import { safeUUID } from "@/lib/collaboration-model";
 import type { Block } from "@/lib/model";
 import DatabaseEntryProperties from "./DatabaseEntryProperties";
@@ -174,6 +187,9 @@ export default function TeamspaceEditor({
   }, [blocks, block.id, mentionFilter]);
 
   const handleFileUploadRef = useRef<(file: File) => Promise<void>>(() => Promise.resolve());
+  const lastLocalContentJsonRef = useRef<string>(
+    block.content ? JSON.stringify(block.content) : ""
+  );
 
   const editor = useEditor({
     editable: !readOnly,
@@ -208,6 +224,7 @@ export default function TeamspaceEditor({
     onUpdate: ({ editor: ed }) => {
       if (readOnly) return;
       const json = ed.getJSON();
+      lastLocalContentJsonRef.current = JSON.stringify(json);
       applyBlockChange({ content: json });
 
       const { from } = ed.state.selection;
@@ -359,8 +376,13 @@ export default function TeamspaceEditor({
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
       const isAudio = file.type.startsWith("audio/");
-      const tempId = safeUUID();
+      const tempId = `local-${safeUUID()}`;
       const tempUrl = URL.createObjectURL(file);
+      primeMediaUrlCache(tempId, tempUrl);
+      markLocalUploadInFlight(tempId);
+
+      // Persist local media in IndexedDB first so an immediate page refresh still has the file
+      await storeLocalMedia(tempId, file);
 
       if (isImage) {
         editor
@@ -371,8 +393,8 @@ export default function TeamspaceEditor({
             attrs: {
               blockId: tempId,
               attachmentId: tempId,
-              url: tempUrl,
-              src: tempUrl,
+              url: tempId,
+              src: tempId,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -389,9 +411,10 @@ export default function TeamspaceEditor({
             attrs: {
               blockId: tempId,
               attachmentId: tempId,
-              url: tempUrl,
-              src: tempUrl,
+              url: tempId,
+              src: tempId,
               fileName: file.name,
+              originalName: file.name,
               contentType: file.type,
               bytes: file.size,
             },
@@ -406,8 +429,8 @@ export default function TeamspaceEditor({
             attrs: {
               blockId: tempId,
               attachmentId: tempId,
-              url: tempUrl,
-              src: tempUrl,
+              url: tempId,
+              src: tempId,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -423,8 +446,8 @@ export default function TeamspaceEditor({
             attrs: {
               blockId: tempId,
               attachmentId: tempId,
-              url: tempUrl,
-              src: tempUrl,
+              url: tempId,
+              src: tempId,
               originalName: file.name,
               contentType: file.type,
               bytes: file.size,
@@ -433,19 +456,25 @@ export default function TeamspaceEditor({
           .run();
       }
 
+      const maxBytes = isVideo ? MAX_VIDEO_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
+
       // Background persistence: Supabase Storage when configured, local media store otherwise
       try {
         if (
           api.configured &&
           api.user &&
           api.workspace &&
-          (isImage || isAudio || isVideo || file.size <= 25 * 1024 * 1024)
+          file.size <= maxBytes
         ) {
+          await workspaceStore.flushSync();
           const result = await uploadMediaFile(file, "page", block.id, api);
           let replaced = false;
           editor.state.doc.descendants((node, pos) => {
             if (
               node.attrs?.blockId === tempId ||
+              node.attrs?.attachmentId === tempId ||
+              node.attrs?.src === tempId ||
+              node.attrs?.url === tempId ||
               node.attrs?.src === tempUrl ||
               node.attrs?.url === tempUrl
             ) {
@@ -468,7 +497,13 @@ export default function TeamspaceEditor({
             const updateNodeAttrs = (nodes?: JSONContent[]): boolean => {
               if (!nodes) return false;
               for (const n of nodes) {
-                if (n.attrs?.blockId === tempId || n.attrs?.src === tempUrl) {
+                if (
+                  n.attrs?.blockId === tempId ||
+                  n.attrs?.attachmentId === tempId ||
+                  n.attrs?.src === tempId ||
+                  n.attrs?.url === tempId ||
+                  n.attrs?.src === tempUrl
+                ) {
                   n.attrs.attachmentId = result.attachmentId;
                   n.attrs.url = result.url;
                   n.attrs.src = result.url;
@@ -484,13 +519,15 @@ export default function TeamspaceEditor({
             }
           }
 
-          applyBlockChange({ content: editor.getJSON() });
+          const finalJson = editor.getJSON();
+          lastLocalContentJsonRef.current = JSON.stringify(finalJson);
+          applyBlockChange({ content: finalJson });
           void workspaceStore.flushSync();
 
-          // Documents and videos are NOT kept permanently in browser storage once uploaded
-          if (!isImage) {
-            void deleteMediaFile(tempId);
-          }
+          // Clean up temporary local upload ID; for images, uploadMediaFile already cached under result.attachmentId,
+          // while documents and videos are NOT kept permanently in browser storage once uploaded.
+          await deleteLocalMedia(tempId);
+          await deleteMediaFile(tempId);
         } else {
           const saved = await saveMediaFile(file, file.name);
           const currentJson = editor.getJSON();
@@ -499,6 +536,8 @@ export default function TeamspaceEditor({
             for (const n of nodes) {
               if (
                 n.attrs?.blockId === tempId ||
+                n.attrs?.attachmentId === tempId ||
+                n.attrs?.src === tempId ||
                 n.attrs?.src === tempUrl
               ) {
                 n.attrs.url = saved.url;
@@ -516,6 +555,8 @@ export default function TeamspaceEditor({
         }
       } catch (err) {
         console.warn("Media upload background sync notice", err);
+      } finally {
+        clearLocalUploadInFlight(tempId);
       }
     },
     [editor, readOnly, block.id, api, applyBlockChange]
@@ -689,12 +730,27 @@ export default function TeamspaceEditor({
     };
   }, [mentionMenuPosition, mentionablePages, selectedMentionIndex, insertPageMention]);
 
-  // Re-sync editor content only when unfocused and block content externally differs
+  // Re-sync editor content when block content changes externally (from another browser or remote sync)
   useEffect(() => {
-    if (editor && !editor.isFocused && block.content) {
-      const currentJson = editor.getJSON();
-      if (JSON.stringify(currentJson) !== JSON.stringify(block.content)) {
-        editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
+    if (!editor || !block.content) return;
+    const incomingStr = JSON.stringify(block.content);
+    if (incomingStr === lastLocalContentJsonRef.current) return;
+    const currentStr = JSON.stringify(editor.getJSON());
+    if (currentStr !== incomingStr) {
+      lastLocalContentJsonRef.current = incomingStr;
+      const { from, to } = editor.state.selection;
+      const wasFocused = editor.isFocused;
+      editor.commands.setContent(block.content as JSONContent, { emitUpdate: false });
+      if (wasFocused) {
+        const maxPos = editor.state.doc.content.size;
+        try {
+          editor.commands.setTextSelection({
+            from: Math.min(from, maxPos),
+            to: Math.min(to, maxPos),
+          });
+        } catch {
+          // ignore selection restoration bounds
+        }
       }
     }
   }, [block.content, editor]);
@@ -791,14 +847,20 @@ export default function TeamspaceEditor({
       },
       renderEmbeddedDatabase,
       onUploadMediaFile: async (file: File) => {
+        const maxBytes = file.type.startsWith("video/")
+          ? MAX_VIDEO_ATTACHMENT_BYTES
+          : MAX_ATTACHMENT_BYTES;
         if (
           api.configured &&
           api.user &&
           api.workspace &&
-          file.size <= 25 * 1024 * 1024
+          file.size <= maxBytes
         ) {
           await workspaceStore.flushSync();
           const res = await uploadMediaFile(file, "page", block.id, api);
+          setTimeout(() => {
+            void workspaceStore.flushSync();
+          }, 80);
           return { url: res.url, attachmentId: res.attachmentId };
         }
         const saved = await saveMediaFile(file, file.name);

@@ -33,6 +33,21 @@ export const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024; // 25 MiB
+export const MAX_VIDEO_ATTACHMENT_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
+const inFlightLocalUploads = new Set<string>();
+
+export function markLocalUploadInFlight(id: string): void {
+  inFlightLocalUploads.add(id);
+}
+
+export function clearLocalUploadInFlight(id: string): void {
+  inFlightLocalUploads.delete(id);
+}
+
+export function isLocalUploadInFlight(id: string): boolean {
+  return inFlightLocalUploads.has(id);
+}
 
 /** Strips EXIF metadata from JPEG / PNG / WebP by rendering onto canvas. */
 export async function prepareImageBlob(file: File, keepOriginal = false): Promise<Blob> {
@@ -105,7 +120,7 @@ export async function storeLocalMedia(id: string, blob: Blob): Promise<string> {
   return URL.createObjectURL(blob);
 }
 
-export async function getLocalMedia(id: string): Promise<string | null> {
+export async function getLocalMediaBlob(id: string): Promise<Blob | null> {
   try {
     const db = await getMediaDb();
     const blob = await new Promise<Blob | undefined>((resolve, reject) => {
@@ -114,11 +129,17 @@ export async function getLocalMedia(id: string): Promise<string | null> {
       req.onsuccess = () => resolve(req.result as Blob);
       req.onerror = () => reject(req.error);
     });
-    if (blob) {
-      return URL.createObjectURL(blob);
-    }
+    if (blob) return blob;
   } catch {
     // ignore
+  }
+  return null;
+}
+
+export async function getLocalMedia(id: string): Promise<string | null> {
+  const blob = await getLocalMediaBlob(id);
+  if (blob) {
+    return URL.createObjectURL(blob);
   }
   return null;
 }
@@ -163,8 +184,9 @@ export async function uploadMediaFile(
     ? await prepareImageBlob(file, options.keepOriginal)
     : file;
 
-  if (preparedBlob.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error("File exceeds the 25 MB size limit.");
+  const maxBytes = file.type.startsWith("video/") ? MAX_VIDEO_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
+  if (preparedBlob.size > maxBytes) {
+    throw new Error(`File exceeds the ${file.type.startsWith("video/") ? "1 GB" : "25 MB"} size limit.`);
   }
 
   // 1. If running against configured backend with signed-in user
@@ -227,7 +249,7 @@ export async function uploadMediaFile(
 
     // If it's an image, also cache it in local IndexedDB so it's available when viewed offline
     if (file.type.startsWith("image/")) {
-      void storeLocalMedia(attachmentId, preparedBlob).catch(() => {});
+      await storeLocalMedia(attachmentId, preparedBlob).catch(() => {});
     }
 
     // Authenticated inline streaming URL

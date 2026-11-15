@@ -1529,3 +1529,42 @@
   - `npm run test:supabase`: 77/77 Supabase integration tests pass.
   - `npm run typecheck` & `npm run lint`: 0 errors, 0 warnings.
   - Staging environment redeployed (`node ./scripts/deploy.mjs staging up`) and healthy on `http://localhost:3100`.
+
+
+### 2026-11-15 — Resolution of Fast-Refresh Image Loss, Multi-Browser Sync Race, Large Video Upload/Streaming, and Presence Ghost Icons
+
+- **Root Cause Analysis**:
+  1. **Fast Refresh After Image Upload Lost the Image**:
+     - `handleFileUpload` in `src/app/components/TeamspaceEditor.tsx` generated a plain UUID (`tempId = safeUUID()`, without `"local-"` prefix) and inserted `url: tempUrl` (`blob:http://...`) before persisting anything to IndexedDB.
+     - If the user refreshed immediately while the upload was still in flight, `ImageBlockComponent` saw `rawUrl.startsWith("blob:") && !attachmentId.startsWith("local-")` and rewrote the URL to `/api/workspaces/.../attachments/${tempId}/inline`, which returned 404 because `tempId` was a temporary client UUID rather than a server attachment ID.
+     - Additionally, `workspaceStore.flushSync()` in `src/lib/workspace-store.ts` had a race condition: if a block was modified while `activeSyncPromise` was already in flight, `flushSync()` returned the existing promise and when that promise resolved it unconditionally called `syncOutbox.delete(b.id)`, wiping the newer post-upload block update (`result.url` / `result.attachmentId`) from `syncOutbox`.
+  2. **Second Browser Sometimes Required Manual Refresh**:
+     - `/blocks/` Realtime events in `src/lib/browser-backend.ts` were ignored without notifying `workspaceStore`, and `TeamspaceEditor.tsx` (`if (editor && !editor.isFocused && block.content)`) skipped applying incoming remote `block.content` updates whenever the second browser's editor happened to be focused.
+  3. **Video Uploads Failed and Showed Missing/Broken File Icon**:
+     - User's video files (`Jakobovo rojstvo.mp4`, 218 MB, and `VID_20260924_191737.mp4`, 32 MB) exceeded the 25 MiB `MAX_ATTACHMENT_BYTES` limit (`file_size_limit = 26214400` in `storage.buckets` and `FILE_SIZE_LIMIT = 52428800` in `storage` container).
+     - `VideoBlockExtension.addAttributes()` in `src/app/components/TiptapExtensions.tsx` only declared `src`, `fileName`, and `caption`, causing ProseMirror to strip `blockId`, `attachmentId`, `url`, `contentType`, and `bytes`.
+     - `src/lib/media-store.ts` cached 60-second signed inline URLs in `objectUrlCache` forever without TTL expiry.
+  4. **Duplicate Viewer Icons on Every Refresh**:
+     - `usePageCollaboration` in `src/lib/use-page-collaboration.ts` generated a fresh `sessionId` in a React ref on every page load (`presence/${sessionIdRef.current}`). Every browser refresh created a new presence document on the server while previous sessions lingered until TTL expiry, and neither server (`GET .../presence`) nor client deduplicated by `uid` or filtered expired leases.
+- **Fixes Applied**:
+  - **Local-First Upload Staging & Automatic Resumption (`src/app/components/TeamspaceEditor.tsx`, `src/app/components/MediaNodes.tsx`, `src/app/components/TiptapExtensions.tsx`, `src/lib/attachments.ts`)**:
+    - Prefixed temporary upload IDs with `local-${safeUUID()}`, primed `objectUrlCache`, and persisted the file to IndexedDB (`await storeLocalMedia(tempId, file)`) before inserting the block with `url: tempId, src: tempId, attachmentId: tempId`.
+    - Added in-flight upload tracking (`markLocalUploadInFlight` / `isLocalUploadInFlight`) and automatic upload resumption in `ImageBlockComponent`, `AttachmentBlockComponent`, and `VideoBlockNodeView` if the page is refreshed mid-upload.
+    - Enforced the user's storage rule: once uploaded to the server, temporary `"local-..."` blobs are deleted from IndexedDB (`deleteLocalMedia(tempId)` and `deleteMediaFile(tempId)`). Videos and documents are only stored temporarily in the browser during upload and then streamed from the server, whereas images remain cached in IndexedDB under their permanent `attachmentId` (`storeLocalMedia(attachmentId, preparedBlob)` in `uploadMediaFile`).
+  - **Outbox Concurrency & Live Multi-Browser Sync (`src/lib/workspace-store.ts`, `src/lib/browser-backend.ts`, `src/app/components/TeamspaceEditor.tsx`)**:
+    - Fixed `flushSync()` so `syncOutbox.delete(b.id)` only deletes the outbox entry if `(currentLocal.updatedAt || 0) <= (b.updatedAt || 0)` and triggers an immediate follow-up sync when newer local edits occurred during an in-flight sync.
+    - Dispatched `teamspace:remote-block-change` on Realtime `/blocks/` events in `browser-backend.ts` so `workspaceStore` schedules a 350ms delta sync immediately.
+    - Updated `TeamspaceEditor.tsx` to apply external `block.content` updates even when the editor is focused (tracking `lastLocalContentJsonRef` and preserving cursor selection).
+  - **1 GiB Video Support & Server-Side Streaming (`migrations/024-video-attachments.sql`, `src/lib/server/storage-port.ts`, `src/lib/server/supabase-storage.ts`, `src/lib/server/api.ts`, `src/lib/media-store.ts`)**:
+    - Raised video attachment limit to 1 GiB (`MAX_VIDEO_BYTES = 1024 * 1024 * 1024`) across client, server API, Supabase Storage bucket (`teamspace-private`), and Docker `storage` service (`FILE_SIZE_LIMIT: 1073741824`).
+    - Added `readHeader(maxBytes)` (`Range` fetch) and `copyTo(destinationPath)` (`POST /storage/v1/object/copy`) in `supabase-storage.ts` so `POST /attachments/:id/complete` validates MP4/MOV/WebM headers (`ftyp`, `moov`, `mdat`, `wide`, `free`) and promotes large video files server-side without buffering hundreds of MB in Node.js memory.
+    - Extended signed URL expiry for `inline` streaming to 3600s (1 hour) and added a 45-minute cache TTL plus automatic `<video onError>` / `<img onError>` cache invalidation in `media-store.ts`.
+    - Added full attributes (`blockId`, `attachmentId`, `url`, `src`, `fileName`, `originalName`, `contentType`, `bytes`, `caption`) to `VideoBlockExtension` and `FileBlockExtension`.
+  - **Stable Tab Presence & Deduplication (`src/lib/use-page-collaboration.ts`, `src/lib/server/api.ts`)**:
+    - Persisted `teamspace_presence_session_id` in `window.sessionStorage` per browser tab so refreshing reuses the same `sessionId`.
+    - Filtered expired presence documents on both server (`GET .../presence`) and client, and deduplicated viewer icons by `uid`.
+- **Verification**:
+  - `npm run typecheck` & `npm run lint`: 0 errors, 0 warnings.
+  - `npm test`: 264/264 unit tests pass.
+  - `npm run test:api`: 70/70 API tests pass.
+  - Updated staging bucket limit to 1 GiB, cleared stale presence records, and redeployed staging (`node ./scripts/deploy.mjs staging up`) on `http://localhost:3100`.

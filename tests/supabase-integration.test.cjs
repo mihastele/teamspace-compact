@@ -450,7 +450,7 @@ test('Supabase root membership administration preserves private content; develop
 });
 test('clean migration applies RLS/default-deny RPC and private bucket limits', async () => {
   assert.equal(await sql("select bool_and(relrowsecurity) from pg_class where relname in ('teamspace_documents','teamspace_store_state');"), 't');
-  assert.equal(await sql("select public::text||':'||file_size_limit from storage.buckets where id='teamspace-private';"), 'false:26214400');
+  assert.equal(await sql("select public::text||':'||file_size_limit from storage.buckets where id='teamspace-private';"), 'false:1073741824');
   assert.equal(await sql("select 'video/mp4' = any(allowed_mime_types) from storage.buckets where id='teamspace-private';"), 't');
   assert.equal(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${member}',false); select count(*) from public.teamspace_documents where path='${prefix}/notes/note';`).then(result => result.split('\n').at(-1)), '1');
   assert.equal(await sql(`set role authenticated; select set_config('request.jwt.claim.sub','${outsider}',false); select count(*) from public.teamspace_documents;`).then(result => result.split('\n').at(-1)), '0');
