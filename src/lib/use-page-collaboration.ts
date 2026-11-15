@@ -16,6 +16,7 @@ import {
   tiptapDocToNoteContent,
   fromBase64,
   REMOTE_ORIGIN,
+  safeUUID,
 } from "./collaboration-model";
 import { useTeamspace, type DocumentPresence } from "./client";
 import * as Y from "yjs";
@@ -30,12 +31,40 @@ export type PageCollaborationState = {
   noteContent: NoteContent | null;
 };
 
+function getTabPresenceSessionId(): string {
+  if (typeof window === "undefined") return safeUUID();
+  try {
+    const key = "teamspace_presence_session_id";
+    let existing = window.sessionStorage.getItem(key);
+    if (!existing) {
+      existing = safeUUID();
+      window.sessionStorage.setItem(key, existing);
+    }
+    return existing;
+  } catch {
+    return safeUUID();
+  }
+}
+
+function normalizeActivePresence(users: DocumentPresence[]): DocumentPresence[] {
+  const now = Date.now();
+  const byUser = new Map<string, DocumentPresence>();
+  for (const u of users) {
+    if (u.expiresAt && u.expiresAt <= now) continue;
+    const key = u.uid || u.id;
+    const existing = byUser.get(key);
+    if (!existing || (u.expiresAt || 0) >= (existing.expiresAt || 0)) {
+      byUser.set(key, u);
+    }
+  }
+  return Array.from(byUser.values());
+}
+
 /**
  * Hook bridging Tiptap editor and Teamspace page block to real-time CRDT collaboration.
  * Uses CollaborationController + IndexedDB RecoveryStore + BroadcastChannel cross-tab sync.
  */
-export function usePageCollaboration(block: Block): PageCollaborationState {
-  const api = useTeamspace();
+export function usePageCollaboration(block: Block, api: ReturnType<typeof useTeamspace>): PageCollaborationState {
   const [controller, setController] = useState<CollaborationController | null>(null);
   const [presenceUsers, setPresenceUsers] = useState<DocumentPresence[]>([]);
   const controllerRef = useRef<CollaborationController | null>(null);
@@ -63,10 +92,18 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
     }
 
     // Prepare initial Note object for CollaborationController
-    const initialContent = tiptapDocToNoteContent(
-      block.content || { type: "doc", content: [{ type: "paragraph" }] }
-    );
-    const initialDoc = initializeDocument(initialContent);
+    let initialDoc: Y.Doc;
+    try {
+      const parsedContent = tiptapDocToNoteContent(
+        block.content || { type: "doc", content: [{ type: "paragraph" }] }
+      );
+      initialDoc = initializeDocument(parsedContent);
+    } catch (e) {
+      console.warn("Failed to initialize document from block content, falling back to empty doc:", e);
+      initialDoc = initializeDocument({ blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] });
+    }
+
+    const initialContent = readContent(initialDoc);
     const initialNote: Note = {
       id: block.id,
       parentId: block.parentId,
@@ -75,7 +112,7 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
       revision: block.revision || 1,
       collab: {
         version: 1,
-        generation: crypto.randomUUID(),
+        generation: safeUUID(),
         state: encodeDocument(initialDoc),
         sequence: 0,
       },
@@ -137,7 +174,24 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
       };
     }
 
-    const newController = new CollaborationController(initialNote, transport, store);
+    let newController: CollaborationController;
+    try {
+      newController = new CollaborationController(initialNote, transport, store);
+    } catch (err) {
+      console.warn("CollaborationController init failed, recreating fresh controller:", err);
+      const fallbackDoc = initializeDocument({ blocks: [{ id: safeUUID(), type: "paragraph", text: "" }] });
+      const safeNote: Note = {
+        ...initialNote,
+        collab: {
+          version: 1,
+          generation: safeUUID(),
+          state: encodeDocument(fallbackDoc),
+          sequence: 0,
+        },
+      };
+      fallbackDoc.destroy();
+      newController = new CollaborationController(safeNote, transport, store);
+    }
     controllerRef.current = newController;
 
     newController.start().then(() => {
@@ -149,25 +203,31 @@ export function usePageCollaboration(block: Block): PageCollaborationState {
     });
 
     // Cross-tab / Server presence
-    const sessionId = crypto.randomUUID();
+    const sessionId = getTabPresenceSessionId();
     let presenceCleanup: (() => void) | undefined;
 
     if (isServerCollab) {
       api.heartbeatPresence(block.id, sessionId).catch(() => {});
       const interval = setInterval(() => {
         api.heartbeatPresence(block.id, sessionId).catch(() => {});
-      }, 45000);
+      }, 60000);
+      const pruneInterval = setInterval(() => {
+        if (active) {
+          setPresenceUsers((prev) => normalizeActivePresence(prev));
+        }
+      }, 15000);
 
       presenceCleanup = api.subscribePresence(
         block.id,
         (users) => {
-          if (active) setPresenceUsers(users);
+          if (active) setPresenceUsers(normalizeActivePresence(users));
         },
         () => {}
       );
 
       cleanupTransport = () => {
         clearInterval(interval);
+        clearInterval(pruneInterval);
         api.leavePresence(block.id, sessionId).catch(() => {});
         presenceCleanup?.();
       };

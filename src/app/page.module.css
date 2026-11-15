@@ -343,3 +343,17 @@
   margin: 0;
   line-height: 1.4;
 }
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 8px;
+    height: 42px;
+    min-height: 42px;
+  }
+
+  .crumbBtn span:last-child {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

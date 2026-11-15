@@ -434,9 +434,29 @@ function subscribeSupabaseCollection(
       const group: Group = { route, paths, observers: new Set(), cached: null, runner };
       return group;
     };
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    let wildcardInvalidate = false;
+    const pendingChanges = new Set<string>();
     const invalidate = (changed?: string, coalesce = false) => {
-      for (const group of groups.values())
-        if (!changed || group.paths.has(changed)) group.runner.invalidate(coalesce);
+      if (!changed) {
+        wildcardInvalidate = true;
+      } else {
+        pendingChanges.add(changed);
+      }
+      if (invalidateTimer) clearTimeout(invalidateTimer);
+      invalidateTimer = setTimeout(() => {
+        invalidateTimer = null;
+        const wildcard = wildcardInvalidate;
+        wildcardInvalidate = false;
+        const changes = new Set(pendingChanges);
+        pendingChanges.clear();
+        for (const group of groups.values()) {
+          const isPresence = group.route.includes("/presence");
+          if ((wildcard && !isPresence) || Array.from(changes).some((c) => group.paths.has(c))) {
+            group.runner.invalidate(coalesce);
+          }
+        }
+      }, 500);
     };
     const client = supabaseBrowserClient();
     const channel = client
@@ -450,23 +470,34 @@ function subscribeSupabaseCollection(
           filter: `workspace_id=eq.${workspace}`,
         },
         (event) => {
-          const changed = (event.new as Record<string, unknown>)?.collection;
-          invalidate(typeof changed === "string" ? changed : undefined);
+          const row = ((event.new && Object.keys(event.new).length > 0 ? event.new : event.old) || {}) as Record<string, unknown>;
+          const path = (row.path as string) || "";
+          if (path.startsWith("rateLimits/")) return;
+          if (path.includes("/blocks/")) {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("teamspace:remote-block-change", { detail: row }));
+            }
+            return;
+          }
+          const changed = (row.collection as string) || (path ? path.replace(/\/[^/]+$/, "") : undefined);
+          invalidate(changed, true);
         },
       )
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_tasks",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_saved_views",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_projects",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_definitions",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_options",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_values",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
-      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_selections",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate())
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_tasks",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_saved_views",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_projects",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_definitions",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_field_options",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_values",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
+      .on("postgres_changes", {event:"*",schema:"public",table:"teamspace_task_field_selections",filter:`workspace_id=eq.${workspace}`}, ()=>invalidate(undefined, true))
       .subscribe((status) => {
-        if (status === "SUBSCRIBED") invalidate();
+        if (status === "SUBSCRIBED") invalidate(undefined, true);
       });
     const poll = setInterval(() => {
-      if (navigator.onLine) invalidate(undefined, true);
-    }, 5000);
+      if (navigator.onLine && (typeof document === "undefined" || document.visibilityState === "visible")) {
+        invalidate(undefined, true);
+      }
+    }, 60000);
     const reconnect = () => invalidate();
     window.addEventListener("online", reconnect);
     hub = {

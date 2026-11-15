@@ -181,6 +181,7 @@ export function noteContent(value: unknown) {
         "board",
         "synced",
         "image",
+        "video",
         "attachment",
         "audio",
       ].includes(block.type as string)

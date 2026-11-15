@@ -40,7 +40,13 @@ const PROPERTY_ICONS: Record<string, React.ReactNode> = {
   person: <User size={13} />,
 };
 
-export default function DatabaseEntryProperties({ row }: { row: Block }) {
+export default function DatabaseEntryProperties({
+  row,
+  readOnly = false,
+}: {
+  row: Block;
+  readOnly?: boolean;
+}) {
   const {
     blocks,
     childrenIndex,
@@ -54,10 +60,14 @@ export default function DatabaseEntryProperties({ row }: { row: Block }) {
 
   const databaseId = row.parentId || "";
   const dbProps = databaseId ? properties[databaseId] || [] : [];
+  const allDatabases = Object.values(blocks).filter(
+    (b) => b.type === "database" && !b.isArchived
+  );
 
   // Popover state for Relation selection
   const [activeRelationPropId, setActiveRelationPropId] = useState<string | null>(null);
   const [relationSearch, setRelationSearch] = useState("");
+  const [newPropTargetDb, setNewPropTargetDb] = useState<string>("__any__");
 
   // Popover state for adding a new property
   const [showAddProp, setShowAddProp] = useState(false);
@@ -286,16 +296,23 @@ export default function DatabaseEntryProperties({ row }: { row: Block }) {
                       <div className={styles.popoverList}>
                         {(() => {
                           const targetDbId = prop.targetDatabaseId || databaseId;
-                          const candidateIds = childrenIndex[targetDbId] || [];
-                          const matched = candidateIds
-                            .filter((id) => id !== row.id && !blocks[id]?.isArchived)
-                            .map((id) => blocks[id])
-                            .filter(Boolean)
-                            .filter((b) =>
-                              (b.title || "Untitled")
-                                .toLowerCase()
-                                .includes(relationSearch.toLowerCase())
-                            );
+                          const candidateBlocks =
+                            targetDbId === "__any__"
+                              ? Object.values(blocks).filter(
+                                  (b) =>
+                                    b.id !== row.id &&
+                                    !b.isArchived &&
+                                    (b.type === "page" || b.type === "database")
+                                )
+                              : (childrenIndex[targetDbId] || [])
+                                  .filter((id) => id !== row.id && !blocks[id]?.isArchived)
+                                  .map((id) => blocks[id])
+                                  .filter(Boolean);
+                          const matched = candidateBlocks.filter((b) =>
+                            (b.title || "Untitled")
+                              .toLowerCase()
+                              .includes(relationSearch.toLowerCase())
+                          );
 
                           if (matched.length === 0) {
                             return <div className={viewStyles.emptyCell}>No matching pages</div>;
@@ -419,11 +436,31 @@ export default function DatabaseEntryProperties({ row }: { row: Block }) {
               <option value="url">URL</option>
               <option value="phone">Phone</option>
             </select>
+            {newPropType === "relation" && (
+              <select
+                className={viewStyles.propSelect}
+                value={newPropTargetDb}
+                onChange={(e) => setNewPropTargetDb(e.target.value)}
+              >
+                <option value="__any__">Target: Any page in workspace</option>
+                {allDatabases.map((db) => (
+                  <option key={db.id} value={db.id}>
+                    Target: {db.title || "Untitled Database"}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               className={viewStyles.createPropBtn}
               onClick={() => {
-                if (!newPropName.trim()) return;
-                createDatabaseProperty(databaseId, newPropName.trim(), newPropType);
+                if (!newPropName.trim() || readOnly) return;
+                createDatabaseProperty(
+                  databaseId,
+                  newPropName.trim(),
+                  newPropType,
+                  undefined,
+                  newPropType === "relation" ? newPropTargetDb : undefined
+                );
                 setNewPropName("");
                 setNewPropType("text");
                 setShowAddProp(false);

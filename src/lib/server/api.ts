@@ -19,6 +19,7 @@ import {
   type DocumentStore as Firestore,
   type Transaction,
   type DocumentReference,
+  type DocumentSnapshot,
 } from "./document-store";
 import type { Firestore as NativeFirestore } from "firebase-admin/firestore";
 import type { Storage as NativeStorage } from "firebase-admin/storage";
@@ -49,6 +50,7 @@ import {
 } from "./validation";
 
 const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const now = () => FieldValue.serverTimestamp();
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -86,10 +88,34 @@ async function authenticate(request: Request) {
   const configuration = backendConfiguration();
   accessConfiguration();
   if (!configuration.configured) throw new ApiError(503, "not_configured", "The selected backend is not configured. Ask the administrator to finish setup.");
+  let token = "";
   const match = /^Bearer ([^\s]+)$/.exec(
     request.headers.get("authorization") ?? "",
   );
-  if (!match)
+  if (match) {
+    token = match[1];
+  } else {
+    try {
+      const url = new URL(request.url);
+      const queryToken = url.searchParams.get("token") || url.searchParams.get("auth");
+      if (queryToken) {
+        token = queryToken;
+      } else {
+        const cookieHeader = request.headers.get("cookie") || "";
+        const cookieMatch = /(?:sb-[^=]+-auth-token|supabase-auth-token)=([^;]+)/.exec(cookieHeader);
+        if (cookieMatch) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(cookieMatch[1]));
+            const extracted = Array.isArray(parsed) ? parsed[0] : (parsed?.access_token || parsed);
+            if (typeof extracted === "string" && extracted.length > 0) token = extracted;
+          } catch {
+            token = decodeURIComponent(cookieMatch[1]);
+          }
+        }
+      }
+    } catch {}
+  }
+  if (!token)
     throw new ApiError(401, "unauthenticated", "Sign in to continue.");
   let user: DecodedIdToken;
   let db: Firestore;
@@ -97,7 +123,7 @@ async function authenticate(request: Request) {
   try {
     if (configuration.provider === "supabase") {
       const backend = supabaseAdmin();
-      const { data, error } = await backend.auth.getUser(match[1]);
+      const { data, error } = await backend.auth.getUser(token);
       if (error || !data.user) throw new Error("Invalid user");
       user = { uid: data.user.id, email: data.user.email, email_verified: !!data.user.email_confirmed_at,
         name: typeof data.user.user_metadata.display_name === "string" ? data.user.user_metadata.display_name : typeof data.user.user_metadata.full_name === "string" ? data.user.user_metadata.full_name : data.user.email?.split("@")[0],
@@ -106,7 +132,7 @@ async function authenticate(request: Request) {
       storage = supabaseStorage();
     } else {
       const backend = firebaseAdmin();
-      user = await backend.auth.verifyIdToken(match[1], true);
+      user = await backend.auth.verifyIdToken(token, true);
       db = firebaseDocumentStore(backend.db);
       storage = backend.storage as unknown as Storage;
     }
@@ -121,7 +147,7 @@ async function authenticate(request: Request) {
   const policy = await db.doc("security/policy").get();
   assertAuthPolicy(policy.data(), configuration.emailConfirmationRequired, !!user.email_verified);
   db = guardedDocumentStore(db, configuration.emailConfirmationRequired, !!user.email_verified);
-  await rateLimit(db, user.uid, "api", 120);
+  await rateLimit(db, user.uid, "api", 300);
   return { db, storage, user };
 }
 
@@ -984,17 +1010,31 @@ async function presenceOperation(
 ) {
   const data = object(input, ["sessionId"]);
   const sessionId = uuid(data.sessionId);
-  await rateLimit(db, user.uid, "presence", 10);
+  await rateLimit(db, user.uid, "presence", 60);
   const note = workspace.collection("notes").doc(id);
   const ref = note.collection("presence").doc(hash(`${user.uid}:${sessionId}`));
   await db.runTransaction(async (tx) => {
     await member(tx, workspace, user.uid);
-    const [snapshot, membership] = await Promise.all([
+    const [snapshot, blockSnap, membership] = await Promise.all([
       tx.get(note),
+      tx.get(workspace.collection("blocks").doc(id)),
       tx.get(workspace.collection("members").doc(user.uid)),
     ]);
-    if (!snapshot.exists || snapshot.data()?.deleting)
+    const parent = snapshot.exists ? snapshot : blockSnap;
+    if (parent.exists && (parent.data()?.deleting || parent.data()?.isArchived))
       throw new ApiError(404, "not_found", "Note not found.");
+    if (!parent.exists) {
+      if (method === "DELETE") return;
+      tx.set(workspace.collection("blocks").doc(id), {
+        id,
+        workspaceId: workspace.id,
+        type: "page",
+        title: "Untitled",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        createdBy: user.uid,
+      });
+    }
     if (method === "DELETE") tx.delete(ref);
     else
       tx.set(ref, {
@@ -1227,8 +1267,12 @@ function validMagic(bytes: Buffer, contentType: string) {
       (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) ||
       bytes.toString("ascii", 0, 3) === "ID3"
     );
-  if (contentType === "audio/mp4")
-    return bytes.toString("ascii", 4, 8) === "ftyp";
+  if (contentType === "audio/mp4" || contentType === "video/mp4" || contentType === "video/quicktime")
+    return ["ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"].includes(bytes.toString("ascii", 4, 8));
+  if (contentType === "video/webm")
+    return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (contentType === "video/ogg")
+    return bytes.toString("ascii", 0, 4) === "OggS";
   if (
     contentType === "application/zip" ||
     contentType.startsWith("application/vnd.openxmlformats-officedocument.")
@@ -1259,6 +1303,10 @@ const EXTENSION_MAP: Record<string, string> = {
   "audio/mp4": "m4a",
   "audio/mpeg": "mp3",
   "audio/wav": "wav",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/ogg": "ogv",
+  "video/quicktime": "mov",
   "application/pdf": "pdf",
   "text/plain": "txt",
   "text/markdown": "md",
@@ -1279,7 +1327,7 @@ async function attachmentOperation(
   id: string | undefined,
   action: string | undefined,
 ) {
-  await rateLimit(db, user.uid, "attachments", 30);
+  await rateLimit(db, user.uid, "attachments", 100);
   const files = bucket(storage);
   if (request.method === "POST" && !id && !action) {
     const data = object(await body(request), [
@@ -1302,7 +1350,8 @@ async function attachmentOperation(
       "",
     );
     const contentType = text(data.contentType, "Content type", 100);
-    const bytes = integer(data.bytes, "File size", 1, MAX_BYTES);
+    const maxBytes = contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
+    const bytes = integer(data.bytes, "File size", 1, maxBytes);
     if (!Object.hasOwn(EXTENSION_MAP, contentType))
       throw new ApiError(
         400,
@@ -1318,8 +1367,13 @@ async function attachmentOperation(
         : null;
     await db.runTransaction(async (tx) => {
       await member(tx, workspace, user.uid);
-      const [parent, attachments] = await Promise.all([
-        tx.get(workspace.collection(`${parentType}s`).doc(parentId)),
+      const [noteSnap, blockSnap, attachments] = await Promise.all([
+        parentType === "note"
+          ? tx.get(workspace.collection("notes").doc(parentId))
+          : tx.get(workspace.collection("tasks").doc(parentId)),
+        parentType === "note"
+          ? tx.get(workspace.collection("blocks").doc(parentId))
+          : Promise.resolve({ exists: false, data: () => null } as unknown as DocumentSnapshot),
         tx.get(
           workspace
             .collection("attachments")
@@ -1327,12 +1381,32 @@ async function attachmentOperation(
             .where("parentType", "==", parentType),
         ),
       ]);
-      if (!parent.exists || parent.data()?.deleting)
+      const parent = noteSnap.exists ? noteSnap : blockSnap;
+      if (parent.exists && (parent.data()?.deleting || parent.data()?.isArchived))
         throw new ApiError(
           404,
           "not_found",
           "The attachment parent no longer exists.",
         );
+      if (!parent.exists) {
+        if (parentType === "note") {
+          tx.set(workspace.collection("blocks").doc(parentId), {
+            id: parentId,
+            workspaceId: workspace.id,
+            type: "page",
+            title: "Untitled",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            createdBy: user.uid,
+          });
+        } else {
+          throw new ApiError(
+            404,
+            "not_found",
+            "The attachment parent no longer exists.",
+          );
+        }
+      }
       if (attachments.size >= 50)
         throw new ApiError(
           409,
@@ -1394,17 +1468,29 @@ async function attachmentOperation(
       action === "thumbnail" ||
       (action === "inline" &&
         (String(value.contentType).startsWith("image/") ||
-          String(value.contentType).startsWith("audio/")));
+          String(value.contentType).startsWith("audio/") ||
+          String(value.contentType).startsWith("video/") ||
+          String(value.contentType) === "application/pdf"));
     const [url] = await files
       .file(action === "thumbnail" ? value.thumbnailPath : value.storagePath)
       .getSignedUrl({
         version: "v4",
         action: "read",
-        expires: Date.now() + 60000,
+        expires: Date.now() + (isInlineMedia ? 3600000 : 60000),
         responseDisposition: isInlineMedia
           ? "inline"
           : `attachment; filename*=UTF-8''${encodeURIComponent(value.originalName)}`,
       });
+    const accept = request.headers.get("accept") ?? "";
+    const isDirectBrowserMediaRequest =
+      accept.includes("image/") ||
+      accept.includes("video/") ||
+      accept.includes("audio/") ||
+      accept.includes("text/html") ||
+      request.headers.get("range") !== null;
+    if (isDirectBrowserMediaRequest && !accept.includes("application/json")) {
+      return Response.redirect(url, 307);
+    }
     return json({ url });
   }
   if (request.method === "DELETE" && !action) {
@@ -1441,9 +1527,10 @@ async function attachmentOperation(
   const staged = files.file(value.stagingPath);
   const [metadata] = await staged.getMetadata();
   const size = Number(metadata.size);
+  const maxBytes = String(value.contentType).startsWith("video/") ? MAX_VIDEO_BYTES : MAX_BYTES;
   if (
     size !== value.bytes ||
-    size > MAX_BYTES ||
+    size > maxBytes ||
     metadata.contentType !== value.contentType
   ) {
     await staged.delete({ ignoreNotFound: true });
@@ -1457,90 +1544,114 @@ async function attachmentOperation(
   const generation = metadata.generation;
   if (typeof generation !== "number" && typeof generation !== "string") throw new ApiError(409,"invalid_file","Uploaded file identity is unavailable. Retry the upload.");
   const source = files.file(value.stagingPath, { generation });
-  const [bytes] = await source.download();
-  if (!validMagic(bytes, value.contentType)) {
-    await staged.delete({ ignoreNotFound: true });
-    throw new ApiError(
-      400,
-      "invalid_file",
-      "The uploaded file does not match its declared format.",
-    );
-  }
-  let thumbnail: Buffer | null = null;
   const thumbnailType =
     value.contentType === "image/png" ? "image/png" : "image/webp";
   const thumbnailPath =
-    value.contentType === "application/pdf"
-      ? null
-      : `${value.storagePath}.thumbnail.${thumbnailType === "image/png" ? "png" : "webp"}`;
-  if (thumbnailPath) {
-    try {
-      const image = sharp(bytes, {
-        limitInputPixels: 40000000,
-        failOn: "error",
-        animated: false,
-      })
-        .rotate()
-        .resize({
-          width: 400,
-          height: 400,
-          fit: "inside",
-          withoutEnlargement: true,
-        });
-      thumbnail = await (
-        thumbnailType === "image/png"
-          ? image.png()
-          : image.webp({ quality: 82 })
-      ).toBuffer();
-    } catch {
-      await source.delete({ ignoreNotFound: true });
+    ["image/jpeg", "image/png", "image/webp"].includes(value.contentType)
+      ? `${value.storagePath}.thumbnail.${thumbnailType === "image/png" ? "png" : "webp"}`
+      : null;
+  if (!thumbnailPath && size > MAX_BYTES && source.readHeader && source.copyTo) {
+    const [headerBytes] = await source.readHeader(4096);
+    if (!validMagic(headerBytes, value.contentType)) {
+      await staged.delete({ ignoreNotFound: true });
       throw new ApiError(
         400,
         "invalid_file",
-        "The image is corrupt or exceeds the 40-megapixel decoding limit.",
+        "The uploaded file does not match its declared format.",
       );
     }
-  }
-  if (thumbnail && thumbnailPath) {
     try {
-      await files.file(thumbnailPath).save(thumbnail, {
+      await source.copyTo(value.storagePath);
+    } catch (error) {
+      if ((error as { code?: number }).code !== 412) {
+        await files.file(value.storagePath).delete({ ignoreNotFound: true });
+        throw error;
+      }
+    }
+  } else {
+    const [bytes] = await source.download();
+    if (!validMagic(bytes, value.contentType)) {
+      await staged.delete({ ignoreNotFound: true });
+      throw new ApiError(
+        400,
+        "invalid_file",
+        "The uploaded file does not match its declared format.",
+      );
+    }
+    let thumbnail: Buffer | null = null;
+    if (thumbnailPath) {
+      try {
+        const image = sharp(bytes, {
+          limitInputPixels: 40000000,
+          failOn: "error",
+          animated: false,
+        })
+          .rotate()
+          .resize({
+            width: 400,
+            height: 400,
+            fit: "inside",
+            withoutEnlargement: true,
+          });
+        thumbnail = await (
+          thumbnailType === "image/png"
+            ? image.png()
+            : image.webp({ quality: 82 })
+        ).toBuffer();
+      } catch {
+        await source.delete({ ignoreNotFound: true });
+        throw new ApiError(
+          400,
+          "invalid_file",
+          "The image is corrupt or exceeds the 40-megapixel decoding limit.",
+        );
+      }
+    }
+    if (thumbnail && thumbnailPath) {
+      try {
+        await files.file(thumbnailPath).save(thumbnail, {
+          resumable: false,
+          contentType: thumbnailType,
+          preconditionOpts: { ifGenerationMatch: 0 },
+          metadata: { cacheControl: "private, no-store" },
+        });
+      } catch (error) {
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
+    }
+    // A create-only destination also makes concurrent completion safe.
+    try {
+      await files.file(value.storagePath).save(bytes, {
         resumable: false,
-        contentType: thumbnailType,
+        contentType: value.contentType,
         preconditionOpts: { ifGenerationMatch: 0 },
         metadata: { cacheControl: "private, no-store" },
       });
     } catch (error) {
-      if ((error as { code?: number }).code !== 412) throw error;
-    }
-  }
-  // A create-only destination also makes concurrent completion safe.
-  try {
-    await files.file(value.storagePath).save(bytes, {
-      resumable: false,
-      contentType: value.contentType,
-      preconditionOpts: { ifGenerationMatch: 0 },
-      metadata: { cacheControl: "private, no-store" },
-    });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 412) {
-      await Promise.all([
-        files.file(value.storagePath).delete({ ignoreNotFound: true }),
-        ...(thumbnailPath
-          ? [files.file(thumbnailPath).delete({ ignoreNotFound: true })]
-          : []),
-      ]);
-      throw error;
+      if ((error as { code?: number }).code !== 412) {
+        await Promise.all([
+          files.file(value.storagePath).delete({ ignoreNotFound: true }),
+          ...(thumbnailPath
+            ? [files.file(thumbnailPath).delete({ ignoreNotFound: true })]
+            : []),
+        ]);
+        throw error;
+      }
     }
   }
   try {
     await db.runTransaction(async (tx) => {
       await member(tx, workspace, user.uid);
-      const [snapshot, parent] = await Promise.all([
+      const [snapshot, noteSnap, blockSnap] = await Promise.all([
         tx.get(ref),
-        tx.get(
-          workspace.collection(`${value.parentType}s`).doc(value.parentId),
-        ),
+        value.parentType === "note"
+          ? tx.get(workspace.collection("notes").doc(value.parentId))
+          : tx.get(workspace.collection("tasks").doc(value.parentId)),
+        value.parentType === "note"
+          ? tx.get(workspace.collection("blocks").doc(value.parentId))
+          : Promise.resolve({ exists: false, data: () => null } as unknown as DocumentSnapshot),
       ]);
+      const parent = noteSnap.exists ? noteSnap : blockSnap;
       if (
         !snapshot.exists ||
         !parent.exists ||
@@ -1718,13 +1829,88 @@ export async function handleTrustedApi(
       }
       if (method === "POST" && !itemId) {
         const data = (await body(request)) as Record<string, unknown>;
+        if (Array.isArray(data?.blocks)) {
+          const incomingBlocks = data.blocks as Record<string, unknown>[];
+          const incomingTombstones = (data.tombstones || {}) as Record<string, number>;
+          const result = await db.runTransaction(async tx => {
+            await member(tx, workspace, user.uid);
+            const tsNow = Date.now();
+
+            // ALL READS FIRST: fetch existing blocks before any writes to honor transaction rules
+            const rows = await tx.get(workspace.collection("blocks"));
+            const existingMap = new Map(rows.docs.map(doc => [doc.id, doc.data() as Record<string, unknown>]));
+            const finalMap = new Map(existingMap);
+
+            // ALL WRITES AFTER READS
+            for (const b of incomingBlocks) {
+              const bId = b.id as string;
+              if (!bId) continue;
+              const ref = workspace.collection("blocks").doc(bId);
+              const existingData = existingMap.get(bId) || null;
+              const existingUpdatedAt = typeof existingData?.updatedAt === "number" ? existingData.updatedAt : 0;
+              const incomingUpdatedAt = typeof b.updatedAt === "number" ? b.updatedAt : tsNow;
+
+              if (!existingData) {
+                const tombstoneTime = incomingTombstones[bId];
+                if (typeof tombstoneTime === "number" && tombstoneTime >= incomingUpdatedAt) {
+                  continue;
+                }
+                const payload = {
+                  ...b,
+                  createdAt: typeof b.createdAt === "number" ? b.createdAt : tsNow,
+                  updatedAt: incomingUpdatedAt,
+                  createdBy: (b.createdBy as string) || user.uid,
+                };
+                tx.set(ref, payload);
+                finalMap.set(bId, payload);
+              } else if (incomingUpdatedAt >= existingUpdatedAt) {
+                const payload = {
+                  ...existingData,
+                  ...b,
+                  updatedAt: incomingUpdatedAt,
+                  updatedBy: user.uid,
+                };
+                tx.set(ref, payload);
+                finalMap.set(bId, payload);
+              }
+            }
+
+            for (const [delId, delTime] of Object.entries(incomingTombstones)) {
+              const ref = workspace.collection("blocks").doc(delId);
+              const existingData = existingMap.get(delId);
+              if (existingData) {
+                const existingUpdatedAt = typeof existingData?.updatedAt === "number" ? existingData.updatedAt : 0;
+                if (typeof delTime === "number" && delTime >= existingUpdatedAt) {
+                  const payload = {
+                    ...existingData,
+                    isArchived: true,
+                    deletedAt: delTime,
+                    updatedAt: delTime,
+                    updatedBy: user.uid,
+                  };
+                  tx.set(ref, payload);
+                  finalMap.set(delId, payload);
+                }
+              }
+            }
+
+            return {
+              blocks: Array.from(finalMap.entries()).map(([id, itemData]) => ({
+                id,
+                ...(encodeStoreValue(itemData) as Record<string, unknown>),
+              })),
+            };
+          });
+          return json(result);
+        }
+
         const result = await db.runTransaction(async tx => {
           await member(tx, workspace, user.uid);
           const ref = workspace.collection("blocks").doc((data?.id as string) || randomUUID());
           const payload = {
             ...data,
-            createdAt: now(),
-            updatedAt: now(),
+            createdAt: typeof data?.createdAt === "number" ? data.createdAt : Date.now(),
+            updatedAt: typeof data?.updatedAt === "number" ? data.updatedAt : Date.now(),
             createdBy: user.uid,
           };
           tx.create(ref, payload);
@@ -1740,12 +1926,13 @@ export async function handleTrustedApi(
           const existing = await tx.get(ref);
           if (!existing.exists) throw new ApiError(404, "not_found", "Block not found.");
           const payload = {
+            ...existing.data(),
             ...data,
-            updatedAt: now(),
+            updatedAt: typeof data?.updatedAt === "number" ? data.updatedAt : Date.now(),
             updatedBy: user.uid,
           };
           tx.update(ref, payload);
-          return { block: { id: ref.id, ...existing.data(), ...payload } };
+          return { block: { id: ref.id, ...payload } };
         });
         return json(result);
       }
@@ -1753,7 +1940,17 @@ export async function handleTrustedApi(
         await db.runTransaction(async tx => {
           await member(tx, workspace, user.uid);
           const ref = workspace.collection("blocks").doc(itemId);
-          tx.delete(ref);
+          const existing = await tx.get(ref);
+          if (existing.exists) {
+            const delNow = Date.now();
+            tx.update(ref, {
+              ...existing.data(),
+              isArchived: true,
+              deletedAt: delNow,
+              updatedAt: delNow,
+              updatedBy: user.uid,
+            });
+          }
         });
         return json({ ok: true });
       }
@@ -1829,11 +2026,21 @@ export async function handleTrustedApi(
       if (itemId && method === "GET" && action === "presence") {
         const result = await db.runTransaction(async tx => {
           await member(tx,workspace,user.uid);
-          const parent = await tx.get(workspace.collection(resource).doc(itemId));
-          if (!parent.exists || parent.data()?.deleting) throw new ApiError(404,"not_found","This item no longer exists.");
+          const [parentSnap, blockSnap] = await Promise.all([
+            tx.get(workspace.collection(resource).doc(itemId)),
+            tx.get(workspace.collection("blocks").doc(itemId)),
+          ]);
+          const parent = parentSnap.exists ? parentSnap : blockSnap;
+          if (!parent.exists || parent.data()?.deleting || parent.data()?.isArchived) return { presence: [] };
           const query = workspace.collection(resource).doc(itemId).collection(action);
           const items = await tx.get(query);
-          return {presence:items.docs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
+          const nowMs = Date.now();
+          const activeDocs = items.docs.filter((item) => {
+            const exp = item.data()?.expiresAt;
+            const expMs = typeof exp === "number" ? exp : exp && typeof exp.toMillis === "function" ? exp.toMillis() : 0;
+            return !expMs || expMs > nowMs;
+          });
+          return {presence:activeDocs.map(item => ({id:item.id,...encodeStoreValue(item.data()) as Record<string,unknown>}))};
         });
         return json(result);
       }
@@ -1965,7 +2172,8 @@ function apiFailure(error: unknown) {
   // Never expose credential, bucket, or database diagnostics to a browser.
   console.error(
     "Teamspace API operation failed",
-    error instanceof Error ? error.name : "Unknown error",
+    error instanceof Error ? `${error.name}: ${error.message}` : "Unknown error",
+    error instanceof Error && error.stack ? `\n${error.stack}` : "",
   );
   return json(
     {

@@ -21,7 +21,9 @@ export function createSnapshotRunner<T>({ read, publish, fail, isCurrent }: {
     let active = true;
     let running = false;
     let dirty = false;
+    let rateLimitBackoffUntil = 0;
     async function pump() {
+        if (Date.now() < rateLimitBackoffUntil) return;
         running = true;
         try {
             do {
@@ -35,6 +37,11 @@ export function createSnapshotRunner<T>({ read, publish, fail, isCurrent }: {
         }
         catch (error) {
             dirty = false;
+            const is429 = (error instanceof SnapshotReadError && error.status === 429) ||
+                (error instanceof Error && /429|rate|too many/i.test(error.message));
+            if (is429) {
+                rateLimitBackoffUntil = Date.now() + 30000;
+            }
             if (active && isCurrent())
                 fail(error instanceof Error ? error : new Error("Workspace synchronization failed."));
         }
@@ -43,9 +50,12 @@ export function createSnapshotRunner<T>({ read, publish, fail, isCurrent }: {
         }
     }
     return {
-        invalidate(coalesce = false) { if (!active || (coalesce && running))
-            return; dirty = true; if (!running)
-            void pump(); },
+        invalidate(coalesce = false) {
+            if (!active || (coalesce && running)) return;
+            if (Date.now() < rateLimitBackoffUntil) return;
+            dirty = true;
+            if (!running) void pump();
+        },
         stop() { active = false; },
     };
 }

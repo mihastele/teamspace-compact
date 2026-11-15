@@ -19,6 +19,10 @@ export interface StorageFile {
     download(): Promise<[
         Buffer
     ]>;
+    readHeader?(maxBytes?: number): Promise<[
+        Buffer
+    ]>;
+    copyTo?(destinationPath: string): Promise<void>;
     delete(options: {
         ignoreNotFound: boolean;
     }): Promise<unknown>;

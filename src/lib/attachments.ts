@@ -1,5 +1,7 @@
 "use client";
 
+import { browserAccessToken } from "./browser-backend";
+
 // Allowed MIME types up to 25 MB
 export const ALLOWED_MIME_TYPES = new Set([
   // Images
@@ -7,6 +9,11 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/webp",
   "image/gif",
+  // Video
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
   // Audio
   "audio/webm",
   "audio/ogg",
@@ -26,6 +33,21 @@ export const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024; // 25 MiB
+export const MAX_VIDEO_ATTACHMENT_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
+const inFlightLocalUploads = new Set<string>();
+
+export function markLocalUploadInFlight(id: string): void {
+  inFlightLocalUploads.add(id);
+}
+
+export function clearLocalUploadInFlight(id: string): void {
+  inFlightLocalUploads.delete(id);
+}
+
+export function isLocalUploadInFlight(id: string): boolean {
+  return inFlightLocalUploads.has(id);
+}
 
 /** Strips EXIF metadata from JPEG / PNG / WebP by rendering onto canvas. */
 export async function prepareImageBlob(file: File, keepOriginal = false): Promise<Blob> {
@@ -98,7 +120,7 @@ export async function storeLocalMedia(id: string, blob: Blob): Promise<string> {
   return URL.createObjectURL(blob);
 }
 
-export async function getLocalMedia(id: string): Promise<string | null> {
+export async function getLocalMediaBlob(id: string): Promise<Blob | null> {
   try {
     const db = await getMediaDb();
     const blob = await new Promise<Blob | undefined>((resolve, reject) => {
@@ -107,13 +129,31 @@ export async function getLocalMedia(id: string): Promise<string | null> {
       req.onsuccess = () => resolve(req.result as Blob);
       req.onerror = () => reject(req.error);
     });
-    if (blob) {
-      return URL.createObjectURL(blob);
-    }
+    if (blob) return blob;
   } catch {
     // ignore
   }
   return null;
+}
+
+export async function getLocalMedia(id: string): Promise<string | null> {
+  const blob = await getLocalMediaBlob(id);
+  if (blob) {
+    return URL.createObjectURL(blob);
+  }
+  return null;
+}
+
+export async function deleteLocalMedia(id: string): Promise<void> {
+  try {
+    const db = await getMediaDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("media", "readwrite");
+      tx.objectStore("media").delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
 }
 
 export type UploadResult = {
@@ -124,7 +164,7 @@ export type UploadResult = {
   bytes: number;
 };
 
-/** Unified uploader for images, audio and general files. */
+/** Unified uploader for images, videos, audio and general files. */
 export async function uploadMediaFile(
   file: File,
   parentType: "page" | "task" | "note",
@@ -144,18 +184,23 @@ export async function uploadMediaFile(
     ? await prepareImageBlob(file, options.keepOriginal)
     : file;
 
-  if (preparedBlob.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error("File exceeds the 25 MB size limit.");
+  const maxBytes = file.type.startsWith("video/") ? MAX_VIDEO_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
+  if (preparedBlob.size > maxBytes) {
+    throw new Error(`File exceeds the ${file.type.startsWith("video/") ? "1 GB" : "25 MB"} size limit.`);
   }
 
   // 1. If running against configured backend with signed-in user
   if (api.configured && api.user && api.workspace) {
     const path = `workspaces/${api.workspace.id}`;
+    const token = await browserAccessToken(api.user.uid);
+    const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
     // Register upload
     const initRes = await fetch(`/api/${path}/attachments`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...authHeader,
       },
       body: JSON.stringify({
         parentType: parentType === "page" ? "note" : parentType,
@@ -181,19 +226,30 @@ export async function uploadMediaFile(
     });
 
     if (!uploadRes.ok) {
-      await fetch(`/api/${path}/attachments/${attachmentId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`/api/${path}/attachments/${attachmentId}`, {
+        method: "DELETE",
+        headers: authHeader,
+      }).catch(() => {});
       throw new Error("Upload transfer failed. Please try again.");
     }
 
     // Complete upload
     const completeRes = await fetch(`/api/${path}/attachments/${attachmentId}/complete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader,
+      },
       body: "{}",
     });
 
     if (!completeRes.ok) {
       throw new Error("Could not verify completed attachment.");
+    }
+
+    // If it's an image, also cache it in local IndexedDB so it's available when viewed offline
+    if (file.type.startsWith("image/")) {
+      await storeLocalMedia(attachmentId, preparedBlob).catch(() => {});
     }
 
     // Authenticated inline streaming URL

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   browserConfigured as configured,
   browserProvider,
@@ -26,6 +26,7 @@ import type { SavedView, TicketQuery, ViewConfig } from "./ticket-query";
 import { buildInviteUrl, resolveAppBaseUrl } from "./app-url";
 import type {
   Attachment,
+  Block,
   Member,
   Note,
   Task,
@@ -511,6 +512,55 @@ export function useTeamspace() {
     return (await ticketRequest(`views${id?`/${id}`:""}`,id?"PATCH":"POST",{config,...body})).view as SavedView;
   },[ticketRequest]);
   const seedViews = useCallback(async()=>{await ticketRequest("views/seed","POST",{});},[ticketRequest]);
+
+  const fetchBlocks = useCallback(async () => {
+    if (!configured || !user || !workspace) return [] as Block[];
+    try {
+      const data = await api(`workspaces/${workspace.id}/blocks`, "GET", undefined, user.uid);
+      return (data.blocks || []) as Block[];
+    } catch (err) {
+      console.warn("fetchBlocks notice:", err);
+      if (
+        (err as { status?: number })?.status === 429 ||
+        (err instanceof Error && /429|rate|too many/i.test(err.message))
+      ) {
+        throw err;
+      }
+      return [] as Block[];
+    }
+  }, [api, user, workspace]);
+
+  const syncBlocks = useCallback(async (blocks: Block[], tombstones?: Record<string, number>) => {
+    if (!configured || !user || !workspace) return [] as Block[];
+    try {
+      const data = await api(
+        `workspaces/${workspace.id}/blocks`,
+        "POST",
+        { blocks, tombstones },
+        user.uid
+      );
+      return (data.blocks || []) as Block[];
+    } catch (err) {
+      console.warn("syncBlocks notice:", err);
+      if (
+        (err as { status?: number })?.status === 429 ||
+        (err instanceof Error && /429|rate|too many/i.test(err.message))
+      ) {
+        throw err;
+      }
+      return [] as Block[];
+    }
+  }, [api, user, workspace]);
+
+  const deleteBlock = useCallback(async (blockId: string) => {
+    if (!configured || !user || !workspace) return;
+    try {
+      await api(`workspaces/${workspace.id}/blocks/${blockId}`, "DELETE", undefined, user.uid);
+    } catch (err) {
+      console.warn("deleteBlock notice:", err);
+    }
+  }, [api, user, workspace]);
+
   return {
     databaseRequest: ticketRequest,
     queryTickets, listViews, saveView, seedViews, savedViews,
@@ -1272,5 +1322,24 @@ export function useTeamspace() {
       action(async () => {
         await api(`${path()}/attachments/${id}`, "DELETE");
       }),
+    fetchBlocks,
+    syncBlocks,
+    deleteBlock,
   };
 }
+
+export type TeamspaceApi = ReturnType<typeof useTeamspace>;
+const TeamspaceContext = createContext<TeamspaceApi | null>(null);
+
+export function TeamspaceProvider({ children, value }: { children: ReactNode; value: TeamspaceApi }) {
+  return createElement(TeamspaceContext.Provider, { value }, children);
+}
+
+export function useTeamspaceApi(): TeamspaceApi {
+  const context = useContext(TeamspaceContext);
+  if (!context) {
+    throw new Error("useTeamspaceApi must be used within a TeamspaceProvider");
+  }
+  return context;
+}
+

@@ -20,6 +20,10 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}
       VAULT_ENC_KEY: ${VAULT_ENC_KEY:?Generate VAULT_ENC_KEY before starting Supabase}
   realtime:
+    networks:
+      default:
+        aliases:
+          - realtime-dev.supabase-realtime
     environment:
       DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?Generate REALTIME_DB_ENC_KEY before starting Supabase}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Generate SECRET_KEY_BASE before starting Supabase}
@@ -27,9 +31,14 @@ services:
     environment:
       PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?Generate PG_META_CRYPTO_KEY before starting Supabase}
   storage:
+    volumes: !override
+      - storage-data:/var/lib/storage:z
     environment:
       S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID:?Generate S3_PROTOCOL_ACCESS_KEY_ID before starting Supabase}
       S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET:?Generate S3_PROTOCOL_ACCESS_KEY_SECRET before starting Supabase}
+  imgproxy:
+    volumes: !override
+      - storage-data:/var/lib/storage:z
   auth:
     environment:
       EMAIL_CONFIRMATION_REQUIRED: ${EMAIL_CONFIRMATION_REQUIRED:-true}
@@ -49,3 +58,6 @@ services:
           *) echo "EMAIL_CONFIRMATION_REQUIRED must be true or false" >&2; exit 1 ;;
         esac
         exec auth
+
+volumes:
+  storage-data:
